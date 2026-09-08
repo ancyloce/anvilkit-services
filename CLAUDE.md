@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `docs/architecture/architecture.md` (AnvilKit Agent Platform Architecture v3.12) is the architecture baseline; read the relevant section before architecture-sensitive work. `docs/architecture/README.md` gives a reading route and `AGENTS.md` is the companion repository guide.
 
-Decision labels: **Confirmed** (owner decision), **Design baseline** (adopted recommendation), **Pilot default** (configurable starting value, not measured capacity), **Activation input** (must be resolved before the affected capability is enabled). Section 16 is superseded history (Nx baseline, former service names, mandatory facade externals/vendoring, pre-v3.11 intake order); do not restore it.
+Decision labels: **Confirmed** (owner decision), **Design baseline** (adopted recommendation), **Pilot default** (configurable starting value, not measured capacity), **Activation input** (must be resolved before the affected capability is enabled). [Architecture history](docs/architecture/audits/architecture-history.md) retains superseded decisions (Nx baseline, former service names, mandatory facade externals/vendoring, pre-v3.11 intake order); do not restore it.
 
 ## Commands
 
@@ -16,9 +16,9 @@ Decision labels: **Confirmed** (owner decision), **Design baseline** (adopted re
 
 ## Repository structure
 
-`anvilkit-services` is a Go/TypeScript monorepo: one root Go module, a pnpm workspace and Turborepo for TypeScript tasks. Internal services are not Git submodules. Studio, Pagix and `anvilkit-components` are separate repositories: use their declared API/artifact contracts, never cross-repository runtime source imports. Section 3.2 is the planned layout; inspect the checkout before assuming a path exists.
+`anvilkit-services` is a Go/TypeScript monorepo: one root Go module, a pnpm workspace and Turborepo for TypeScript tasks. Internal services are not Git submodules. Studio, Pagix and `anvilkit-components` are separate repositories: use their declared API/artifact contracts, never cross-repository runtime source imports. The [implementation plan](docs/architecture/plans/implementation-plan.md#s-3-2) owns the planned layout; inspect the checkout before assuming a path exists.
 
-Canonical names (section 2.3.4) are authoritative for images, workloads, service IDs, binaries and `service.name`:
+Canonical names ([overview inventory](docs/architecture/architecture.md#s-2-3)) are authoritative for images, workloads, service IDs, binaries and `service.name`:
 
 | Unit | Path | Runtime and responsibility |
 | --- | --- | --- |
@@ -34,7 +34,7 @@ Canonical names (section 2.3.4) are authoritative for images, workloads, service
 
 Do not reintroduce historical aliases: `agent-api`, `agent-core`/Core, `agent-worker`, `tool-broker`/Broker, `anvilkit-agent-orchestrator`, `anvilkit-component-code-executor`, `services/agent/orchestrator`, `jobs/component/code`, `jobs/component/validate`.
 
-Other planned paths: `internal/integrations/pagix` (typed guarded `PagixPort`), `internal/contracts` and `packages/contracts-ts` (generated), `contracts/{values,proto,openapi,jobs,definitions,actions}`, `workflows/definitions/<family>`, `packages/{component-toolchain,job-protocol}`, `deploy/<environment>`, `releases`, `docs/{architecture,adr,runbooks}`, `tools`. Temporal, PostgreSQL, Kubernetes/gVisor/CNI and artifact storage are infrastructure, not services.
+Other planned paths: `internal/integrations/pagix` (typed guarded `PagixPort`), `internal/contracts` and `packages/contracts-ts` (generated), `contracts/{values,proto,openapi,jobs,definitions,actions}`, `workflows/definitions/<family>`, `packages/{component-toolchain,job-protocol}`, `deploy/<environment>`, `releases`, `docs/architecture`, `docs/design`, `docs/architecture/{plans,audits}`, `tools`. Temporal, PostgreSQL, Kubernetes/gVisor/CNI and artifact storage are infrastructure, not services.
 
 Conventions: lowercase kebab-case for repositories, images and workspace task names; lowercase Go package names; `@anvilkit/<package>` for TypeScript packages. Go services: `cmd/<binary>/main.go`, `internal/`, README, Dockerfile. Node services/jobs: `src/`, package/TypeScript config, README, Dockerfile. Secrets are deployment references, never committed values. No `latest` in production. Add shared code only for a real caller.
 
@@ -45,7 +45,7 @@ Conventions: lowercase kebab-case for repositories, images and workspace task na
 - **Every physical paid request needs its own `AdmitAndClaimModelCall`.** Only the first successful claim returns `dispatchAllowed=true`; duplicates, including same-owner retries, never grant another send. Unknown dispatch or usage retains exposure; timeouts, TTLs, lease expiry or process loss never prove zero cost or authorize redispatch. SDK/provider retries and compaction stay disabled unless each physical call is intercepted and admitted. An unset platform daily cap denies paid admission.
 - **Credentials stay isolated.** Provider keys live only in Model Proxy; the job scope token only in the sidecar. Candidate jobs have no provider, production business or npm credentials. Check current Attempt, physical instance, lease, execution/recovery generation and deadline at every consequential boundary; a valid token alone never grants execution.
 - **Durable intake precedes remote mutations.** Initial queue waiting holds no source lease or commercial reservation. Bootstrap order: execution permit, recheck scope and original source revision, fenced lease, funding, then paid planning/coding. The active deadline starts at first permit and never resets.
-- **Control lock order (section 10.3.1)** for every mutation: budget pools; operations; attempts, then physical instances; model_calls; resource pools, queue entries, then permits; effects/intents/accepted results; step projections/events. Never acquire an earlier rank after a later one. No network, Temporal or job I/O under database locks; never repeat a remote side effect inside a database retry.
+- **Control lock order ([DD-02](docs/design/dd-02-control.md#s-10-3-1))** for every mutation: budget pools; operations; attempts, then physical instances; model_calls; resource pools, queue entries, then permits; effects/intents/accepted results; step projections/events. Never acquire an earlier rank after a later one. No network, Temporal or job I/O under database locks; never repeat a remote side effect inside a database retry.
 - **Changes preserve issued effects.** Cancellation, hold/resume and live definition changes fence new dispatch, keep actual costs and effect identities, and reconcile by querying the original identity. Uncertain effects stay visibly `blocked`/reconciling; a timeout never implies success, failure or absence of an effect.
 - **Validation is protected.** Generation yields complete source; independent validation plus Pagix candidate registration make it usable. One automatic repair is the pilot default. Authors cannot weaken protected validation, dependency policy, budgets, coverage, generator templates, root locks, CI or the release entry point.
 - **Approval binds exact artifacts.** Source, finalized version, npm/browser/CSS bytes, host profile and evidence form the subject; only a current platform-maintainer decision authorizes publication. Both delivery receipts precede activation. Never overwrite an npm version; partial publication enters `blocked` and is resolved only through `resolve-publication`.
@@ -60,12 +60,12 @@ Conventions: lowercase kebab-case for repositories, images and workspace task na
 - Definitions in `workflows/definitions/<family>` reference only logical action IDs with exact versions: no Activity names, task queues, packages, module paths, URLs, expressions or scripts. Each step requires `keys(on) = outcomes - controlOutcomes - {wait.pendingOutcome}`. No parallel/join in M1.
 - Only Control canonicalizes executable definitions (pinned RFC 8785, SHA-256); TypeScript verifies digests against fixtures.
 - Job envelope (`urn:anvilkit:job-envelope:v1`) and `ResultManifestV1` are strict JSON capped at 64 KiB with no inline archives, credentials or arbitrary URLs. Workflows consume accepted result references, never stdout.
-- Error envelope: `{code, message, operationId?, retryable, retryAfterMs?, detailsRef?}` with the section 7.4.2 code families; no credentials or raw provider responses.
+- Error envelope: `{code, message, operationId?, retryable, retryAfterMs?, detailsRef?}` with the [DD-02 code families](docs/design/dd-02-control.md#s-7-4-2); no credentials or raw provider responses.
 
 ## Model and executor profile
 
 - Planning: `deepseek-v4-pro` through Model Proxy (pilot default). Coding: `pi-ai` `openai` provider with a platform API key and `gpt-5.3-codex`; the subscription/OAuth `openai-codex` provider is excluded. No nested loops, automatic fallback, model voting or second executor.
-- Pi runs only inside `jobs/component/codegen` (section 8.1 bootstrap): `SettingsManager.inMemory(profileSettings, { projectTrusted: false })`, `retry.enabled=false`, compaction disabled, `noExtensions`/`noSkills`/`noContextFiles`/`noPromptTemplates`/`noThemes` all true, an explicit digest-verified `systemPrompt`, `appendSystemPrompt: []`, an empty read-only `agentDir`. `.pi/*` files, `AGENTS.md` and candidate-supplied paths are never trusted configuration.
+- Pi runs only inside `jobs/component/codegen` ([DD-03 bootstrap](docs/design/dd-03-execution.md#s-8-1)): `SettingsManager.inMemory(profileSettings, { projectTrusted: false })`, `retry.enabled=false`, compaction disabled, `noExtensions`/`noSkills`/`noContextFiles`/`noPromptTemplates`/`noThemes` all true, an explicit digest-verified `systemPrompt`, `appendSystemPrompt: []`, an empty read-only `agentDir`. `.pi/*` files, `AGENTS.md` and candidate-supplied paths are never trusted configuration.
 
 ## Gates and status
 
