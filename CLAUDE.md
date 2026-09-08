@@ -73,3 +73,13 @@ Conventions: lowercase kebab-case for repositories, images and workspace task na
 - Stages: P0-A contracts and static browser proof; P0-B real generation; P1-A editing and frozen certification; P1-B approval and delivery; P1-C live changes and pilot operations. Qualify sandbox isolation before any untrusted execution, including preview.
 - Keep draft, frozen and qualified statuses distinct. Fixtures and local proofs never authorize real effects. Do not invent Pagix endpoint paths, dependency locks, monetary caps, named owners or passing evidence; a missing external capability blocks only its own gate.
 - Deferred (no scaffolds): page/image agents, export redesign, second executor, generic DAGs/parallel/join, scheduled paid triggers, subagents, RAG/vector/memory, nested slots/forms/external data/animation, visual workflow editor, browser IDE/CRDT, standalone policy/billing/artifact/sandbox-manager services.
+
+## Git: read-only for Claude
+
+- Never `git commit`, `git push`, or open a PR unless the user explicitly
+  asks in that message (commit/push are also hook-blocked — a block is the
+  policy working, not an obstacle to route around). Default: leave changes
+  uncommitted and report modified files, flagging those inside submodules.
+- Never stage, amend, rebase, merge, cherry-pick, reset, clean, tag, or
+  switch branches unless asked for that exact action. Never force-push,
+  never push `main`. Read-only git is always fine.
