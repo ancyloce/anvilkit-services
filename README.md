@@ -61,7 +61,7 @@ The execution adapter is internal code at `services/agent/workflow/internal/exec
 - **Credits and costs remain separate.** Pagix commercial credits are not provider currency. Actual failed, canceled, repaired and uncertain work stays attributable. Pending settlement does not trigger duplicate generation.
 - **Changes and recovery preserve issued effects.** Definition changes, holds and cancellation fence new dispatch and reconcile work already issued. A timeout, expired lease or missing Worker is not proof that a process stopped or an external effect did not occur.
 - **Status is evidence-backed.** Durable SSE uses `(operationId, eventSeq)`, with transactional projection/event updates and authorized replay/snapshot recovery. Model token progress cannot confer business success.
-- **Telemetry is diagnostic, not authoritative.** Every unit emits versioned structured JSON logs correlated by `operationId` and W3C trace context under the [unified logging contract](docs/architecture/plans/operations.md#logging); candidate output is untrusted text; logs never replace ledgers, receipts or durable events.
+- **Telemetry is diagnostic, not authoritative.** Every unit emits versioned structured JSON logs correlated by `operationId` and W3C trace context under the [unified logging contract](docs/architecture/plans/operations.md#logging); candidate output is counted and classified but never carried in any log field, and its bounded content stays in a private diagnostics artifact behind a separate authorization; logs never replace ledgers, receipts or durable events.
 
 ## Technology and model profiles
 

@@ -48,12 +48,13 @@ Use one root Go module, pnpm/Turborepo for TypeScript and the Go toolchain direc
 - Studio owns the runtime loader and existing page write path. Save Puck Data and the exact remote release lock atomically; preserve `root.props.componentLibrary`. New compatible components must load without another Studio deployment. Matching React/Puck version strings do not establish shared runtime identity.
 - Commercial credits and actual platform costs are separate. A candidate may have settlement pending; billing uncertainty must not trigger regeneration.
 - Durable SSE uses `(operationId, eventSeq)`, committed with the projection under the operation lock. Transient tokens do not advance that cursor. Replay/snapshot reads require current disclosure authorization.
-- Telemetry follows the [unified logging contract](docs/architecture/plans/operations.md#logging): one completion or failure summary per executed call attempt, `operationId` on every record about an operation, trace context that never confers identity, candidate stdout as untrusted wrapped text, and no tokens, prompts, source or provider bodies in any log. Logs are diagnostic, never evidence.
+- Telemetry follows the [unified logging contract](docs/architecture/plans/operations.md#logging): one completion or failure summary per executed call attempt, `operationId` on every record about an operation, trace context that never confers identity, candidate stdout counted and classified but never carried in any log field, and no tokens, prompts, source, reconnect cursors or provider bodies in any log. Diagnostic content lives in private artifacts behind a separate authorization, referenced by an opaque `diagnosticsRef` that carries no capability. Logs are diagnostic, never evidence.
 
 ## Contract and design ownership
 
 Follow [DD-02 interfaces](docs/design/dd-02-control.md#s-7-4) and [staged freezes](docs/architecture/plans/implementation-plan.md#s-14-3) before dependent implementation:
 
+- Audit dispositions and the capabilities that stay disabled: [remediation 2026-09-08](docs/architecture/audits/remediation-2026-09-08.md).
 - DD-01: Workflow/Runner, protected bootstrap/finalizer, definition/descriptor/policy/binding records and live changes.
 - DD-02: common values, public OpenAPI/private Protobuf, Control transactions, identities, costs, state and SSE.
 - DD-03: execution adapter, sandbox, Pi profile, outer job/result envelopes and sidecar credentials.

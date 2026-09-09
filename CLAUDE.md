@@ -62,7 +62,7 @@ Conventions: lowercase kebab-case for repositories, images and workspace task na
 - Only Control canonicalizes executable definitions (pinned RFC 8785, SHA-256); TypeScript verifies digests against fixtures.
 - Job envelope (`urn:anvilkit:job-envelope:v1`) and `ResultManifestV1` are strict JSON capped at 64 KiB with no inline archives, credentials or arbitrary URLs. Workflows consume accepted result references, never stdout.
 - Error envelope: `{code, message, operationId?, retryable, retryAfterMs?, detailsRef?, requestId?}` with the [DD-02 code families](docs/design/dd-02-control.md#s-7-4-2); no credentials or raw provider responses.
-- Logging and tracing: `contracts/telemetry/log-record-v1.schema.json` and the [operations logging contract](docs/architecture/plans/operations.md#logging). One summary per executed call attempt; `operationId` on every record about an operation; W3C trace context that never grants identity; candidate stdout is untrusted wrapped text; never log tokens, prompts, generated source or provider bodies. Logs are diagnostic, never evidence.
+- Logging and tracing: `contracts/telemetry/log-record-v1.schema.json` and the [operations logging contract](docs/architecture/plans/operations.md#logging). One summary per executed call attempt; `operationId` on every record about an operation; W3C trace context that never grants identity; candidate stdout is counted and classified, never carried in a log field; diagnostic content stays in private artifacts behind a separate authorization, referenced by an opaque `diagnosticsRef`; never log tokens, prompts, generated source, raw reconnect cursors or provider bodies. Logs are diagnostic, never evidence.
 
 ## Model and executor profile
 
