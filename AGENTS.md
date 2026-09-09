@@ -48,6 +48,7 @@ Use one root Go module, pnpm/Turborepo for TypeScript and the Go toolchain direc
 - Studio owns the runtime loader and existing page write path. Save Puck Data and the exact remote release lock atomically; preserve `root.props.componentLibrary`. New compatible components must load without another Studio deployment. Matching React/Puck version strings do not establish shared runtime identity.
 - Commercial credits and actual platform costs are separate. A candidate may have settlement pending; billing uncertainty must not trigger regeneration.
 - Durable SSE uses `(operationId, eventSeq)`, committed with the projection under the operation lock. Transient tokens do not advance that cursor. Replay/snapshot reads require current disclosure authorization.
+- Telemetry follows the [unified logging contract](docs/architecture/plans/operations.md#logging): one completion or failure summary per executed call attempt, `operationId` on every record about an operation, trace context that never confers identity, candidate stdout as untrusted wrapped text, and no tokens, prompts, source or provider bodies in any log. Logs are diagnostic, never evidence.
 
 ## Contract and design ownership
 
@@ -68,7 +69,7 @@ These contract paths are architecture targets, not permission to create contract
 
 Inspect `git status --short` and applicable guidance before edits. Preserve existing and untracked user work, including the supplied architecture. Respect each request's file scope; a documentation-only initialization does not authorize source, package, lockfile, configuration, deployment, executable contract or empty service scaffold changes. If a requested new file already exists under a no-modification instruction, preserve it until the user explicitly permits that exception.
 
-Use the scripts that actually exist. At initialization, root `build`, `dev`, `lint` and `check-types` delegate to Turbo. `apps/web` lint runs `biome check --write`, and its type check invokes `next typegen`; those commands can modify/create files. Do not run them for a create-only documentation task. Documentation verification should check relative links, Markdown structure and the changed-file allowlist without creating build artifacts.
+Use the scripts that actually exist. At initialization, root `build`, `dev`, `lint` and `check-types` delegate to Turbo. `apps/web` lint runs `biome check --write`, and its type check invokes `next typegen`; those commands can modify/create files. Do not run them for a create-only documentation task. Documentation verification should check relative links, Markdown structure and the changed-file allowlist without creating build artifacts; `python3 tools/check-docs.py` performs those checks plus JSON Schema and fixture validation.
 
 For later Go implementation, use `go build ./...` and `go test ./...` after a Go module exists. For component qualification, use the frozen component repository's actual commands, including `build:packages` where specified, rather than assuming this starter's root scripts apply there. A successful starter build cannot qualify Agent services or component delivery.
 
