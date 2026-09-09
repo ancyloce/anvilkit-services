@@ -15,6 +15,10 @@ Checks (all local, no network, no services):
   4. The log event catalog in docs/architecture/plans/operations.md and the schema
      enum agree; the job-failure class/code table in docs/design/dd-03-execution.md and
      the result-manifest schema enums agree.
+  5. Shared-log content containment: the log-record schema defines no free-text field a
+     candidate can reach, the hostile-output fixture's declared content tokens really do
+     occur in its inputs, none of that content survives into the expected projection, and
+     every relocation of it into message/error.message/attributes/body is rejected.
 
 Exit status 1 on any failure. `jsonschema` (with `referencing`) is required for the
 schema checks; without it those checks are reported as skipped and the run fails.
@@ -251,6 +255,18 @@ def check_contracts(root: pathlib.Path) -> None:
         bad = copy.deepcopy(env)
         bad["instanceId"] = "inst-forged"
         expect_invalid("urn:anvilkit:job-envelope:v1", bad, "job envelope carrying candidate physical identity")
+        legacy = copy.deepcopy(env)
+        legacy.pop("resultContract", None)
+        expect_valid("urn:anvilkit:job-envelope:v1", legacy, "job envelope without resultContract (backward compatibility)")
+        bad = copy.deepcopy(env)
+        bad["resultContract"]["codeTableDigest"] = "sha256:not-a-digest"
+        expect_invalid("urn:anvilkit:job-envelope:v1", bad, "job envelope with a malformed code-table digest")
+        bad = copy.deepcopy(env)
+        bad["resultContract"]["supportedCodes"] = ["CANDIDATE_BUILD_FAILED"]
+        expect_invalid("urn:anvilkit:job-envelope:v1", bad, "job envelope inlining a code list instead of its digest")
+        bad = copy.deepcopy(env)
+        bad["resultContract"].pop("schemaDigest")
+        expect_invalid("urn:anvilkit:job-envelope:v1", bad, "job envelope resultContract without a schema digest")
 
     # reference kinds: the two shared shapes partition the registered kinds, and every
     # kind used by a descriptor port or a definition input slot is registered in one of them
@@ -336,6 +352,36 @@ def check_contracts(root: pathlib.Path) -> None:
         bad = copy.deepcopy(prof)
         bad["outcome"] = "canceled"
         expect_valid(rm_id, bad, "canceled result with a typed failure")
+        # rollout compatibility cases (docs/design/dd-03-execution.md#result-contract-rollout).
+        # A code that a receiver does not register is rejected at intake, before any class
+        # fallback: this is the case the removed backward-compatibility claim got wrong.
+        bad = copy.deepcopy(prof)
+        bad["failure"]["code"] = "TOOLCHAIN_STORE_UNAVAILABLE"
+        expect_invalid(rm_id, bad, "future code inside a known class reaching an older receiver")
+        bad = copy.deepcopy(prof)
+        bad["failure"]["class"] = "toolchain"
+        expect_invalid(rm_id, bad, "unknown failure class")
+        bad = copy.deepcopy(prof)
+        bad["failure"]["class"] = "environment"
+        bad["failure"]["code"] = "PROFILE_QUALIFICATION_FAILED"
+        expect_invalid(rm_id, bad, "unknown class carrying a registered code")
+        bad = copy.deepcopy(prof)
+        bad["outcome"] = "certified"
+        expect_invalid(rm_id, bad, "invalid failure result presented as certified")
+    # the failure classification stays closed: no test may pass by relaxing an enum
+    if rm_id in by_id:
+        fdefs = by_id[rm_id]["$defs"]["failure"]
+        for field in ("class", "code"):
+            spec = fdefs["properties"][field]
+            if set(spec) - {"enum"} or not spec.get("enum"):
+                fail(f"result-manifest failure.{field} is no longer a closed enum: {sorted(spec)}")
+            else:
+                count("closed_enum_checks")
+        for branch in fdefs["allOf"]:
+            per = branch["then"]["properties"]["code"]
+            if set(per) - {"enum"} or not per.get("enum"):
+                fail(f"result-manifest per-class code constraint is no longer a closed enum: {sorted(per)}")
+        count("closed_enum_checks")
 
     # the DD-03 failure-class table and the result-manifest schema agree
     dd03 = root / "docs" / "design" / "dd-03-execution.md"
@@ -413,10 +459,12 @@ def check_contracts(root: pathlib.Path) -> None:
         for key, s in attempts.items():
             if len(s) > 1:
                 count("retried_commands")
-        # correlation identifiers never come from candidate records
+        # no record anywhere carries a candidate body, and none claims the removed origin
         for i, r in enumerate(records):
-            if r.get("origin") == "candidate" and any(k in r for k in ("traceId", "tenantId", "callId", "commandId", "requestId")):
-                fail(f"operation-log-trace record {i}: candidate record carries a trusted correlation field")
+            if "body" in r:
+                fail(f"operation-log-trace record {i}: a record carries a body field")
+            if r.get("origin") == "candidate":
+                fail(f"operation-log-trace record {i}: origin=candidate is no longer a representation")
         # negative variants derived from real records
         svc = next(r for r in records if r.get("eventName") == "rpc.server.completed")
         bad = dict(svc); bad["body"] = "text"
@@ -439,51 +487,139 @@ def check_contracts(root: pathlib.Path) -> None:
         expect_invalid(log_id, bad, "client completion without transportAttempt")
         bad = dict(cli); bad["trace.source"] = "linked"
         expect_invalid(log_id, bad, "linked trace source without link.traceId")
-        cand = next(r for r in records if r.get("origin") == "candidate")
+        cand = next(r for r in records if r.get("eventName") == "candidate.output.observed")
         for k, v in (("tenantId", "team-1"), ("traceId", "4bf92f3577b34da6a3ce929d0e0e4736"), ("callId", "call-forged"), ("requestId", "req-forged"), ("message", "x")):
             bad = dict(cand); bad[k] = v
-            expect_invalid(log_id, bad, f"candidate record with {k}")
-        bad = dict(cand); bad["severity"] = "ERROR"
-        expect_invalid(log_id, bad, "candidate record with severity ERROR")
+            expect_invalid(log_id, bad, f"candidate-output summary with {k}")
+        bad = dict(cand); bad["severity"] = "DEBUG"
+        expect_invalid(log_id, bad, "candidate-output summary with severity DEBUG")
         bad = dict(cand); bad["eventName"] = "admission.decided"
-        expect_invalid(log_id, bad, "candidate record impersonating a trusted event")
+        expect_invalid(log_id, bad, "candidate-output summary impersonating a trusted event")
         bad = dict(cand); bad["service.name"] = "anvilkit-agent-control"
-        expect_invalid(log_id, bad, "candidate record claiming a service identity")
-        bad = dict(cand); bad["body"] = "A" * 2049
-        expect_invalid(log_id, bad, "candidate body over 2048")
-        bad = dict(cand); bad["attributes"] = {f"k{i}": i for i in range(33)}
-        expect_invalid(log_id, bad, "attributes over 32 keys")
-        bad = dict(cand); bad["attributes"] = {"nested": {"a": 1}}
-        expect_invalid(log_id, bad, "nested attributes")
+        expect_invalid(log_id, bad, "candidate-output summary claiming a service identity")
+        bad = dict(cand); bad["origin"] = "candidate"
+        expect_invalid(log_id, bad, "record claiming the removed candidate origin")
+        bad = dict(cand); bad["body"] = "A" * 64
+        expect_invalid(log_id, bad, "candidate-output summary reintroducing a body")
+        svc2 = dict(svc); svc2["attributes"] = {f"k{i}": i for i in range(33)}
+        expect_invalid(log_id, svc2, "attributes over 32 keys")
+        svc2 = dict(svc); svc2["attributes"] = {"nested": {"a": 1}}
+        expect_invalid(log_id, svc2, "nested attributes")
 
-    # telemetry: hostile candidate output fixture
+    # telemetry: hostile candidate output fixture. The property under test is containment:
+    # no shared-log record may carry candidate content in any field, and no relocation of
+    # that content into another field may be accepted. The checks below are structural --
+    # they never try to recognise "source" or "a prompt" by pattern.
     cand_doc = get("telemetry/candidate-output.example.json")
-    if cand_doc is not None:
+    if cand_doc is not None and log_id in by_id:
+        schema = by_id[log_id]
+        # 1. the contract offers no free-text field a candidate can reach
+        if "body" in schema["properties"]:
+            fail("log-record schema still defines a body field")
+        else:
+            count("containment_checks")
+        if "candidate" in schema["properties"]["origin"]["enum"]:
+            fail("log-record schema still offers origin=candidate")
+        else:
+            count("containment_checks")
+        if "candidate.output" in schema["$defs"]["eventName"]["enum"]:
+            fail("log-record schema still registers the per-line candidate.output event")
+        else:
+            count("containment_checks")
+
         lines = cand_doc.get("hostileLines", [])
         expected = cand_doc.get("expectedRecords", [])
-        limit = int(cand_doc.get("bodyLimitBytes", 2048))
-        if len(lines) != len(expected):
-            fail("candidate-output: hostileLines and expectedRecords differ in length")
-        for i, (line, rec) in enumerate(zip(lines, expected)):
+        forbidden = cand_doc.get("forbiddenRecords", [])
+        tokens = cand_doc.get("contentTokens", [])
+        cap = int(cand_doc.get("artifactLineCapBytes", 2048))
+        labels = cand_doc.get("podLabels", {})
+
+        # 2. the inputs are actually hostile: the fixture cannot be made to pass by deleting them
+        if len(lines) < 6:
+            fail(f"candidate-output: only {len(lines)} hostile lines; the fixture must keep its inputs")
+        raw = [l.get("line", "") for l in lines]
+        if not any(len(x.encode("utf-8")) > cap for x in raw):
+            fail("candidate-output: no hostile line exceeds the artifact line cap")
+        if not any(chr(27) in x for x in raw):
+            fail("candidate-output: no hostile line carries control bytes")
+        if not any("://" in x for x in raw):
+            fail("candidate-output: no hostile line carries a capability-shaped URL")
+        if not any(x.lstrip().startswith("{") for x in raw):
+            fail("candidate-output: no hostile line forges a structured record")
+        for tok in tokens:
+            if not any(tok in x for x in raw):
+                fail(f"candidate-output: declared content token {tok!r} occurs in no hostile line")
+        if tokens and lines:
+            count("containment_checks")
+
+        # 3. the expected projection validates and is derived from the input, not carrying it
+        for i, rec in enumerate(expected):
             expect_valid(log_id, rec, f"candidate-output expected record {i}")
-            raw = line.encode("utf-8")
-            want = raw[:limit].decode("utf-8", "ignore")
-            if rec.get("body") != want:
-                fail(f"candidate-output record {i}: body is not the byte-truncated line")
-            over = len(raw) > limit
-            if over != bool(rec.get("truncated")):
-                fail(f"candidate-output record {i}: truncated flag does not match line length")
-            if over and rec.get("truncatedFields") != ["body"]:
-                fail(f"candidate-output record {i}: truncatedFields must name body")
-            if rec.get("origin") != "candidate" or rec.get("severity") != "INFO" or rec.get("eventName") != "candidate.output":
-                fail(f"candidate-output record {i}: wrapper fields not fixed by the collector")
-            labels = cand_doc.get("podLabels", {})
-            if rec.get("operationId") != labels.get("anvilkit.dev/operation-id") or rec.get("attemptId") != labels.get("anvilkit.dev/attempt-id") or rec.get("instanceId") != labels.get("anvilkit.dev/instance-id"):
+            if rec.get("operationId") != labels.get("anvilkit.dev/operation-id") or \
+               rec.get("attemptId") != labels.get("anvilkit.dev/attempt-id") or \
+               rec.get("instanceId") != labels.get("anvilkit.dev/instance-id") or \
+               rec.get("jobKind") != labels.get("anvilkit.dev/job-kind"):
                 fail(f"candidate-output record {i}: correlation fields differ from trusted Pod labels")
-            # a forged identifier inside the line must not leak into the record
-            for forged in ("op-other", "call-forged", "req-forged", "team-1"):
-                if any(v == forged for k, v in rec.items() if k != "body"):
-                    fail(f"candidate-output record {i}: forged value {forged!r} adopted from candidate text")
+        by_stream: dict[str, list[str]] = {}
+        for l in lines:
+            by_stream.setdefault(l.get("stream", "stdout"), []).append(l.get("line", ""))
+        for i, rec in enumerate(expected):
+            if rec.get("eventName") != "candidate.output.observed":
+                continue
+            a = rec.get("attributes", {})
+            src = by_stream.get(a.get("stream"), [])
+            sizes = [len(x.encode("utf-8")) for x in src]
+            if a.get("lines") != len(src) or a.get("bytes") != sum(sizes):
+                fail(f"candidate-output record {i}: summary counts do not match the observed {a.get('stream')} stream")
+            if "maxLineBytes" in a and a["maxLineBytes"] != (max(sizes) if sizes else 0):
+                fail(f"candidate-output record {i}: maxLineBytes does not match the observed stream")
+        total_lines, total_bytes = len(raw), sum(len(x.encode("utf-8")) for x in raw)
+        for i, rec in enumerate(expected):
+            if rec.get("eventName") != "candidate.diagnostics.stored":
+                continue
+            a = rec.get("attributes", {})
+            if a.get("lines") != total_lines or a.get("bytes") != total_bytes:
+                fail(f"candidate-output record {i}: diagnostics counts do not match the whole observed output")
+            ref = rec.get("diagnosticsRef", {})
+            extra = set(ref) - {"artifactClass", "refId", "sizeBytes", "contentDigest"}
+            if extra:
+                fail(f"candidate-output record {i}: diagnosticsRef carries {sorted(extra)}")
+
+        # 4. containment: no 16-byte window of any hostile line survives into the projection,
+        #    and no declared content token appears anywhere in it
+        windows = set()
+        for x in raw:
+            for j in range(0, max(0, len(x) - 15)):
+                windows.add(x[j:j + 16])
+        def strings(node, key=None):
+            if isinstance(node, dict):
+                for k, v in node.items():
+                    yield from strings(v, k)
+            elif isinstance(node, list):
+                for v in node:
+                    yield from strings(v, key)
+            elif isinstance(node, str) and key != "timestamp":
+                yield key, node
+        leaked = 0
+        for i, rec in enumerate(expected):
+            for key, s in strings(rec):
+                for tok in tokens:
+                    if tok in s:
+                        fail(f"candidate-output record {i}: field {key!r} carries content token {tok!r}")
+                        leaked += 1
+                for j in range(0, max(0, len(s) - 15)):
+                    if s[j:j + 16] in windows:
+                        fail(f"candidate-output record {i}: field {key!r} carries a 16-byte window of candidate output")
+                        leaked += 1
+                        break
+        if not leaked:
+            count("containment_checks")
+
+        # 5. every relocation of the content into another field is rejected by the contract
+        if len(forbidden) < 10:
+            fail(f"candidate-output: only {len(forbidden)} forbidden variants; the negative set must stay complete")
+        for entry in forbidden:
+            expect_invalid(log_id, entry.get("record"), f"candidate-output forbidden: {entry.get('label')}")
 
     # event catalog in the operations document agrees with the schema enum
     ops = root / "docs" / "architecture" / "plans" / "operations.md"
