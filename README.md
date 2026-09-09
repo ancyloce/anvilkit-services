@@ -61,6 +61,7 @@ The execution adapter is internal code at `services/agent/workflow/internal/exec
 - **Credits and costs remain separate.** Pagix commercial credits are not provider currency. Actual failed, canceled, repaired and uncertain work stays attributable. Pending settlement does not trigger duplicate generation.
 - **Changes and recovery preserve issued effects.** Definition changes, holds and cancellation fence new dispatch and reconcile work already issued. A timeout, expired lease or missing Worker is not proof that a process stopped or an external effect did not occur.
 - **Status is evidence-backed.** Durable SSE uses `(operationId, eventSeq)`, with transactional projection/event updates and authorized replay/snapshot recovery. Model token progress cannot confer business success.
+- **Telemetry is diagnostic, not authoritative.** Every unit emits versioned structured JSON logs correlated by `operationId` and W3C trace context under the [unified logging contract](docs/architecture/plans/operations.md#logging); candidate output is untrusted text; logs never replace ledgers, receipts or durable events.
 
 ## Technology and model profiles
 
@@ -90,6 +91,7 @@ Additional planned paths from the [implementation layout](docs/architecture/plan
 | `internal/contracts`, `packages/contracts-ts` | Generated Go/TypeScript contracts |
 | `contracts/values`, `contracts/proto`, `contracts/openapi`, `contracts/jobs` | Shared values and distinct public/private/job wire contracts |
 | `contracts/definitions`, `contracts/actions` | Bounded definition/policy/binding schemas, descriptors and fixtures |
+| `contracts/telemetry` | Structured log-record schema and telemetry design fixtures |
 | `workflows/definitions/<family>` | Reviewed generation/release definitions; component family first |
 | `packages/component-toolchain`, `packages/job-protocol` | Shared build/certification and Node protocol helpers |
 | `deploy/<environment>`, `releases` | Environment profiles and immutable compatibility/release manifests |
@@ -110,7 +112,7 @@ The web starter currently references `@repo/ui`, which is absent from this check
 
 For later implementation, service-specific startup, configuration, build and readiness instructions belong in each service README. Go commands such as `go build ./...` and `go test ./...` apply after the root Go module exists. Component qualification must use the frozen component repository's actual scripts and support closure, rather than assuming starter commands validate generated packages.
 
-Documentation-only changes can be checked through Markdown/link validation and file-diff inspection without installing dependencies or running mutating build/lint tasks.
+Documentation-only changes can be checked through Markdown/link validation and file-diff inspection without installing dependencies or running mutating build/lint tasks; `python3 tools/check-docs.py` runs the link, anchor, table, JSON Schema and fixture checks locally.
 
 ## Implementation and qualification gates
 
