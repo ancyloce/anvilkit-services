@@ -17,8 +17,10 @@ Checks (all local, no network, no services):
      the result-manifest schema enums agree.
   5. Shared-log content containment: the log-record schema defines no free-text field a
      candidate can reach, the hostile-output fixture's declared content tokens really do
-     occur in its inputs, none of that content survives into the expected projection, and
-     every relocation of it into message/error.message/attributes/body is rejected.
+     occur in its inputs, none of that content survives into any field of the expected
+     projection, and every relocation of it into message/error.message/attributes/body is
+     rejected. No field is exempt from the scan: timestamp is pinned to a UTC Z pattern in
+     common-v1 rather than excluded from it.
 
 Exit status 1 on any failure. `jsonschema` (with `referencing`) is required for the
 schema checks; without it those checks are reported as skipped and the run fails.
@@ -314,6 +316,21 @@ def check_contracts(root: pathlib.Path) -> None:
             fail("apiOperationRef accepted a fabricated contentDigest")
         else:
             count("negative_fixtures_rejected")
+        v = ref_validator("timestamp")
+        for good in ("2026-09-08T10:15:00.052Z", "2026-09-08T10:17:20Z",
+                     "2026-09-08T10:15:00.123456789Z"):
+            if v.is_valid(good):
+                count("fixtures_valid")
+            else:
+                fail(f"timestamp rejected a well-formed UTC instant {good!r}")
+        for bad in ("export function Button(){}", "2026-09-08T10:15:00.000",
+                    "2026-09-08T10:15:00+01:00", "2026-13-08T10:15:00Z",
+                    "2026-09-08T25:15:00Z", "2026-09-08 10:15:00Z",
+                    "2026-09-08T10:15:00Z ", ""):
+            if v.is_valid(bad):
+                fail(f"timestamp accepted {bad!r}; the UTC Z contract is not enforced")
+            else:
+                count("negative_fixtures_rejected")
         if ref_validator("artifactRef").is_valid(
             {"kind": "publication", "refId": "pub-7f3c2a", "subjectDigest": "sha256:" + "a" * 64,
              "contentDigest": "sha256:" + "b" * 64, "sizeBytes": "1", "objectVersion": "v1"}
@@ -598,7 +615,7 @@ def check_contracts(root: pathlib.Path) -> None:
             elif isinstance(node, list):
                 for v in node:
                     yield from strings(v, key)
-            elif isinstance(node, str) and key != "timestamp":
+            elif isinstance(node, str):
                 yield key, node
         leaked = 0
         for i, rec in enumerate(expected):
