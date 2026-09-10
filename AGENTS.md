@@ -32,7 +32,7 @@ No Agent service, job, root Go module, generated contract bundle or deployment i
 
 There are four long-running component-chain services. Temporal, Kubernetes, PostgreSQL and artifact storage are infrastructure; the Runner, adapters and Pi SDKs are code within their named owners. `anvilkit-export-worker` belongs at `services/export/worker` when that separate domain is implemented; export has no M1 scaffold requirement.
 
-Use one root Go module, pnpm/Turborepo for TypeScript and the Go toolchain directly for Go. Internal services are not Git submodules. Studio, Pagix and `anvilkit-components` remain separate repositories; use their declared API/artifact contracts without cross-repository runtime source imports.
+Use one root Go module, pnpm/Turborepo for TypeScript and the Go toolchain directly for Go. Internal services are not Git submodules. Three submodules under `services/agent/` predate this rule and still conflict with it; they hold only a licence and a README, and the migration proposal and rollback path are in [remediation 2026-09-10b](docs/architecture/audits/remediation-2026-09-10b.md#r03). Do not convert them and do not relax the rule to fit them. Studio, Pagix and `anvilkit-components` remain separate repositories; use their declared API/artifact contracts without cross-repository runtime source imports.
 
 ## Invariants to preserve
 
@@ -54,7 +54,7 @@ Use one root Go module, pnpm/Turborepo for TypeScript and the Go toolchain direc
 
 Follow [DD-02 interfaces](docs/design/dd-02-control.md#s-7-4) and [staged freezes](docs/architecture/plans/implementation-plan.md#s-14-3) before dependent implementation:
 
-- Audit dispositions and the capabilities that stay disabled: [remediation 2026-09-08](docs/architecture/audits/remediation-2026-09-08.md); the three items an independent review raised against that repair, and their fixes: [remediation 2026-09-09](docs/architecture/audits/remediation-2026-09-09.md); the trusted-verdict, privilege-drop, retry-authorization and cancellation-throttling hardening: [remediation 2026-09-09b](docs/architecture/audits/remediation-2026-09-09b.md).
+- Audit dispositions and the capabilities that stay disabled: [remediation 2026-09-08](docs/architecture/audits/remediation-2026-09-08.md); the three items an independent review raised against that repair, and their fixes: [remediation 2026-09-09](docs/architecture/audits/remediation-2026-09-09.md); the implementation-level definitions behind the service views and the cross-contract gate `python3 tools/check-contracts.py`: [remediation 2026-09-10](docs/architecture/audits/remediation-2026-09-10.md); the socket-permission, SQL-trigger, budget-uniqueness, preview-bootstrap and serializable-props corrections, the database role and lease contracts, and the single entry point `python3 tools/run-verification.py`: [remediation 2026-09-10b](docs/architecture/audits/remediation-2026-09-10b.md); the trusted-verdict, privilege-drop, retry-authorization and cancellation-throttling hardening: [remediation 2026-09-09b](docs/architecture/audits/remediation-2026-09-09b.md).
 - DD-01: Workflow/Runner, protected bootstrap/finalizer, definition/descriptor/policy/binding records and live changes.
 - DD-02: common values, public OpenAPI/private Protobuf, Control transactions, identities, costs, state and SSE.
 - DD-03: execution adapter, sandbox, Pi profile, outer job/result envelopes and sidecar credentials.
@@ -70,8 +70,41 @@ These contract paths are architecture targets, not permission to create contract
 
 Inspect `git status --short` and applicable guidance before edits. Preserve existing and untracked user work, including the supplied architecture. Respect each request's file scope; a documentation-only initialization does not authorize source, package, lockfile, configuration, deployment, executable contract or empty service scaffold changes. If a requested new file already exists under a no-modification instruction, preserve it until the user explicitly permits that exception.
 
-Use the scripts that actually exist. At initialization, root `build`, `dev`, `lint` and `check-types` delegate to Turbo. `apps/web` lint runs `biome check --write`, and its type check invokes `next typegen`; those commands can modify/create files. Do not run them for a create-only documentation task. Documentation verification should check relative links, Markdown structure and the changed-file allowlist without creating build artifacts; `python3 tools/check-docs.py` performs those checks plus JSON Schema and fixture validation.
+Use the scripts that actually exist. At initialization, root `build`, `dev`, `lint` and `check-types` delegate to Turbo. `apps/web` lint runs `biome check --write`, and its type check invokes `next typegen`; those commands can modify/create files. Do not run them for a create-only documentation task. Documentation verification should check relative links, Markdown structure and the changed-file allowlist without creating build artifacts; `python3 tools/check-docs.py` performs those checks plus JSON Schema and fixture validation, and `python3 tools/run-verification.py` is the single entry point that adds the cross-contract, DDD and behavioural checks (each step PASS, FAIL or UNEXECUTED; a missing environment exits 2 and is never a pass).
 
 For later Go implementation, use `go build ./...` and `go test ./...` after a Go module exists. For component qualification, use the frozen component repository's actual commands, including `build:packages` where specified, rather than assuming this starter's root scripts apply there. A successful starter build cannot qualify Agent services or component delivery.
 
 Report what changed, checks actually completed, and the exact remaining gate. Keep draft, frozen and qualified statuses distinct. Never infer provider billing, sandbox secrecy, real Pagix delivery, Studio rendering, two-replica correctness or restore targets from documentation, fixtures or package imports. Do not commit, push, publish or deploy without task authorization.
+
+## Git: read-only for Codex
+
+- Never `git commit`, `git push`, or open a PR unless the user explicitly
+  asks in that message (commit/push are also hook-blocked — a block is the
+  policy working, not an obstacle to route around). Default: leave changes
+  uncommitted and report modified files, flagging those inside submodules.
+- Never stage, amend, rebase, merge, cherry-pick, reset, clean, tag, or
+  switch branches unless asked for that exact action. Never force-push,
+  never push `main`. Read-only git is always fine.
+
+## Mandatory Working Principles
+
+**Do not overengineer. Do not overcomplicate. Do not overdesign. Do not expand requirements through speculation. If something is unclear, ask me first.**
+
+- Prefer the smallest implementation scope that produces useful, verifiable behavior.
+- Reuse existing contracts, structures, tools, and dependencies.
+- Do not propose general-purpose frameworks, abstraction layers, plugin systems, configuration platforms, or cross-repository release systems without a demonstrated requirement.
+- Do not introduce speculative compatibility paths, retry mechanisms, or infrastructure.
+- Do not plan all eight services in full at once.
+- Organize work around observable behavior, rather than creating a task for every RPC, table, schema, or source file.
+- Do not split cohesive functionality into unnecessary layers, tiny wrappers, or excessive files.
+- Introduce shared code only when there is an actual consumer and a clear reason.
+
+## Naming and Code Organization Requirements
+
+- Use clear, descriptive names that express responsibility or behavior.
+- Preserve terminology already defined by authoritative contracts.
+- Avoid unexplained abbreviations and vague names such as `misc`, `utils2`, `newService`, or `tempHandler`.
+- Follow Go conventions for Go code and the repository’s TypeScript conventions for TypeScript code. Do not impose one naming style across languages.
+- Keep file names and organization consistent with neighboring code and the purpose of the package.
+- Do not rename unrelated files or functions merely for stylistic consistency.
+- Do not create a new naming framework, style guide, or lint system when existing conventions are sufficient.

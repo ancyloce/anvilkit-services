@@ -13,11 +13,12 @@ Decision labels: **Confirmed** (owner decision), **Design baseline** (adopted re
 - TypeScript: `pnpm build`, `pnpm dev`, `pnpm lint`, `pnpm check-types`. In `apps/web`, lint runs `biome check --write` and type check runs `next typegen`; both can modify files.
 - Go (once the root module exists): `go build ./...`, `go test ./...`; scope changes with `go list -deps`. No Go `project.json` wrappers.
 - Component qualification uses the frozen component repository's own scripts (e.g. `build:packages`), not this root's.
-- Docs and contracts: `python3 tools/check-docs.py` checks links, anchors, tables, JSON Schemas and fixtures.
+- Docs and contracts: `python3 tools/check-docs.py` checks links, anchors, tables, JSON Schemas and fixtures; `python3 tools/check-values-proto.py` runs the blocking `contracts:values-proto-agreement` gate between `contracts/values/common-v1.schema.json` and `contracts/proto/common-v1.proto` (needs `protoc`). `python3 tools/check-contracts.py` holds the implementation-level contracts to one another (OpenAPI mirrors, proto enums/fixtures, DDL/lock order, action/job digests, limit keys, CQ coverage); `python3 tools/check-ddd-contracts.py` runs the DDD slice models and the retained-bundle closure, which `python3 tools/refresh-p0-bundle.py` regenerates after any change under `contracts/`.
+- Verification: `python3 tools/run-verification.py` is the single entry point — it rebuilds the derived artifacts, runs the four static checkers, then the behavioural proofs in `tools/verify/` (SQL against a disposable PostgreSQL container, sockets with real UIDs, the preview handshake in a real browser, the trusted observer assertion). Each step reports PASS, FAIL or UNEXECUTED; a missing environment is reported as UNEXECUTED and exits 2, never as a pass. `--static` skips the proofs, `--only <step>` runs one.
 
 ## Repository structure
 
-`anvilkit-services` is a Go/TypeScript monorepo: one root Go module, a pnpm workspace and Turborepo for TypeScript tasks. Internal services are not Git submodules. Studio, Pagix and `anvilkit-components` are separate repositories: use their declared API/artifact contracts, never cross-repository runtime source imports. The [implementation plan](docs/architecture/plans/implementation-plan.md#s-3-2) owns the planned layout; inspect the checkout before assuming a path exists.
+`anvilkit-services` is a Go/TypeScript monorepo: one root Go module, a pnpm workspace and Turborepo for TypeScript tasks. Internal services are not Git submodules. Three submodules under `services/agent/` predate this rule and still conflict with it; they hold only a licence and a README, and the migration proposal and rollback path are in [remediation 2026-09-10b](docs/architecture/audits/remediation-2026-09-10b.md#r03). Do not convert them and do not relax the rule to fit them. Studio, Pagix and `anvilkit-components` are separate repositories: use their declared API/artifact contracts, never cross-repository runtime source imports. The [implementation plan](docs/architecture/plans/implementation-plan.md#s-3-2) owns the planned layout; inspect the checkout before assuming a path exists.
 
 Canonical names ([overview inventory](docs/architecture/architecture.md#s-2-3)) are authoritative for images, workloads, service IDs, binaries and `service.name`:
 
@@ -85,3 +86,26 @@ Conventions: lowercase kebab-case for repositories, images and workspace task na
 - Never stage, amend, rebase, merge, cherry-pick, reset, clean, tag, or
   switch branches unless asked for that exact action. Never force-push,
   never push `main`. Read-only git is always fine.
+
+## Mandatory Working Principles
+
+**Do not overengineer. Do not overcomplicate. Do not overdesign. Do not expand requirements through speculation. If something is unclear, ask me first.**
+
+- Prefer the smallest implementation scope that produces useful, verifiable behavior.
+- Reuse existing contracts, structures, tools, and dependencies.
+- Do not propose general-purpose frameworks, abstraction layers, plugin systems, configuration platforms, or cross-repository release systems without a demonstrated requirement.
+- Do not introduce speculative compatibility paths, retry mechanisms, or infrastructure.
+- Do not plan all eight services in full at once.
+- Organize work around observable behavior, rather than creating a task for every RPC, table, schema, or source file.
+- Do not split cohesive functionality into unnecessary layers, tiny wrappers, or excessive files.
+- Introduce shared code only when there is an actual consumer and a clear reason.
+
+## Naming and Code Organization Requirements
+
+- Use clear, descriptive names that express responsibility or behavior.
+- Preserve terminology already defined by authoritative contracts.
+- Avoid unexplained abbreviations and vague names such as `misc`, `utils2`, `newService`, or `tempHandler`.
+- Follow Go conventions for Go code and the repository’s TypeScript conventions for TypeScript code. Do not impose one naming style across languages.
+- Keep file names and organization consistent with neighboring code and the purpose of the package.
+- Do not rename unrelated files or functions merely for stylistic consistency.
+- Do not create a new naming framework, style guide, or lint system when existing conventions are sufficient.
