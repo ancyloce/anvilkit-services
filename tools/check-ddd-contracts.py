@@ -10,6 +10,7 @@ import copy
 import hashlib
 import importlib.util
 import itertools
+import re
 import json
 from pathlib import Path
 import subprocess
@@ -320,9 +321,24 @@ def cost_checks():
 
 
 def sql_checks():
+    # Structural, not a statement count: a bare count breaks on any edit and says nothing about the
+    # contract. R02 (2026-09-10) added the ownership statements this now asserts directly.
     from pglast import parse_sql
-    statements=parse_sql((ROOT/'contracts/definitions/activation-v1.sql').read_text())
-    check(len(statements)==10,'activation DDL parses','sql_parse_checks')
+    text=(ROOT/'contracts/definitions/activation-v1.sql').read_text()
+    parse_sql(text)
+    check(True,'activation DDL parses','sql_parse_checks')
+    relations=set(re.findall(r'CREATE TABLE\s+definition_contract\.([a-z_]+)',text))
+    check(relations=={'immutable_records','activations','activation_pointers'},'activation DDL relations','sql_parse_checks')
+    guarded=set(re.findall(r'ON definition_contract\.([a-z_]+) FOR EACH ROW\nEXECUTE FUNCTION definition_contract\.reject_mutation',text))
+    check(guarded=={'immutable_records','activations'},'the two immutable relations are guarded','sql_parse_checks')
+    check('activation_pointers' not in guarded,'the activation pointer stays mutable for its CAS','sql_parse_checks')
+    check('CREATE SCHEMA definition_contract AUTHORIZATION anvilkit_control_migrator' in text
+          and text.count('SET ROLE anvilkit_control_migrator;')==1 and text.count('RESET ROLE;')==1,
+          'activation objects are owned by the migrator','sql_parse_checks')
+    roles=(ROOT/'contracts/sql/roles-v1.sql').read_text()
+    for role in ('anvilkit_control_migrator','anvilkit_control_rw','anvilkit_api_ro'):
+        check(f'CREATE ROLE {role} NOLOGIN' in roles,f'{role} is created in migration step 1','sql_parse_checks')
+    check('NOBYPASSRLS' in roles and roles.count('NOBYPASSRLS')==2,'both service roles cannot bypass RLS','sql_parse_checks')
 
 
 def bundle_checks():

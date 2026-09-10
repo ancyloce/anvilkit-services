@@ -111,9 +111,9 @@ EXAMPLES: list[tuple[str, str, str | None, bool]] = [
     # values / events / definitions (author A)
     ("contracts/values/error-envelope.example.json", "urn:anvilkit:error-envelope:v1", "*", False),
     ("contracts/values/error-envelope.negative.json", "urn:anvilkit:error-envelope:v1", "*.instance", True),
-    ("contracts/events/operation-event-v1.fixtures.json", "urn:anvilkit:operation-event-payloads:v1", "records", False),
+    ("contracts/events/operation-event-v1.fixtures.json", "urn:anvilkit:operation-event-payloads:v1", "records.*", False),
     ("contracts/events/operation-event-v1.negative.json", "urn:anvilkit:operation-event-payloads:v1", "*.instance", True),
-    ("contracts/events/operation-view.example.json", "urn:anvilkit:operation-view:v1", None, False),
+    ("contracts/events/operation-view.example.json", "urn:anvilkit:operation-view:v1", "*", False),
     ("contracts/events/operation-view.negative.json", "urn:anvilkit:operation-view:v1", "*.instance", True),
     ("contracts/events/operation-snapshot.example.json", "urn:anvilkit:operation-snapshot:v1", None, False),
     ("contracts/events/operation-snapshot.negative.json", "urn:anvilkit:operation-snapshot:v1", "*.instance", True),
@@ -125,13 +125,13 @@ EXAMPLES: list[tuple[str, str, str | None, bool]] = [
     ("contracts/actions/runtime-bindings.example.json", "urn:anvilkit:runtime-binding:v1#/$defs/RuntimeBindingSetV1", None, False),
     ("contracts/definitions/component-effective-policy.example.json", "urn:anvilkit:policy-record:v1#/$defs/EffectivePolicyV1", None, False),
     ("contracts/definitions/retry-profiles.example.json", "urn:anvilkit:policy-record:v1#/$defs/RetryProfileV1", "*", False),
-    ("contracts/definitions/meter-policies.example.json", "urn:anvilkit:policy-record:v1#/$defs/MeterPolicyV1", "*", False),
+    ("contracts/definitions/meter-policies.example.json", "urn:anvilkit:policy-record:v1#/$defs/MeterPolicyV1", "policies.*", False),
     ("contracts/definitions/run-context.example.json", "urn:anvilkit:run-context:v1", None, False),
     ("contracts/definitions/runner-rules-v1.json", "urn:anvilkit:runner-rules:v1", None, False),
     # model proxy (author D1)
     ("contracts/model-proxy/route-table.example.json", "urn:anvilkit:route-table:v1", None, False),
     ("contracts/model-proxy/exposure-estimation-v1.json", "urn:anvilkit:exposure-estimation:v1", None, False),
-    ("contracts/model-proxy/pi-proxy-stream-v1.fixtures.json", "urn:anvilkit:pi-proxy-stream:v1", "streams.*.frames", False),
+    ("contracts/model-proxy/pi-proxy-stream-v1.fixtures.json", "urn:anvilkit:pi-proxy-stream:v1", "streams.*.frames.*", False),
     ("contracts/model-proxy/pi-proxy-stream-v1.negative.json", "urn:anvilkit:pi-proxy-stream:v1", "*.instance", True),
     # sidecar (author D2)
     ("contracts/sidecar/sidecar-state-machine-v1.json", "urn:anvilkit:sidecar-state-machine:v1", None, False),
@@ -154,6 +154,7 @@ EXAMPLES: list[tuple[str, str, str | None, bool]] = [
     ("contracts/components/observer-assertions-v1.json", "urn:anvilkit:observer-assertions:v1", None, False),
     ("contracts/components/validation-environment-v1.json", "urn:anvilkit:validation-environment:v1", None, False),
     ("contracts/preview/frame-message-v1.fixtures.json", "urn:anvilkit:preview-frame-message:v1", "*", False),
+    ("contracts/preview/frame-message-v1.negative.json", "urn:anvilkit:preview-frame-message:v1", "*.instance", True),
     ("contracts/preview/frame-policy-v1.json", "urn:anvilkit:preview-frame-policy:v1", None, False),
     # coordinator
     ("contracts/profiles/pilot-limits-v1.json", "urn:anvilkit:pilot-limits:v1", None, False),
@@ -176,6 +177,19 @@ def select(doc, pointer):
     return cur
 
 def check_examples():
+    snap = ROOT / "contracts/events/operation-snapshot.example.json"
+    if snap.exists():
+        s = load(snap)
+        if s["operation"]["operationId"] != s["operationId"] or any(st["operationId"] != s["operationId"] for st in s["steps"]):
+            fail("operation-snapshot.example.json: operationId differs between the snapshot, its view and its steps")
+        else: bump("semantic_rules")
+    streams = ROOT / "contracts/model-proxy/pi-proxy-stream-v1.fixtures.json"
+    if streams.exists():
+        for st in load(streams)["streams"]:
+            fr = st["frames"]; seqs = [int(f["seq"]) for f in fr]
+            if fr[0]["type"] != "start" or sum(1 for f in fr if f["type"] in ("done", "error")) != 1 or fr[-1]["type"] not in ("done", "error") or seqs != sorted(set(seqs)) or len({f["callId"] for f in fr}) != 1:
+                fail(f"pi-proxy-stream fixture {st['label']!r}: not one start, one terminal frame, strictly increasing seq and one callId")
+            else: bump("semantic_rules")
     for path, ref, pointer, negative in EXAMPLES:
         p = ROOT / path
         if not p.exists(): fail(f"missing contract artifact {path}"); continue
@@ -224,9 +238,12 @@ def check_openapi():
         sid, _, ptr = src.partition("#")
         if sid not in SCHEMAS: fail(f"openapi component {name}: unknown source schema {sid}"); continue
         node = SCHEMAS[sid]
-        for part in ptr.strip("/").split("/")[1:] if ptr.startswith("/$defs") else ptr.strip("/").split("/"):
-            node = node.get(part) if isinstance(node, dict) else None
-            if node is None: break
+        if not ptr:
+            node = {k: v for k, v in node.items() if k not in ("$schema", "$id", "$defs")}
+        else:
+            for part in ptr.strip("/").split("/"):
+                node = node.get(part) if isinstance(node, dict) else None
+                if node is None: break
         if node is None: fail(f"openapi component {name}: source pointer {src} not found"); continue
         expected = rewrite(copy.deepcopy(node), sid)
         actual = {k: v for k, v in c.items() if k != "x-anvilkit-source"}
@@ -235,11 +252,13 @@ def check_openapi():
             fail(f"openapi component {name} drifts from {src}" + (f" (unmirrored refs: {sorted(set(unm))[:3]})" if unm else ""))
         else: bump("openapi_mirrors")
     # every error response uses the envelope; X-Request-Id on all responses
-    env_name = src_map.get("urn:anvilkit:error-envelope:v1")
+    env_name = src_map.get("urn:anvilkit:error-envelope:v1#/$defs/ErrorEnvelopeV1") or src_map.get("urn:anvilkit:error-envelope:v1")
     for path, item in doc.get("paths", {}).items():
         for method, op in item.items():
             if method not in ("get", "post", "put", "delete", "patch"): continue
             bump("openapi_operations")
+            if op.get("x-anvilkit-listener") == "private":
+                continue
             for code, resp in op.get("responses", {}).items():
                 if "X-Request-Id" not in resp.get("headers", {}): fail(f"openapi {method.upper()} {path} {code}: missing X-Request-Id header")
                 if code.startswith(("4", "5")):
@@ -271,7 +290,7 @@ def check_openapi():
     from referencing import Registry, Resource
     from referencing.jsonschema import DRAFT202012
     oid = "urn:anvilkit:agent-api:openapi"
-    reg = Registry().with_resource(oid, Resource.from_contents({"$id": oid, "components": comps}, default_specification=DRAFT202012))
+    reg = Registry().with_resource(oid, Resource.from_contents({"$id": oid, "components": {"schemas": comps}}, default_specification=DRAFT202012))
     ops = {}
     for path, item in doc.get("paths", {}).items():
         for method, op in item.items():
@@ -567,6 +586,35 @@ def check_cq_and_docs():
         if idx != parsed: fail(f"cq-coverage-v1.json disagrees with the service-view tables: {sorted(idx ^ parsed)[:4]}")
         else: bump("cq_index_agreement")
 
+def check_view_limits():
+    """R04 (2026-09-10): the limit keys and values the service views quote in prose must be the ones the
+    profile records. Retained as a tool instead of the ad hoc script the 2026-09-10 record described.
+    Namespaces are derived from the profile itself, so a new limit family needs no edit here."""
+    lim = ROOT / "contracts/profiles/pilot-limits-v1.json"
+    if not lim.exists(): fail("missing pilot-limits"); return
+    entries = {e["key"]: e for e in load(lim)["entries"]}
+    namespaces = {k.split(".")[0] for k in entries}
+    key_pat = re.compile(r"`([a-z][a-zA-Z0-9]*(?:\.[a-zA-Z][a-zA-Z0-9]*)+)`(\s+([0-9][0-9,]*)(\s*(KiB|MiB|GiB))?)?")
+    scale = {None: 1, "KiB": 1024, "MiB": 1024 ** 2, "GiB": 1024 ** 3}
+    for p in sorted((ROOT / "docs/design").glob("000[1-8]-*.md")):
+        text = p.read_text(encoding="utf-8")
+        for m in key_pat.finditer(text):
+            key, _, cited, _, unit = m.groups()
+            if key.split(".")[0] not in namespaces: continue
+            # Only a citation that carries a value is asserted: several scope, action and event names share
+            # a namespace prefix with a limit family (component.generate, sse.closed) without being limits,
+            # so bare-token existence cannot be required without false positives.
+            if cited is None: continue
+            if key not in entries:
+                fail(f"{rel(p)}: {key} is cited with the value {cited} but is absent from pilot-limits-v1.json")
+                continue
+            bump("view_limit_keys")
+            recorded = entries[key].get("value")
+            if isinstance(recorded, bool) or not isinstance(recorded, (int, float)): continue
+            if int(cited.replace(",", "")) * scale[unit] != recorded:
+                fail(f"{rel(p)}: {key} cited as {cited}{' ' + unit if unit else ''} but pilot-limits records {recorded}")
+            else: bump("view_limit_values")
+
 def main():
     global ROOT
     ap = argparse.ArgumentParser()
@@ -574,7 +622,7 @@ def main():
     ap.add_argument("--section", action="append")
     a = ap.parse_args(); ROOT = pathlib.Path(a.root).resolve()
     build_registry()
-    sections = {"examples": check_examples, "openapi": check_openapi, "proto": check_proto, "sql": check_sql, "actions": check_actions, "jobs": check_jobs, "limits": check_limits, "enums": check_enums, "cq": check_cq_and_docs}
+    sections = {"examples": check_examples, "openapi": check_openapi, "proto": check_proto, "sql": check_sql, "actions": check_actions, "jobs": check_jobs, "limits": check_limits, "viewlimits": check_view_limits, "enums": check_enums, "cq": check_cq_and_docs}
     for name, fn in sections.items():
         if a.section and name not in a.section: continue
         try: fn()
