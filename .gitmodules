@@ -1,0 +1,9 @@
+[submodule "services/agent/api"]
+	path = services/agent/api
+	url = https://github.com/ancyloce/anvilkit-agent-api.git
+[submodule "services/agent/control"]
+	path = services/agent/control
+	url = https://github.com/ancyloce/anvilkit-agent-control.git
+[submodule "services/agent/workflow"]
+	path = services/agent/workflow
+	url = https://github.com/ancyloce/anvilkit-agent-workflow.git
