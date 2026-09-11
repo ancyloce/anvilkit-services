@@ -6,7 +6,7 @@ The [architecture document](docs/architecture/architecture.md) is the source of 
 
 ## Project status
 
-This checkout contains the architecture, Codex documentation and a pnpm/Turborepo starter with `apps/web` and shared Biome/TypeScript configuration packages. The Agent services, execution jobs, root Go module, generated contracts and deployment profiles described below are planned architecture, not implemented or qualified features in this checkout.
+This checkout contains architecture/design documents, machine-readable contracts, a pnpm/Turborepo starter with shared Biome/TypeScript configuration, and three preserved Agent service submodules with standalone Go modules and retained consumer bindings. apps/web is absent. The [local Compose profile](deploy/local/README.md) runs the bounded local-check flow through API, Control and Workflow with PostgreSQL and Temporal. The [first-stage approval](docs/architecture/audits/first-stage-approval-2026-09-10.md) records approved CD-01 through CD-05 design semantics and their remaining machine-contract/runtime prerequisites.
 
 The architecture supports independent local implementation and controlled proofs. It does not establish real provider access, Pagix endpoint availability, sandbox isolation, publication, Studio runtime compatibility or production readiness. Detailed-design freezes and runtime acceptance remain separate gates.
 
@@ -65,7 +65,7 @@ The execution adapter is internal code at `services/agent/workflow/internal/exec
 
 ## Technology and model profiles
 
-The architecture selects one root Go module, pnpm workspaces and Turborepo for TypeScript tasks. Go builds/tests use the Go toolchain directly. Services remain independently deployable without internal Git submodules; Studio, Pagix and `anvilkit-components` stay separate repositories.
+Preserve the existing API, Control and Workflow Git submodules. Each service must build from a standalone clone using its own Go module and retained generated bindings under its internal/contracts; the parent owns contract sources and generation/compatibility/integration verification. No parent internal-package imports, new shared repository or publishing system are required. Use pnpm/Turborepo for TypeScript and the Go toolchain directly for Go. Studio, Pagix and `anvilkit-components` stay separate repositories; consume their declared APIs/artifacts.
 
 Public interfaces use OpenAPI. Private Control interfaces use generated Protobuf/gRPC contracts with Connect-Go/Buf and qualified Go/TypeScript clients. Node jobs use versioned JSON envelopes. Shared public/job values originate from `contracts/values/common-v1.schema.json`; money and 64-bit counters cross JavaScript as bounded decimal strings. Generated clients and compatibility fixtures must precede dependent implementations.
 
@@ -79,6 +79,8 @@ Node 24 LTS is the execution baseline. Self-hosted Temporal, separate Agent/Temp
 
 Current documentation entry points are:
 
+- [Approved initial development plan](docs/plans/0001-initial-three-service-development-plan-0910-1221.md), [approved contract definitions](docs/plans/0001-first-stage-contract-definitions.md) and [approval record](docs/architecture/audits/first-stage-approval-2026-09-10.md): W1-W3 first, then the bounded local Temporal flow after contract synchronization and environment readiness.
+
 - [Architecture v3.12](docs/architecture/architecture.md): overview and core constraints with links to detail owners.
 - [Codex repository guide](AGENTS.md): instructions for repository work.
 - [Codex documentation index](docs/architecture/README.md), [design](docs/design/design.md), [interfaces](docs/design/interfaces.md) and [qualification](docs/architecture/plans/qualification.md): draft supplements.
@@ -88,7 +90,7 @@ Additional planned paths from the [implementation layout](docs/architecture/plan
 | Planned path | Purpose |
 | --- | --- |
 | `internal/integrations/pagix` | Typed guarded `PagixPort` and actual API mappings |
-| `internal/contracts`, `packages/contracts-ts` | Generated Go/TypeScript contracts |
+| Each service `internal/contracts`; consumed TypeScript outputs | Generated bindings from parent-owned contract sources; retain Go consumer bindings for standalone clones |
 | `contracts/values`, `contracts/proto`, `contracts/openapi`, `contracts/jobs` | Shared values and distinct public/private/job wire contracts |
 | `contracts/definitions`, `contracts/actions` | Bounded definition/policy/binding schemas, descriptors and fixtures |
 | `contracts/telemetry` | Structured log-record schema and telemetry design fixtures |
@@ -99,18 +101,20 @@ Additional planned paths from the [implementation layout](docs/architecture/plan
 
 ## Working with the current starter
 
+All documentation and comments are English.
+
 The root manifest specifies `pnpm@12.3.4` and Node `>=22`. This starter engine range is separate from the architecture's qualified Node 24 execution profile. Use the pinned package manager when working on the existing workspace.
 
 | Root command | Current behavior |
 | --- | --- |
-| `pnpm dev` | Runs the existing workspace development tasks through Turbo; `apps/web` uses port 3000 |
+| `pnpm dev` | Delegates workspace development tasks to Turbo; no Agent startup is implemented |
 | `pnpm build` | Runs existing workspace build tasks |
-| `pnpm lint` | Runs workspace lint tasks; the web task uses `biome check --write` and can modify files |
-| `pnpm check-types` | Runs workspace type checks; the web task invokes `next typegen` and can generate files |
+| `pnpm lint` | Delegates workspace lint tasks; inspect each current task for writes before running |
+| `pnpm check-types` | Delegates current workspace type-check tasks |
 
-The web starter currently references `@repo/ui`, which is absent from this checkout. Installation/build readiness therefore needs a separate implementation fix and verification. The commands above describe existing scripts; they do not start or validate the planned Agent platform. No Go module or complete local Agent startup is present yet.
+The historical web-starter description is not the current checkout: apps/web is absent. Workspace package checks do not establish Agent service readiness. The commands above describe existing scripts; use the [local Compose instructions](deploy/local/README.md) to start the implemented local Agent flow.
 
-For later implementation, service-specific startup, configuration, build and readiness instructions belong in each service README. Go commands such as `go build ./...` and `go test ./...` apply after the root Go module exists. Component qualification must use the frozen component repository's actual scripts and support closure, rather than assuming starter commands validate generated packages.
+For later implementation, service-specific startup, configuration, build and readiness instructions belong in each service README. Go commands such as `go build ./...` and `go test ./...` run in each service repository after its own Go module exists, with `GOWORK=off` and locked dependencies. Component qualification must use the frozen component repository's actual scripts and support closure, rather than assuming starter commands validate generated packages.
 
 Documentation-only changes can be checked through Markdown/link validation and file-diff inspection without installing dependencies or running mutating build/lint tasks; `python3 tools/check-docs.py` runs the link, anchor, table, JSON Schema and fixture checks locally.
 
