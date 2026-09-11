@@ -7,3 +7,9 @@
 [submodule "services/agent/workflow"]
 	path = services/agent/workflow
 	url = https://github.com/ancyloce/anvilkit-agent-workflow.git
+[submodule "services/agent/model-proxy"]
+	path = services/agent/model-proxy
+	url = https://github.com/ancyloce/anvilkit-agent-model-proxy.git
+[submodule "jobs/shared/access-sidecar"]
+	path = jobs/shared/access-sidecar
+	url = https://github.com/ancyloce/anvilkit-job-access-sidecar
