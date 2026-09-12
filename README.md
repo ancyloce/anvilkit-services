@@ -43,7 +43,7 @@ Untrusted component work runs in separate on-demand jobs.
 | `anvilkit-component-codegen` | Node / Pi coding SDK | `jobs/component/codegen` | Complete source generation and bounded repair; one inner coding loop per Attempt |
 | `anvilkit-component-validator` | Node / component toolchain | `jobs/component/validator` | Independent candidate validation and protected final certification |
 | `anvilkit-component-preview` | Node / browser tooling | `jobs/component/preview` | Short-lived, revision-bound build and preview; no model/publication permission |
-| `anvilkit-job-access-proxy` | Go sidecar | `jobs/shared/access-proxy` | Trusted per-job holder of scope credentials and allowlisted model/artifact relay |
+| `anvilkit-job-access-proxy` | Go sidecar | `jobs/shared/access-sidecar` | Trusted per-job holder of scope credentials and allowlisted model/artifact relay. Path per owner decision 2026-09-12 (submodule repository `anvilkit-job-access-sidecar`, superseding `jobs/shared/access-proxy`); the unit name is unchanged |
 
 The execution adapter is internal code at `services/agent/workflow/internal/execution`. The Runner is also internal to the Workflow service. Neither is an additional service. Temporal, PostgreSQL, Kubernetes, gVisor, the enforcing CNI and artifact storage are infrastructure dependencies.
 
