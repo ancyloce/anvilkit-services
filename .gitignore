@@ -39,3 +39,15 @@ yarn-error.log*
 
 # Outputs
 outputs/
+
+# Generated local Compose credentials and configuration
+/.local/compose/
+
+# Docs
+docs/
+
+# Logs
+logs/
+
+# Contracts
+contracts/
