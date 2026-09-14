@@ -1,150 +1,116 @@
 # AnvilKit Services
 
-AnvilKit Services is the backend repository for the AnvilKit Agent Platform: a self-hosted Go/TypeScript monorepo for bounded component generation, isolated validation and preview, and release coordination through Pagix.
+AnvilKit Services is the repository for the AnvilKit Agent platform: a self-hosted system that turns a marketing team's requirement into complete, editable static-component source, certifies and approves an exact release, publishes it to npm and browser/CSS targets, activates it, and keeps saved pages locked to the exact release they used. The platform also includes bounded multi-agent execution, knowledge retrieval (RAG, vectors, long-term memory) and a reviewed MCP tool marketplace.
 
-The [architecture document](docs/architecture/architecture.md) is the source of truth. It retains version **3.12**, dated **2026-09-08**; its filename and location do not change that baseline. Confirmed product decisions, adopted design baselines, configurable pilot defaults and unresolved activation inputs have different meanings throughout the document.
+The architecture documents under [`docs/architecture/`](docs/architecture/architecture.md) are the source of truth. This README summarizes them and records what the checkout actually contains; it does not restate the design. Repository working rules for people and development agents are in [`AGENTS.md`](AGENTS.md).
 
-## Project status
+## Status at a glance
 
-This checkout contains architecture/design documents, machine-readable contracts, a pnpm/Turborepo starter with shared Biome/TypeScript configuration, and three preserved Agent service submodules with standalone Go modules and retained consumer bindings. apps/web is absent. The [local Compose profile](deploy/local/README.md) runs the bounded local-check flow through API, Control and Workflow with PostgreSQL and Temporal. The [first-stage approval](docs/architecture/audits/first-stage-approval-2026-09-10.md) records approved CD-01 through CD-05 design semantics and their remaining machine-contract/runtime prerequisites.
+| Aspect | Current state |
+| --- | --- |
+| Architecture baseline | Architecture document edition **V4.0, revision 2** — document metadata only, never a service, database, directory or release suffix ([naming](docs/architecture/architecture.md#naming)) |
+| Decision | Rebuild the owned application implementation completely with the fixed technology selections ([ADR-001](docs/architecture/architecture.md#adr-001)); existing code in this checkout is outside the new build closure |
+| Design status | Detailed design: DD-01 through DD-10 and ADR-001 through ADR-004 are adopted design decisions, not implemented behavior |
+| Implementation status | Not started against the V4.0 baseline; see [Repository state](#repository-state) for what exists today |
+| Runtime qualification | All fourteen runtime gates G-01 through G-14 are `NOT_RUN`; the release qualification record is `NOT_VERIFIED` ([acceptance](docs/architecture/delivery.md#acceptance), [qualification lock](docs/architecture/platform.md#deployment-inputs)) |
+| Pending inputs | Environment inputs ENV-01 through ENV-10 (machines, failure domains, prices/caps, IdP/Pagix/Studio contracts, RPO/RTO, on-call) are required before release and do not reopen technology selection ([deployment inputs](docs/architecture/platform.md#deployment-inputs)) |
+| Initial versions | REST/SSE and Protobuf protocols begin at **v1**; the first stable application release target is **1.0.0** |
 
-The architecture supports independent local implementation and controlled proofs. It does not establish real provider access, Pagix endpoint availability, sandbox isolation, publication, Studio runtime compatibility or production readiness. Detailed-design freezes and runtime acceptance remain separate gates.
+Adopted design decisions, observed implementation state, pending inputs and runtime qualification evidence are four different things throughout this repository. Historical approvals and proofs under [`docs/archive/`](docs/archive/) belong to the previous architecture and do not qualify the replacement.
 
 ## First milestone
 
-Deliver one new static content component through the complete business chain:
+The first milestone delivers one static component through the complete business chain. Each step is a separate lifecycle with its own identity, resources and clock ([lifecycles](docs/architecture/architecture.md#diagram-lifecycles)):
 
-1. Accept an authorized tenant-scoped request, with observable status and cancellation.
-2. Produce a bounded DeepSeek plan and complete component package source through the qualified Pi coding profile.
-3. Independently validate the source, perform at most the configured bounded repair, and register a usable candidate through Pagix.
-4. Edit source and supported properties in Studio, save with revision checks, and preview the matching source snapshot.
-5. Freeze the source and package version; certify the npm package, browser module, styles and exact evidence.
-6. Obtain platform-maintainer approval for that immutable release subject.
-7. Publish through Pagix, verify both npm and browser-delivery receipts, then activate the catalog.
-8. Load and insert the component into the unchanged qualified Studio deployment, save the page and reopen the same locked release.
+1. **Prepare** — a prompt becomes bounded structured requirements; at most two grouped clarification rounds of at most three questions each; selected sources, brand and assets freeze into a brief with content digests (M1-15 to M1-17).
+2. **Generate** — a bounded agent team produces complete, editable component source under one shared operation budget; Pi is the only source writer (M1-02, M1-03, M1-11).
+3. **Edit and preview** — conditional source save with expected revision; preview of exactly that revision in an isolated, separate-origin sandbox (M1-04).
+4. **Certify** — an independent Validator with a trusted observer certifies npm, browser module, CSS and Puck/host compatibility; candidate reports never certify (M1-05).
+5. **Approve** — a maintainer approves an exact `ReleaseSubject` binding source, version, artifact hashes, profiles and evidence; any changed field needs a new decision (M1-06).
+6. **Publish and activate** — npm and browser/CSS publish through Pagix with both receipts verified before activation; a single `UNKNOWN` target keeps the release uncertain (M1-07, M1-08).
+7. **Use in Studio** — new compatible components load without rebuilding the host; saved pages keep the exact release lock and never silently upgrade (M1-09, M1-10).
 
-A source archive, successful model turn, package build or npm-only publication does not complete this milestone. Approval, publication, activation and successful browser use are separate outcomes. See [requirements](docs/architecture/architecture.md#s-1-2) and the [acceptance scenario](docs/architecture/plans/qualification.md#s-13-2).
+Operations are tenant-scoped, observable, cancellable and recoverable under original identities across replicas and failures (M1-01, M1-12 to M1-14). The seven capability requirements CAP-01 through CAP-07 (multi-agent, RAG/vectors, long-term memory, MCP marketplace, queue/events, Fx/configuration, Kubernetes) are part of the final scope; staging the work does not remove them. Details: [requirements](docs/architecture/requirements.md) and [user scenarios](docs/architecture/requirements.md#scenarios).
 
-## Services and execution boundaries
+## Target architecture
 
-The component chain has four independently built and deployed long-running application services.
+The target is eight long-running application services on Kubernetes ([service catalog](docs/architecture/architecture.md#services)). All eight are **planned**; see [Repository state](#repository-state) for what exists.
 
-| Canonical service | Runtime | Planned source path | Responsibility |
+| Service identity | Technology | Responsibility |
+| --- | --- | --- |
+| `anvilkit-agent-api` | Go, Gin | Authentication, OpenAPI validation, command mapping, authorized queries, SSE; no business database or provider key |
+| `anvilkit-agent-control` | Go, gRPC, Fx | Admission, cost, execution and effect registries, artifacts, projections, Temporal relay; sole writer of the Control database |
+| `anvilkit-agent-workflow` | Go, Temporal SDK | Fixed workflows (Preparation, Generation, PreviewBuild, Release, LocalCheck), bounded Runner, Activities, launch adapters |
+| `anvilkit-agent-model-proxy` | TypeScript, pi-ai | Controlled provider adapter, stream normalization, usage capture; sole runtime holder of model provider keys |
+| `anvilkit-agent-knowledge` | TypeScript, LangChain, native Qdrant client | Sources and ACL, ingestion, snapshots, retrieval, `MemoryFact`, projections, background tasks |
+| `anvilkit-agent-mcp` | Go, official MCP SDK, Casbin | Reviewed catalog, grants, tool effects, protocol and SSRF policy |
+| `anvilkit-agent-background-worker` | TypeScript, BullMQ | Claims durable Knowledge/MCP requests, runs bounded handlers, submits results; no domain database |
+| `anvilkit-agent-inference` | Python, FastAPI, FlagEmbedding | Fixed embedding and reranking models with bounded batching; no business database or Qdrant access |
+
+Codegen, Validator, Preview, Docling parser and migration are short-lived Job classes, not services. Temporal, PostgreSQL (CloudNativePG), Qdrant, Valkey, NATS JetStream, Apollo, OpenBao, RKE2/Cilium/Envoy Gateway and Rook-Ceph are infrastructure. Pagix keeps commercial, source, review, publication and activation authority; Studio keeps the page host and page writes; both are reached only through their authenticated APIs.
+
+Governing decisions the entry points must not contradict:
+
+- **Complete replacement.** New v1 contracts, empty target databases with `00001_init.sql` migrations, new Temporal histories and newly generated clients. Shared names never authorize reuse of old handlers, DTOs, SQL or executors. Business records or unresolved external obligations move only when an actual inventory shows they must, through separately verified import and handover work ([delivery](docs/architecture/delivery.md#implementation)).
+- **Fixed technology, conditional alternatives.** The [60-decision matrix](docs/architecture/technology.md#choices) fixes each primary and its alternative. Primary-product replicas, quorum and failover provide high availability; an alternative is a planned replacement requiring migration and requalification, never an automatic heterogeneous standby.
+- **Single authorities.** Temporal owns business progression; LangGraph coordinates bounded collaboration inside one execution attempt; Pi is the sole source-code writer; Control owns admission, costs, external effects and result acceptance ([ADR-002](docs/architecture/architecture.md#adr-002)). Knowledge owns source authorization and `MemoryFact`; MCP owns the reviewed catalog and explicit grants with the Control revocation barrier. Vector indexes, PostgresStore, caches and queues are rebuildable projections, never authorization or business-fact authorities.
+- **Untrusted content and single-use sends.** Candidate code and retrieved or tool-returned content are untrusted; provider keys live only in Model Proxy and job scope credentials only in the trusted sidecar; validation is independent; every physical model or tool send needs its own single-use Control admission; `UNKNOWN` outcomes are reconciled under their original identity, never resent under a new one ([security](docs/architecture/security.md), [ADR-003](docs/architecture/architecture.md#adr-003)).
+
+<a id="repository-state"></a>
+
+## Repository state
+
+Verified against the checkout on 2026-09-14. Inspect the tree before relying on this table; it records observed state, not the target.
+
+| Path | Observed content | Relation to the V4.0 target |
+| --- | --- | --- |
+| `docs/architecture/` | Eleven architecture documents plus [`docs/README.md`](docs/README.md) | Current authority |
+| `docs/archive/` | Previous architecture (v3.12), detailed designs DD-01–DD-06, plans, tasks and audit records | Historical reference only; its approvals and test results do not carry over |
+| `services/agent/api`, `services/agent/control`, `services/agent/workflow` | Git submodules with standalone Go 1.27 modules implementing the previous architecture's local-check and preparation flow; each builds with `GOWORK=off go build -mod=readonly ./...` | Legacy implementation outside the new build closure; retained, not a starting point for the rewrite |
+| `services/agent/model-proxy`, `jobs/shared/access-sidecar` | Git submodules containing README and LICENSE only | Planned; no implementation |
+| `contracts/` (gitignored) | Previous architecture's JSON Schemas, fixtures, `agent-api-v1` OpenAPI, `control-v1.proto` and SQL | Legacy layout; the target sources are `contracts/openapi/agent.yaml`, `contracts/proto/anvilkit/{control,knowledge,mcp}/v1/` and `contracts/{jobs,components,events}` ([contract sources](docs/architecture/contracts.md#1-contract-sources-and-generated-bindings)) |
+| `tools/` | Previous architecture's checkers, artifact builders and behavioural proofs | Only `tools/check-docs.py` is usable as a read-only documentation check today; see below |
+| `deploy/local/`, `compose.yaml` (untracked) | Docker Compose profile for the legacy local-check flow (PostgreSQL 18.6, Temporal 1.31.2) | Legacy; not a startup procedure for the replacement system |
+| `packages/`, `apps/`, root manifests | pnpm/Turborepo starter: `packages/biome-config` (placeholder scripts), `packages/typescript-config`; `apps/` is empty | Starter only; no application package |
+
+Not present in any form: `anvilkit-agent-knowledge`, `anvilkit-agent-mcp`, `anvilkit-agent-background-worker`, `anvilkit-agent-inference`, the `jobs/{codegen,validator,preview,parser,migration}` classes, `packages/{generated-clients,profile-schemas}`, `deploy/{charts,gitops,policies}` and `tests/`. The planned layout is the text block under [start with an empty target project](docs/architecture/delivery.md#start-with-an-empty-target-project).
+
+## Reading route
+
+Start with [`docs/README.md`](docs/README.md), then read in this order:
+
+| Document | Read it for |
+| --- | --- |
+| [Architecture](docs/architecture/architecture.md) | Scope, the eight services and dependency direction, lifecycles, naming and initial versions, ADR-001 to ADR-004, terminology |
+| [Requirements](docs/architecture/requirements.md) | Product profile, M1-01 to M1-17, CAP-01 to CAP-07, UI constraints, scenarios |
+| [Technology](docs/architecture/technology.md) | The 60 primary/alternative choices, inherited version targets, licensing boundaries |
+| [Contracts](docs/architecture/contracts.md) | Contract sources, public endpoints, internal method groups, values and errors, events/SSE, data ownership, lock ranks |
+| [Execution](docs/architecture/execution.md) | DD-01 Workflow, DD-02 Control and single-use dispatch, DD-03 agent harness and isolation |
+| [Components](docs/architecture/components.md) | DD-04 build and certification, DD-05 Studio, DD-06 Pagix ports |
+| [Knowledge](docs/architecture/knowledge.md) | DD-07 ingestion, vectors, retrieval, memory facts |
+| [MCP](docs/architecture/mcp.md) | DD-08 catalog, grants, revocation barrier, tool calls, SSRF |
+| [Platform](docs/architecture/platform.md) | DD-09 queues/events/Fx/configuration, DD-10 Kubernetes/HA/recovery, ENV inputs, operations |
+| [Security](docs/architecture/security.md) | Trust regions, SEC-01 to SEC-12, logging and deletion, supply chain |
+| [Delivery](docs/architecture/delivery.md) | Stages R0–R6, definition of complete replacement, gates G-01 to G-14, traceability, evaluation |
+
+## Commands
+
+Every command below was checked on 2026-09-14 for existence and effect. None of them starts, builds or qualifies the replacement system.
+
+| Command | Effect | Prerequisites | Writes files |
 | --- | --- | --- | --- |
-| `anvilkit-agent-api` | Go | `services/agent/api` | Public scoped commands, operation status, projections and SSE; no cost-ledger write credential |
-| `anvilkit-agent-control` | Go | `services/agent/control` | Attempts, execution authority, permits, cost reservations, per-call admission, durable intents and artifact authorization |
-| `anvilkit-agent-workflow` | Go + Temporal SDK | `services/agent/workflow` | Durable progression, Runner, Activities, job supervision and Pagix release coordination |
-| `anvilkit-agent-model-proxy` | TypeScript + `pi-ai` | `services/agent/model-proxy` | Provider credential custody, qualified model transport and per-physical-request Control admission |
+| `python3 tools/check-docs.py` | Checks Markdown fences, table widths, relative links and anchors in `README.md`, `AGENTS.md`, `CLAUDE.md` and every file under `docs/`, then JSON Schemas and fixtures under `contracts/` | Python 3 with `jsonschema` and `referencing` | No |
+| `pnpm build`, `pnpm lint`, `pnpm check-types`, `pnpm dev` | Delegate to Turbo; today `build`, `lint` and `dev` reach only the placeholder `echo` scripts of `packages/biome-config`, and `check-types` matches no package | `pnpm@12.3.4`, Node `>=22`, installed `node_modules` | Turbo logs and cache under `.turbo/` |
+| `GOWORK=off go build -mod=readonly ./...` in each Go submodule | Builds the legacy service module | Go 1.27 | Go build cache only |
+| `python3 tools/run-verification.py` (any mode, including `--static`) | Legacy runner that regenerates derived contract artifacts before checking, then runs container/browser proofs | Docker, protoc, Chrome, Studio checkout and more | **Yes** — not a read-only check |
 
-Untrusted component work runs in separate on-demand jobs.
+`tools/check-docs.py` scans `docs/archive/` as well, so it reports several hundred historical broken links that are not defects in the current documents; read its output per file. Its cross-checks against `docs/design/dd-03-execution.md` and `docs/architecture/plans/operations.md` are skipped silently because those files no longer exist. The other `tools/` checkers and the local Compose profile ([`deploy/local/README.md`](deploy/local/README.md)) belong to the previous architecture and read paths that have moved; treat them as legacy until the R0 contract work replaces them.
 
-| Execution unit | Runtime | Planned source path | Responsibility |
-| --- | --- | --- | --- |
-| `anvilkit-component-codegen` | Node / Pi coding SDK | `jobs/component/codegen` | Complete source generation and bounded repair; one inner coding loop per Attempt |
-| `anvilkit-component-validator` | Node / component toolchain | `jobs/component/validator` | Independent candidate validation and protected final certification |
-| `anvilkit-component-preview` | Node / browser tooling | `jobs/component/preview` | Short-lived, revision-bound build and preview; no model/publication permission |
-| `anvilkit-job-access-proxy` | Go sidecar | `jobs/shared/access-sidecar` | Trusted per-job holder of scope credentials and allowlisted model/artifact relay. Path per owner decision 2026-09-12 (submodule repository `anvilkit-job-access-sidecar`, superseding `jobs/shared/access-proxy`); the unit name is unchanged |
+## Known limitations for the next phase
 
-The execution adapter is internal code at `services/agent/workflow/internal/execution`. The Runner is also internal to the Workflow service. Neither is an additional service. Temporal, PostgreSQL, Kubernetes, gVisor, the enforcing CNI and artifact storage are infrastructure dependencies.
+These findings are recorded here so they stay visible; rewriting the entry points does not resolve them.
 
-`anvilkit-export-worker` is a separate domain, with future placement at `services/export/worker`. Export redesign and an empty export scaffold are outside this component milestone.
-
-## Ownership and safety invariants
-
-- **Pagix is the external business authority.** Consume authenticated APIs for team/business authorization, source revisions and leases, commercial credits, review, publication and activation. Agent retains scoped references and verified receipts; it does not access Pagix databases or implement its publisher.
-- **Temporal owns business progression.** `GenerationWorkflow`, `PreviewBuildWorkflow` and `ReleaseWorkflow` have separate lifetimes. Go Workflow code is deterministic; I/O belongs in Activities/jobs. Control admission and start/change relays do not become a second scheduler.
-- **Control owns execution and actual costs.** Every physical paid request requires current admission and one successful dispatch claim. Duplicate claims do not grant another send; trusted not-sent evidence terminates the original send authority and a replacement needs a new call identity with a `supersedes` link and fresh admission. Uncertain provider or business effects retain their original identities and exposure until reconciled.
-- **Intake and execution are distinct.** Durable intake precedes remote mutations. Initial queue waiting holds no draft lease or commercial reservation. Protected Workflow bootstrap obtains a permit, rechecks the original source/scope, confirms lease and funding, then enables planning/coding. Retries, holds and permit reacquisition do not reset the active deadline.
-- **Candidate code remains isolated.** Provider keys stay in Model Proxy; job credentials stay in the trusted sidecar. Candidate jobs have no production business, provider or npm credentials. Current Attempt/instance, lease, deadline and execution/recovery fences govern calls and result acceptance. Every build, test or SSR process running candidate code is untrusted and low-privilege, with no verdict-write or submission access; a trusted observer validates dynamic assertions and no trusted process imports a candidate module.
-- **Validation and approval bind exact artifacts.** Reuse the protected generator/build closure and independent validator. Source, version, build/host profile, npm/browser/CSS identities and evidence form the release subject. Both verified publication outputs must precede activation.
-- **Studio owns browser consumption and page writes.** Use the actual shared React/Puck runtime and manifest-listed styles. Persist Puck Data and an exact remote release lock in one page revision through the existing page API; preserve `root.props.componentLibrary`. Catalog updates do not silently upgrade saved pages.
-- **Credits and costs remain separate.** Pagix commercial credits are not provider currency. Actual failed, canceled, repaired and uncertain work stays attributable. Pending settlement does not trigger duplicate generation.
-- **Changes and recovery preserve issued effects.** Definition changes, holds and cancellation fence new dispatch and reconcile work already issued; the first valid cancel or hold always persists and fences through a reserved control-command lane, independent of business quotas. A timeout, expired lease or missing Worker is not proof that a process stopped or an external effect did not occur.
-- **Status is evidence-backed.** Durable SSE uses `(operationId, eventSeq)`, with transactional projection/event updates and authorized replay/snapshot recovery. Model token progress cannot confer business success.
-- **Telemetry is diagnostic, not authoritative.** Every unit emits versioned structured JSON logs correlated by `operationId` and W3C trace context under the [unified logging contract](docs/architecture/plans/operations.md#logging); candidate output is counted and classified but never carried in any log field, and its bounded content stays in a private diagnostics artifact behind a separate authorization; logs never replace ledgers, receipts or durable events.
-
-## Technology and model profiles
-
-Preserve the existing API, Control and Workflow Git submodules. Each service must build from a standalone clone using its own Go module and retained generated bindings under its internal/contracts; the parent owns contract sources and generation/compatibility/integration verification. No parent internal-package imports, new shared repository or publishing system are required. Use pnpm/Turborepo for TypeScript and the Go toolchain directly for Go. Studio, Pagix and `anvilkit-components` stay separate repositories; consume their declared APIs/artifacts.
-
-Public interfaces use OpenAPI. Private Control interfaces use generated Protobuf/gRPC contracts with Connect-Go/Buf and qualified Go/TypeScript clients. Node jobs use versioned JSON envelopes. Shared public/job values originate from `contracts/values/common-v1.schema.json`; money and 64-bit counters cross JavaScript as bounded decimal strings. Generated clients and compatibility fixtures must precede dependent implementations.
-
-DeepSeek planning and the Codex coding-model role are distinct from the coding executor. Version 3.12 specifies `deepseek-v4-pro` as the planning pilot route and `gpt-5.3-codex` through `pi-ai`'s `openai` provider with a platform-owned API key for coding. The proposed initial executor is the Pi coding SDK inside the Codegen job. The subscription/OAuth `openai-codex` provider and native Codex SDK/executable are not the initial execution profile; native execution remains a separately qualified future alternative. No nested loop or automatic model/executor fallback is selected.
-
-These are architecture profile selections, not confirmation of account availability or paid-execution readiness. Exact SDK/dependency/image locks, model/account/adapter behavior, allowed provider data, native usage, cancellation and currency limits must qualify before real calls. Retries and compaction stay disabled unless every enabled physical call is intercepted and admitted.
-
-Node 24 LTS is the execution baseline. Self-hosted Temporal, separate Agent/Temporal PostgreSQL roles, and Kubernetes Jobs with native sidecars, pinned gVisor and an enforcing CNI require exact environment qualification. Reuse the existing component generator and frozen Rslib 0.x package profile; qualify browser output separately. See [technology and repository structure](docs/architecture/architecture.md#s-3).
-
-## Repository layout
-
-Current documentation entry points are:
-
-- [Approved initial development plan](docs/plans/0001-initial-three-service-development-plan-0910-1221.md), [approved contract definitions](docs/plans/0001-first-stage-contract-definitions.md) and [approval record](docs/architecture/audits/first-stage-approval-2026-09-10.md): W1-W3 first, then the bounded local Temporal flow after contract synchronization and environment readiness.
-
-- [Architecture v3.12](docs/architecture/architecture.md): overview and core constraints with links to detail owners.
-- [Codex repository guide](AGENTS.md): instructions for repository work.
-- [Codex documentation index](docs/architecture/README.md), [design](docs/design/design.md), [interfaces](docs/design/interfaces.md) and [qualification](docs/architecture/plans/qualification.md): draft supplements.
-
-Additional planned paths from the [implementation layout](docs/architecture/plans/implementation-plan.md#s-3-2) are shown below. Most remain planned implementation locations. The [contract inventory](docs/design/contracts.md) identifies the document specifications now extracted into contract paths; generated clients and implementations remain pending.
-
-| Planned path | Purpose |
-| --- | --- |
-| `internal/integrations/pagix` | Typed guarded `PagixPort` and actual API mappings |
-| Each service `internal/contracts`; consumed TypeScript outputs | Generated bindings from parent-owned contract sources; retain Go consumer bindings for standalone clones |
-| `contracts/values`, `contracts/proto`, `contracts/openapi`, `contracts/jobs` | Shared values and distinct public/private/job wire contracts |
-| `contracts/definitions`, `contracts/actions` | Bounded definition/policy/binding schemas, descriptors and fixtures |
-| `contracts/telemetry` | Structured log-record schema and telemetry design fixtures |
-| `workflows/definitions/<family>` | Reviewed generation/release definitions; component family first |
-| `packages/component-toolchain`, `packages/job-protocol` | Shared build/certification and Node protocol helpers |
-| `deploy/<environment>`, `releases` | Environment profiles and immutable compatibility/release manifests |
-| `docs/architecture`, `docs/design`, `docs/architecture/plans`, `docs/architecture/audits`, `tools` | Overview, detailed designs, readiness plans, audit records and reproducible utilities |
-
-## Working with the current starter
-
-All documentation and comments are English.
-
-The root manifest specifies `pnpm@12.3.4` and Node `>=22`. This starter engine range is separate from the architecture's qualified Node 24 execution profile. Use the pinned package manager when working on the existing workspace.
-
-| Root command | Current behavior |
-| --- | --- |
-| `pnpm dev` | Delegates workspace development tasks to Turbo; no Agent startup is implemented |
-| `pnpm build` | Runs existing workspace build tasks |
-| `pnpm lint` | Delegates workspace lint tasks; inspect each current task for writes before running |
-| `pnpm check-types` | Delegates current workspace type-check tasks |
-
-The historical web-starter description is not the current checkout: apps/web is absent. Workspace package checks do not establish Agent service readiness. The commands above describe existing scripts; use the [local Compose instructions](deploy/local/README.md) to start the implemented local Agent flow.
-
-For later implementation, service-specific startup, configuration, build and readiness instructions belong in each service README. Go commands such as `go build ./...` and `go test ./...` run in each service repository after its own Go module exists, with `GOWORK=off` and locked dependencies. Component qualification must use the frozen component repository's actual scripts and support closure, rather than assuming starter commands validate generated packages.
-
-Documentation-only changes can be checked through Markdown/link validation and file-diff inspection without installing dependencies or running mutating build/lint tasks; `python3 tools/check-docs.py` runs the link, anchor, table, JSON Schema and fixture checks locally.
-
-## Implementation and qualification gates
-
-| Stage | Required outcome |
-| --- | --- |
-| P0-A | Shared contracts, bounded Runner/descriptor validation, fixed job profiles, controlled component fixtures and the real Studio production-build host/page-lock proof |
-| P0-B | Real bounded planning/coding, protected bootstrap/cleanup, atomic admission, independent source validation and real Pagix candidate registration |
-| P1-A | Revision-checked browser editing, isolated matching previews and frozen dual-output certification |
-| P1-B | Real maintainer approval, publication/activation APIs and component insertion/save/reopen in the unchanged qualified Studio deployment |
-| P1-C | Supported live changes, cancellation/unknown-effect recovery, replicated limits and demonstrated restore/operating behavior |
-
-The [readiness plan](docs/architecture/plans/implementation-plan.md#s-14-2) assigns five detailed designs and one external integration contract:
-
-| Design | Ownership |
-| --- | --- |
-| DD-01 | Workflow/Runner, protected bootstrap/lease supervision/cleanup, definitions, policies, bindings and live changes |
-| DD-02 | Control, common values, public/private contracts, transactional model, authorization, costs and SSE |
-| DD-03 | Execution adapter, Kubernetes sandbox, Pi profile, job/result envelopes and sidecar credentials |
-| DD-04 | Component source/build closure, editing, preview, protected registration and certification |
-| DD-05 | Actual Studio host bridge/ABI, styles, page locks and compatibility |
-| DD-06 | Actual Pagix API paths, delegated authorization, revisions, idempotency and receipt/query semantics |
-
-Freeze shared contracts before dependent implementation and the relevant design before its affected implementation. Qualify sandbox isolation before any untrusted execution, including previews. Start the real Studio production-build proof in P0-A and freeze its ABI before production loader implementation.
-
-Missing Pagix capabilities block their own generation, publication or host-upgrade path. Missing paid-route/data-policy/budget inputs deny real model dispatch. Local fixtures cannot authorize real effects. Pilot concurrency, preview latency, retention and RTO/RPO numbers are configurable targets requiring evidence, not measured guarantees inferred from audience size. See [readiness gates](docs/architecture/plans/implementation-plan.md#s-14-3) and [activation inputs](docs/architecture/plans/implementation-plan.md#s-15-1).
-
-## Deferred scope
-
-The first milestone covers static `content` packages. Nested editable slots/composition, forms, external data, complex animation, page/image agents and export redesign are deferred. So are generic multi-agent graphs, autonomous subagents, scheduled paid triggers, arbitrary workflow migration, visual workflow editing, a browser IDE/CRDT source editor, retrieval/vector/long-term-memory systems, a second executor and additional speculative platform services.
-
-Pagix's internal database, billing, publisher, registry provisioning and deployment remain outside this repository's architecture scope. Wider component visibility and host upgrades have separate qualification gates; the initial visibility policy is team-private. Deferred features do not require empty scaffolds.
+- **Contract coverage.** The [contract sources](docs/architecture/contracts.md#1-contract-sources-and-generated-bindings) and [public endpoints](docs/architecture/contracts.md#api) do not yet name explicit contracts for knowledge-authorization management, MCP review and revocation, or Model Proxy's own communication surface; R0 must add them before dependent implementation.
+- **Documentation tooling.** `tools/check-docs.py` and the other checkers depend on previous-architecture paths and skip missing inputs without failing; a replacement check must fail loudly on missing inputs.
+- **Recovery epoch timing.** The [recovery diagram](docs/architecture/platform.md#diagram-recovery) and the [incident table](docs/architecture/platform.md#incident-runbook-entry-points) establish the new recovery epoch after enumeration and reconciliation, while the prose in [platform backup and recovery](docs/architecture/platform.md#6-backup-and-recovery) and [DD-02 obligation classes](docs/architecture/execution.md#5-five-durable-external-obligation-classes) establishes it before enumeration; the owners must reconcile the order.
+- **Directory example.** The layout block in [delivery](docs/architecture/delivery.md#start-with-an-empty-target-project) still lists `docs/{architecture,design,adr}`, although the documentation package is consolidated into `docs/architecture/` with ADRs embedded in `architecture.md`.

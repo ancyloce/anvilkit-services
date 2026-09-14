@@ -1,111 +1,100 @@
-# Codex repository guide
+# Repository guide for development agents
 
-## Source of truth and scope
+These are the shared working rules for any development agent (Claude, Codex or another tool) and for people working in `anvilkit-services`. This file is complete on its own; `CLAUDE.md` only points here. It is **not** a system prompt for the platform's own candidate jobs: [DD-03](docs/architecture/execution.md#6-pi-resources-and-model-stream) forbids trusting a candidate's `AGENTS.md`, `.pi` files or other discovered resources.
 
-Read [AnvilKit Agent Platform Architecture v3.12](docs/architecture/architecture.md) before architecture-sensitive work. Its [active decisions](docs/architecture/architecture.md#s-3), [detail owners](docs/architecture/README.md#authoritative-sources) and [freeze gates](docs/architecture/plans/implementation-plan.md#s-14-3) govern this repository. [Historical decisions](docs/architecture/audits/architecture-history.md) are explicitly superseded where indicated; do not restore the former Go Model Proxy, Nx baseline, service aliases or pre-v3.11 intake order from those records.
+## 1. Read first
 
-The [Codex documentation index](docs/architecture/README.md) provides a focused reading route, design constraints, interface requirements and qualification checklist. These supplement the architecture's DD-01–DD-06 owners. CD-01 through CD-05 now have scoped design approval; other scopes remain draft, and approval is not service implementation or runtime qualification. Distinguish confirmed decisions, design baselines, pilot defaults and activation inputs when documenting or implementing behavior.
+1. This file.
+2. [`docs/README.md`](docs/README.md), then [`docs/architecture/architecture.md`](docs/architecture/architecture.md): scope and governing decisions, the [service catalog](docs/architecture/architecture.md#services), [naming and initial versions](docs/architecture/architecture.md#naming), [ADR-001 to ADR-004](docs/architecture/architecture.md#decisions) and [terminology](docs/architecture/architecture.md#terms).
+3. The owning document for the task from the [navigation table](#navigation) below.
+4. [`docs/architecture/security.md`](docs/architecture/security.md) for any task that touches credentials, candidate code, retrieved or tool-returned content, model or tool sends, or external effects.
+5. [`docs/architecture/delivery.md`](docs/architecture/delivery.md) for the stage (R0–R6) and gate (G-01 to G-14) status a task may claim.
 
-Keep `docs/architecture/architecture.md` as the overview and reading entry point. Group detailed designs in `docs/design/`, platform readiness plans in `docs/architecture/plans/` and approved execution plans in `docs/plans/`, and audit/history records in `docs/architecture/audits/`; keep the hierarchy shallow and update affected links when moving files.
+Authority order: `docs/architecture/` defines the target; the checkout (manifests, submodules, tools) defines observed state and never overrides the target; `docs/archive/` is historical and establishes nothing about the replacement. Distinguish four kinds of statement in everything you write: adopted design decision, observed implementation state, pending input (ENV-01 to ENV-10), and runtime qualification evidence (G-01 to G-14, all `NOT_RUN`; release record `NOT_VERIFIED`).
 
-This file guides Codex working on the repository. It is not a system prompt for the platform's candidate jobs: [DD-03 trusted bootstrap](docs/design/dd-03-execution.md#s-8-1) prohibits automatically trusting candidate `AGENTS.md` files or other discovered resources.
+## 2. Repository state
 
-## Repository state at initialization
+Observed on 2026-09-14; re-inspect before relying on it. Details and the exact table are in [README.md](README.md#repository-state).
 
-The repository contains a pnpm/Turborepo starter and shared Biome/TypeScript configuration packages. The previously described apps/web is absent from the inspected checkout. The root manifest specifies `pnpm@12.3.4` and Node `>=22`. The architecture's proposed execution runtime is Node 24 LTS; a manifest engine range is not a qualified runtime lock.
+- Root: pnpm/Turborepo starter (`pnpm@12.3.4`, Node `>=22`); `packages/biome-config` and `packages/typescript-config` only; `apps/` empty.
+- Submodules: `services/agent/{api,control,workflow}` are standalone Go 1.27 modules implementing the previous architecture; `services/agent/model-proxy` and `jobs/shared/access-sidecar` hold README and LICENSE only.
+- `docs/`, `contracts/`, `outputs/` and `logs/` are gitignored. A fresh clone or Git worktree does not contain the architecture documents or the legacy contracts; documentation and contract work happens in the primary checkout.
+- `contracts/`, `tools/`, `deploy/local/` and `compose.yaml` belong to the previous architecture. None of the eight V4.0 services, Job classes, `tests/` or `deploy/{charts,gitops,policies}` exists yet.
 
-No Agent service, job, service Go module, generated consumer bundle or deployment is established by this documentation update. Paths below are planned locations. Inspect current files before subsequent work; this paragraph records the initialization state, not a permanent assertion about the repository.
+## 3. Task scope and the user's work
 
-## Architecture and placement
+- Run `git status --short` before editing. Preserve modified, untracked and submodule changes you did not make; report them, never revert or "clean" them.
+- Do exactly the requested scope. A documentation task does not authorize code, contract, dependency, configuration, deployment or scaffold changes; a code task does not authorize rewriting documents or renaming unrelated files. Work the task does not assign gets no empty scaffolds.
+- Do not delete legacy code or change submodule arrangements unless the task asks for that exact action.
+- If the request is unclear, ask before expanding it. Do not overengineer, overcomplicate or overdesign; do not expand requirements through speculation.
+- Prefer the smallest implementation scope that produces useful, verifiable behavior. Reuse existing contracts, structures, tools and dependencies. Do not propose general-purpose frameworks, abstraction layers, plugin systems, configuration platforms or cross-repository release systems without a demonstrated requirement. Do not introduce speculative compatibility paths, retry mechanisms or infrastructure. Organize work around observable behavior rather than one task per RPC, table, schema or file. Do not split cohesive functionality into unnecessary layers, tiny wrappers or excessive files. Introduce shared code only for an actual consumer with a clear reason.
 
-| Canonical unit | Planned path | Responsibility |
-| --- | --- | --- |
-| `anvilkit-agent-api` | `services/agent/api` | Go public commands, status and SSE; no cost-authority write role |
-| `anvilkit-agent-control` | `services/agent/control` | Go execution authority, attempts, admission, actual costs, permits, durable intents and artifact authorization |
-| `anvilkit-agent-workflow` | `services/agent/workflow` | Go Temporal Worker with `GenerationWorkflow`, `PreviewBuildWorkflow`, `ReleaseWorkflow`, Runner and Activities |
-| Execution adapter | `services/agent/workflow/internal/execution` | Internal Go job launch/query/stop and recovery; no separate daemon |
-| `anvilkit-agent-model-proxy` | `services/agent/model-proxy` | TypeScript service using `@earendil-works/pi-ai`; provider credential custody and admitted transport |
-| `anvilkit-component-codegen` | `jobs/component/codegen` | Node/Pi source generation and bounded repair |
-| `anvilkit-component-validator` | `jobs/component/validator` | Independent candidate validation and protected final certification |
-| `anvilkit-component-preview` | `jobs/component/preview` | Isolated revision-bound preview; no model/publication permission |
-| `anvilkit-job-access-proxy` | `jobs/shared/access-sidecar` | Trusted Go sidecar per job; scoped authenticated model/artifact relay. Path per owner decision 2026-09-12 (submodule repository `anvilkit-job-access-sidecar`, superseding `jobs/shared/access-proxy`); the unit name is unchanged |
+## 4. Git is read-only
 
-There are four long-running component-chain services. Temporal, Kubernetes, PostgreSQL and artifact storage are infrastructure; the Runner, adapters and Pi SDKs are code within their named owners. `anvilkit-export-worker` belongs at `services/export/worker` when that separate domain is implemented; export has no M1 scaffold requirement.
+- Never `git commit`, `git push`, or open a PR unless the user explicitly asks in that message (commit/push may also be hook-blocked — a block is the policy working, not an obstacle to route around). Default: leave changes uncommitted and report modified files, flagging those inside submodules.
+- Never stage, amend, rebase, merge, cherry-pick, reset, clean, tag, or switch branches unless asked for that exact action. Never force-push, never push `main`. Read-only git is always fine.
+- Never publish, deploy, or send anything to an external service without task authorization.
 
-Preserve the existing API, Control and Workflow Git submodules. Each service must build from a standalone clone using its own Go module and retained generated bindings under its internal/contracts; the parent owns contract sources and generation/compatibility/integration verification. No parent internal-package imports, new shared repository or publishing system are required. Use pnpm/Turborepo for TypeScript and the Go toolchain directly for Go. The [first-stage approval](docs/architecture/audits/first-stage-approval-2026-09-10.md) supersedes the earlier single-root-module and no-submodule rule; the historical R03 migration must not be executed. Studio, Pagix and `anvilkit-components` remain separate repositories; use their declared API/artifact contracts without cross-repository runtime source imports.
+## 5. Architecture boundaries
 
-All documentation and comments must be in English. CD-01 through CD-05 are approved; do not ask for the same semantic approval again. Synchronize new machine-readable contract mappings and verify consumer agreement before their dependent implementation. W1-W3 precede the bounded local Temporal flow in [DD-01](docs/design/dd-01-workflow.md#first-stage-local-workflow) and [DD-02](docs/design/dd-02-control.md#first-stage-control-contracts). Paid, untrusted and real external effects retain their separate gates.
+- **Eight services, fixed technologies.** The identities are `anvilkit-agent-api`, `-control`, `-workflow`, `-model-proxy`, `-knowledge`, `-mcp`, `-background-worker` and `-inference` ([catalog](docs/architecture/architecture.md#services)). Primaries and conditional alternatives come from the [60-decision matrix](docs/architecture/technology.md#choices); do not implement an alternative beside its primary, and do not reintroduce choices that the matrix lists only as alternatives (for example Connect-Go or Rslib) as primaries.
+- **Complete replacement.** Build from new v1 contracts, empty databases, new Temporal histories and generated clients. Old handlers, DTOs, SQL, executors, submodule internals and business fallbacks are not constraints and not a starting point ([ADR-001](docs/architecture/architecture.md#adr-001), [definition of complete replacement](docs/architecture/delivery.md#definition-of-complete-replacement)). Business-data transfer is a separate verified import task that exists only if an inventory proves records must survive.
+- **Dependency direction.** Go: `cmd -> bootstrap(Fx) -> transport -> application -> domain`; domain code imports no Gin, Fx, gRPC or SQL driver. TypeScript keeps bootstrap/transport/application/domain/adapters/generated boundaries; Python exposes fixed computation. Services build and release independently and share only generated contracts, telemetry fields and immutable profile schemas. Allowed calls are the [communication matrix](docs/architecture/architecture.md#communication-matrix).
+- **Contract ownership.** `contracts/openapi/agent.yaml`, `contracts/proto/anvilkit/{control,knowledge,mcp}/v1/*.proto`, `contracts/openapi/inference.yaml`, `contracts/{jobs,components,events}` are the target sources; bindings are generated (oapi-codegen, Buf, grpc-go/grpc-js, ts-proto) and never hand-maintained or diverged ([contract sources](docs/architecture/contracts.md#1-contract-sources-and-generated-bindings)). Public JSON is not ProtoJSON. Money and 64-bit counters are decimal strings; optional fields are omitted, not null; strict parsing rejects duplicate keys and unknown fields ([values and errors](docs/architecture/contracts.md#4-values-validation-and-errors)). Never reuse Proto field numbers or reinterpret enums. Do not invent Pagix or Studio endpoint paths; [DD-06 ports](docs/architecture/components.md#pagix) are domain contracts until real upstream declarations exist.
+- **Data ownership.** `anvilkit_control`, `anvilkit_knowledge` and `anvilkit_mcp` each have one writing service and separate app/migrator roles; cross-domain references are immutable identifiers, never foreign keys, shared ORM entities or joins. Control's seven lock ranks apply to every mutation; no network, Temporal, storage or Kubernetes I/O under database locks; outbox writes share the domain transaction and inbox commits precede ACK ([transaction rules](docs/architecture/contracts.md#4-transaction-rules)).
+- **Workflow determinism.** Only Temporal advances business steps; Workflow code uses Temporal time/timer/concurrency APIs and no wall clock, goroutines, unordered map decisions or network; I/O lives in Activities and Jobs ([DD-01](docs/architecture/execution.md#workflows)). LangGraph runs only inside a Codegen attempt.
 
-## Invariants to preserve
+## 6. Security invariants
 
-- Pagix alone owns business authorization, source revisions, commercial credits, review, publication and activation through authenticated APIs. Agent stores references and verified receipts, not Pagix tables or a replacement business ledger.
-- Temporal alone advances business steps. Control's admission and start/change relays do not select successors. Workflow code is deterministic; I/O belongs in Activities/jobs.
-- Codex is the retained coding-model role. The initial executor is one Pi loop in the Codegen job. The architecture specifies `pi-ai` provider `openai`, a platform API key and `gpt-5.3-codex`, subject to qualification. Native Codex execution, subscription/OAuth `openai-codex`, nested loops and automatic fallback are not the initial profile.
-- Every physical paid request needs a new successful Control dispatch claim. Duplicate claims never grant another send, including same-owner retries. Unknown dispatch/usage retains exposure; timeouts and process loss do not prove zero cost or authorize redispatch, and `unknown` is never treated as unsent. Trusted not-sent evidence terminates the original send authority; a replacement needs a new `callId`, a `supersedes` link and fresh admission.
-- Only the Model Proxy holds provider keys. Only the trusted sidecar receives job scope credentials. Candidate jobs have no provider, production business or npm credentials. Validate current Attempt, physical instance, lease, execution/recovery generation and deadline at consequential boundaries. Every build, test or SSR process running candidate code is untrusted and low-privilege, with no verdict-write or submission access; the trusted supervisor imports no candidate module and the container carries only `SETUID`, `SETGID` and `SETPCAP`, dropped fail-closed to empty groups/capabilities and `no_new_privs` before candidate exec.
-- Durable intake precedes remote mutations. Initial queue waiting holds no source lease or commercial reservation. Workflow bootstrap obtains a permit, rechecks the original source/scope, confirms the fenced lease and funding, then permits planning/coding. The first-permit deadline never resets. Preparation has no draft and no lease; its lease-free admission is the [DD-02 preparation rule](docs/design/dd-02-control.md#preparation-funding).
-- Cancellation, holds and live definition changes fence new dispatch, preserve issued effects/costs and reconcile original identities. An acknowledgement does not recall an already issued grant. The first valid cancel or hold always persists and fences through a reserved control-command lane, independent of business quotas and idempotent under duplicate commands. Control's seven-rank lock order in [DD-02](docs/design/dd-02-control.md#s-10-3-1) applies to all mutations; no network I/O occurs under database locks.
-- Generation yields complete source; independent validation and matching Pagix candidate registration establish usability. One automatic repair is the pilot default. A trusted observer validates dynamic assertions; candidate reports and exit codes never directly certify. An author cannot weaken protected validation, dependency policy, budgets or coverage to obtain a pass.
-- Source, finalized version, npm/browser/CSS bytes, host profile and evidence form the approval subject. Only a matching current platform-maintainer decision authorizes publication. Both delivery receipts precede activation. Partial or unknown effects retain their original operation IDs.
-- Studio owns the runtime loader and existing page write path. Save Puck Data and the exact remote release lock atomically; preserve `root.props.componentLibrary`. New compatible components must load without another Studio deployment. Matching React/Puck version strings do not establish shared runtime identity.
-- Commercial credits and actual platform costs are separate. A candidate may have settlement pending; billing uncertainty must not trigger regeneration. Development integration runs on the [DD-02 test-billing amendment](docs/design/dd-02-control.md#test-billing) (owner decision 2026-09-12): test credits are neither commercial credits nor actual-cost budgets, and no real customer is charged.
-- Durable SSE uses `(operationId, eventSeq)`, committed with the projection under the operation lock. Transient tokens do not advance that cursor. Replay/snapshot reads require current disclosure authorization.
-- Telemetry follows the [unified logging contract](docs/architecture/plans/operations.md#logging): one completion or failure summary per executed call attempt, `operationId` on every record about an operation, trace context that never confers identity, candidate stdout counted and classified but never carried in any log field, and no tokens, prompts, source, reconnect cursors or provider bodies in any log. Diagnostic content lives in private artifacts behind a separate authorization, referenced by an opaque `diagnosticsRef` that carries no capability. Logs are diagnostic, never evidence.
+Every change must preserve these; each links to its owning section.
 
-## Contract and design ownership
+- **Single-use physical send.** Every physical model or tool send needs its own `AdmitModel`/`AdmitTool` claim; only the first successful claim returns `dispatchAllowed=true`. Lost responses, SDK/transport retries, graph checkpoints, TTLs, lease expiry and process restarts never recreate permission. `UNKNOWN` is reconciled under the original identity; a replacement send needs independently checkable not-sent evidence and fresh admission. Missing prices or caps deny the paid route ([DD-02](docs/architecture/execution.md#control)).
+- **Credential isolation.** Provider keys exist only in Model Proxy; job scope credentials only in the trusted access sidecar; MCP upstream credentials only in the secret platform or qualified connection storage. Candidate Jobs have no production credentials, Kubernetes token, business database or direct network egress. Inbound AnvilKit tokens are never forwarded upstream ([DD-03](docs/architecture/execution.md#agent-harness), [DD-08](docs/architecture/mcp.md#mcp)).
+- **Untrusted content.** Candidate code, parsed documents, retrieved text, tool results and model output are data, never instructions or configuration. Trusted supervisor, observer and finalizer processes never import candidate modules; candidate build, test and SSR run low-privilege with no verdict or submission access ([trust regions](docs/architecture/security.md#trust-regions)).
+- **Independent validation and exact release.** A trusted observer issues verdicts; candidate exit codes and self-reports never certify. Approval binds an exact `ReleaseSubject`; both npm and browser/CSS receipts precede activation; published versions are immutable ([DD-04](docs/architecture/components.md#components)).
+- **Authorities.** Temporal owns business progression, Control owns admission/costs/effects/acceptance, Pi alone writes source, Knowledge owns source ACL and `MemoryFact` (models propose, never confirm), MCP owns catalog and grants with the Control revocation barrier, Pagix and Studio keep their external authority through authenticated APIs only. Qdrant, PostgresStore, caches, queues, framework checkpoints and caller claims are never authority ([ADR-002](docs/architecture/architecture.md#adr-002), [ADR-003](docs/architecture/architecture.md#adr-003)).
+- **Clocks and fences.** The first execution permit sets the absolute deadline once; retries, holds and replacements never reset it. Cancel, hold and definition changes fence new dispatch and keep issued effects and costs; a timeout never proves that nothing happened.
+- **Logging.** Secrets, tokens, prompts, source, native model bodies, candidate stdout, presigned URLs and full object keys never enter logs, traces, NATS, BullMQ or Apollo. Logs are diagnostic, never evidence ([data classification](docs/architecture/security.md#data-classification-logging-and-deletion)).
 
-Follow [DD-02 interfaces](docs/design/dd-02-control.md#s-7-4) and [staged freezes](docs/architecture/plans/implementation-plan.md#s-14-3) before dependent implementation:
+## 7. Naming
 
-- Audit dispositions and the capabilities that stay disabled: [remediation 2026-09-08](docs/architecture/audits/remediation-2026-09-08.md); the three items an independent review raised against that repair, and their fixes: [remediation 2026-09-09](docs/architecture/audits/remediation-2026-09-09.md); the implementation-level definitions behind the service views and the cross-contract gate `python3 tools/check-contracts.py`: [remediation 2026-09-10](docs/architecture/audits/remediation-2026-09-10.md); the socket-permission, SQL-trigger, budget-uniqueness, preview-bootstrap and serializable-props corrections, the database role and lease contracts, and the single entry point `python3 tools/run-verification.py`: [remediation 2026-09-10b](docs/architecture/audits/remediation-2026-09-10b.md); the trusted-verdict, privilege-drop, retry-authorization and cancellation-throttling hardening: [remediation 2026-09-09b](docs/architecture/audits/remediation-2026-09-09b.md).
-- DD-01: Workflow/Runner, protected bootstrap/finalizer, definition/descriptor/policy/binding records and live changes.
-- DD-02: common values, public OpenAPI/private Protobuf, Control transactions, identities, costs, state and SSE.
-- DD-03: execution adapter, sandbox, Pi profile, outer job/result envelopes and sidecar credentials.
-- DD-04: component/build manifest closure, protected registration, preview protocol and certification.
-- DD-05: real Studio production-build proof, host ABI and authoritative page-lock mapping.
-- DD-06: actual Pagix API mapping and separate generation/publication/host-promotion acceptance.
+- Use the [naming authority](docs/architecture/architecture.md#naming): stable service, database, namespace, queue, event, bucket and file identities without architecture-version or new/next/legacy suffixes; `anvilkit.<domain>.v1` Proto packages; `/api/v1` HTTP; `ANVILKIT_` configuration prefix; `00001_init.sql` first migrations. V4.0 is document metadata only. Third-party version paths (`pgx/v5`, `goose/v3`) stay as upstream defines them.
+- Repositories, images and workspace tasks are lowercase kebab-case; existing TypeScript packages use the `@anvilkit/` scope; Go packages are lowercase. Follow Go conventions in Go, the repository's Biome/TypeScript conventions in TypeScript and PEP 8 in Python; do not impose one style across languages.
+- Use clear names that express responsibility; preserve terminology defined by the architecture and contracts; avoid unexplained abbreviations and names such as `misc`, `utils2`, `newService` or `tempHandler`. Keep file names and layout consistent with neighboring code. Do not rename unrelated files for consistency, and do not create a new style guide or lint system when existing conventions suffice.
 
-`contracts/values/common-v1.schema.json` is the extracted canonical public/job JSON value specification; generated consumer bindings remain pending; the scoped approval below does not freeze the entire bundle. The [first-stage approval](docs/architecture/audits/first-stage-approval-2026-09-10.md) freezes only CD-01 through CD-05 design semantics; local-check machine-contract additions still require synchronization before dependent implementation. Private RPC comes from `contracts/proto`. Generate consumer bindings and compatibility fixtures. Do not hand-maintain divergent Go/TypeScript schemas or use generic ProtoJSON as public JSON validation. Money and 64-bit counters cross JavaScript as bounded decimal strings. Reject duplicate keys, unknown authority fields and unauthorized nulls. Only Control canonicalizes executable definitions using the pinned RFC 8785 implementation.
+## 8. Verification and reporting
 
-These contract paths are architecture targets, not permission to create contract/code files during a documentation-only task. Do not invent Pagix endpoint paths, named owners, dependency locks or passing evidence. A missing external capability blocks its own real integration; independent local design/proof work can continue.
+- Pick checks that match the task. Documentation: `python3 tools/check-docs.py` (read-only; requires `jsonschema` and `referencing`; scans `docs/archive/` too, so read its output per file; its cross-checks against moved `docs/design/` and `docs/architecture/plans/` files skip silently). TypeScript workspace: `pnpm lint`, `pnpm check-types`, `pnpm build` (today only placeholder scripts; Turbo writes `.turbo/`). Legacy Go modules: `GOWORK=off go build -mod=readonly ./...` and `GOWORK=off go test -mod=readonly ./...` inside the submodule.
+- `python3 tools/run-verification.py` — in every mode, including `--static` — regenerates derived contract artifacts and runs container/browser proofs. It is not a read-only check and does not verify the V4.0 design.
+- Report exactly what ran and what it produced: PASS, FAIL or UNEXECUTED per check, with the reason for anything unexecuted. Never turn `NOT_RUN` or `NOT_VERIFIED` into a pass, carry historical (v3.12) evidence into the V4.0 baseline, or infer provider billing, sandbox isolation, Pagix or Studio behavior, replica correctness or recovery targets from documents, fixtures, mocks or package imports. Missing environments are reported, not assumed.
+- Keep draft, adopted, implemented and qualified statuses distinct in every report and document.
 
-## Working and verification rules
+<a id="navigation"></a>
 
-Inspect `git status --short` and applicable guidance before edits. Preserve existing and untracked user work, including the supplied architecture. Respect each request's file scope; a documentation-only initialization does not authorize source, package, lockfile, configuration, deployment, executable contract or empty service scaffold changes. If a requested new file already exists under a no-modification instruction, preserve it until the user explicitly permits that exception.
+## 9. Navigation by topic
 
-Use the scripts that actually exist. At initialization, root `build`, `dev`, `lint` and `check-types` delegate to Turbo. `apps/web` lint runs `biome check --write`, and its type check invokes `next typegen`; those commands can modify/create files. Do not run them for a create-only documentation task. Documentation verification should check relative links, Markdown structure and the changed-file allowlist without creating build artifacts; `python3 tools/check-docs.py` performs those checks plus JSON Schema and fixture validation, and `python3 tools/run-verification.py` is the single entry point that adds the cross-contract, DDD and behavioural checks (each step PASS, FAIL or UNEXECUTED; a missing environment exits 2 and is never a pass).
+| Topic | Owning document and section |
+| --- | --- |
+| Scope, services, naming, ADRs, terminology | [architecture.md](docs/architecture/architecture.md) — [services](docs/architecture/architecture.md#services), [naming](docs/architecture/architecture.md#naming), [decisions](docs/architecture/architecture.md#decisions), [terms](docs/architecture/architecture.md#terms) |
+| Product scope, M1/CAP acceptance, scenarios | [requirements.md](docs/architecture/requirements.md), [scenarios](docs/architecture/requirements.md#scenarios) |
+| Technology primaries and alternatives, version targets, licensing | [technology.md](docs/architecture/technology.md) — [choices](docs/architecture/technology.md#choices) |
+| Public API, internal RPC, values, errors, events, SSE | [contracts.md](docs/architecture/contracts.md#api), [event catalog](docs/architecture/contracts.md#event-catalog) |
+| Database ownership, tables, lock ranks, DDL, import | [contracts.md](docs/architecture/contracts.md#data) |
+| Workflows, preparation, leases, retries, Continue-As-New | [DD-01](docs/architecture/execution.md#workflows) |
+| Admission, budgets, single-use dispatch, obligation inventory, artifacts | [DD-02](docs/architecture/execution.md#control) |
+| Agent team, LangGraph/Pi ports, stage recovery, Job isolation, sockets | [DD-03](docs/architecture/execution.md#agent-harness) |
+| Component source contract, Rollup profile, Validator, ReleaseSubject, preview | [DD-04](docs/architecture/components.md#components) |
+| Studio workbench, page locks, loader, preview iframe | [DD-05](docs/architecture/components.md#studio) |
+| Pagix ports, guarded mutations, two-target release | [DD-06](docs/architecture/components.md#pagix) |
+| Ingestion, Qdrant generations, retrieval, MemoryFact | [DD-07](docs/architecture/knowledge.md#knowledge) |
+| MCP catalog, grants, revocation barrier, tool calls, SSRF | [DD-08](docs/architecture/mcp.md#mcp) |
+| BullMQ, outbox/inbox, Fx lifecycle, configuration generations | [DD-09](docs/architecture/platform.md#async-config) |
+| Kubernetes, namespaces, HA, secrets, backup and recovery | [DD-10](docs/architecture/platform.md#kubernetes) |
+| ENV-01 to ENV-10, capacity worksheet, qualification lock | [deployment inputs](docs/architecture/platform.md#deployment-inputs) |
+| Release pipeline, SLO inputs, incident runbook | [operations](docs/architecture/platform.md#operations) |
+| Trust regions, SEC-01 to SEC-12, logging, supply chain | [security.md](docs/architecture/security.md) |
+| Stages R0–R6, complete replacement, cutover, gates, evaluation | [delivery.md](docs/architecture/delivery.md#implementation), [acceptance](docs/architecture/delivery.md#acceptance) |
 
-For later Go implementation, use `go build ./...` and `go test ./...` from each service repository after its Go module exists. For component qualification, use the frozen component repository's actual commands, including `build:packages` where specified, rather than assuming this starter's root scripts apply there. A successful starter build cannot qualify Agent services or component delivery.
+## 10. Open findings to keep visible
 
-Report what changed, checks actually completed, and the exact remaining gate. Keep draft, frozen and qualified statuses distinct. Never infer provider billing, sandbox secrecy, real Pagix delivery, Studio rendering, two-replica correctness or restore targets from documentation, fixtures or package imports. Do not commit, push, publish or deploy without task authorization.
-
-## Git: read-only for Codex
-
-- Never `git commit`, `git push`, or open a PR unless the user explicitly
-  asks in that message (commit/push are also hook-blocked — a block is the
-  policy working, not an obstacle to route around). Default: leave changes
-  uncommitted and report modified files, flagging those inside submodules.
-- Never stage, amend, rebase, merge, cherry-pick, reset, clean, tag, or
-  switch branches unless asked for that exact action. Never force-push,
-  never push `main`. Read-only git is always fine.
-
-## Mandatory Working Principles
-
-**Do not overengineer. Do not overcomplicate. Do not overdesign. Do not expand requirements through speculation. If something is unclear, ask me first.**
-
-- Prefer the smallest implementation scope that produces useful, verifiable behavior.
-- Reuse existing contracts, structures, tools, and dependencies.
-- Do not propose general-purpose frameworks, abstraction layers, plugin systems, configuration platforms, or cross-repository release systems without a demonstrated requirement.
-- Do not introduce speculative compatibility paths, retry mechanisms, or infrastructure.
-- Organize work around observable behavior, rather than creating a task for every RPC, table, schema, or source file.
-- Do not split cohesive functionality into unnecessary layers, tiny wrappers, or excessive files.
-- Introduce shared code only when there is an actual consumer and a clear reason.
-
-## Naming and Code Organization Requirements
-
-- Use clear, descriptive names that express responsibility or behavior.
-- Preserve terminology already defined by authoritative contracts.
-- Avoid unexplained abbreviations and vague names such as `misc`, `utils2`, `newService`, or `tempHandler`.
-- Follow Go conventions for Go code and the repository’s TypeScript conventions for TypeScript code. Do not impose one naming style across languages.
-- Keep file names and organization consistent with neighboring code and the purpose of the package.
-- Do not rename unrelated files or functions merely for stylistic consistency.
-- Do not create a new naming framework, style guide, or lint system when existing conventions are sufficient.
+Do not treat these as resolved, and do not fix them inside root files: the R0 contracts still lack explicit mappings for knowledge-authorization management, MCP review/revocation and Model Proxy communication; the documentation checkers depend on previous-architecture paths and skip missing inputs silently; the recovery diagram, prose and incident table disagree on when the new recovery epoch is established; the directory example in `delivery.md` still lists separate `docs/design` and `docs/adr` directories. References are in [README.md](README.md#known-limitations-for-the-next-phase).
