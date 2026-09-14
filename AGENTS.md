@@ -16,10 +16,10 @@ Authority order: `docs/architecture/` defines the target; the checkout (manifest
 
 Observed on 2026-09-14; re-inspect before relying on it. Details and the exact table are in [README.md](README.md#repository-state).
 
-- Root: pnpm/Turborepo starter (`pnpm@12.3.4`, Node `>=22`); `packages/biome-config` and `packages/typescript-config` only; `apps/` empty.
-- Submodules: `services/agent/{api,control,workflow}` are standalone Go 1.27 modules implementing the previous architecture; `services/agent/model-proxy` and `jobs/shared/access-sidecar` hold README and LICENSE only.
-- `docs/`, `contracts/`, `outputs/` and `logs/` are gitignored. A fresh clone or Git worktree does not contain the architecture documents or the legacy contracts; documentation and contract work happens in the primary checkout.
-- `contracts/`, `tools/`, `deploy/local/` and `compose.yaml` belong to the previous architecture. None of the eight V4.0 services, Job classes, `tests/` or `deploy/{charts,gitops,policies}` exists yet.
+- Replacement modules (root `go.work`): `services/anvilkit-agent-{api,control,workflow}`, `jobs/migration`, `packages/generated-clients/go`, `tests/{contracts,integration}`; contract sources under `contracts/`; DEVELOPMENT_ONLY foundation under `deploy/dev/`. They implement the LocalCheck control chain (P04/P05); the other five services and Job classes do not exist yet.
+- Submodules: `services/agent/{api,control,workflow}` are the previous architecture's Go modules, outside the build closure; `services/agent/model-proxy` and `jobs/shared/access-sidecar` hold README and LICENSE only.
+- Only `docs/archive/`, `outputs/`, `logs/` and `.local/` are gitignored. The new inputs are untracked until the user stages them; Git worktrees created before that still lack them, so work in the primary checkout.
+- `deploy/local/`, `compose.yaml` and `tools/prepare-local-compose.py` belong to the legacy `anvilkit-local` environment, which has not completed handover; `docs/archive/{contracts,tools}` hold the relocated legacy contracts and tools.
 
 ## 3. Task scope and the user's work
 
@@ -64,8 +64,8 @@ Every change must preserve these; each links to its owning section.
 
 ## 8. Verification and reporting
 
-- Pick checks that match the task. Documentation: `python3 tools/check-docs.py` (read-only; requires `jsonschema` and `referencing`; scans `docs/archive/` too, so read its output per file; its cross-checks against moved `docs/design/` and `docs/architecture/plans/` files skip silently). TypeScript workspace: `pnpm lint`, `pnpm check-types`, `pnpm build` (today only placeholder scripts; Turbo writes `.turbo/`). Legacy Go modules: `GOWORK=off go build -mod=readonly ./...` and `GOWORK=off go test -mod=readonly ./...` inside the submodule.
-- `python3 tools/run-verification.py` — in every mode, including `--static` — regenerates derived contract artifacts and runs container/browser proofs. It is not a read-only check and does not verify the V4.0 design.
+- Pick checks that match the task. Documentation: `python3 tools/check-docs.py` (read-only, current baseline only, fails on missing inputs). Contracts: `python3 tools/check-contracts.py` and `python3 tools/generate-contracts.py --check` (read-only; without `--check` the generator rewrites the checked-in bindings). New Go modules: `go build ./... && go vet ./... && go test ./...` in each module (Testcontainers tests need Docker; `ANVILKIT_SKIP_DOCKER_TESTS=1` skips them). End to end: `sh deploy/dev/up.sh`, `. .local/dev/env.sh`, then `go test -tags integration ./...` in `tests/integration`. `python3 tools/run-verification.py [--static]` runs the whole chain. Legacy Go modules: `GOWORK=off go build -mod=readonly ./...` inside the submodule.
+- Never invoke the archived legacy generators under `docs/archive/tools/`; they recreate retired artifacts.
 - Report exactly what ran and what it produced: PASS, FAIL or UNEXECUTED per check, with the reason for anything unexecuted. Never turn `NOT_RUN` or `NOT_VERIFIED` into a pass, carry historical (v3.12) evidence into the V4.0 baseline, or infer provider billing, sandbox isolation, Pagix or Studio behavior, replica correctness or recovery targets from documents, fixtures, mocks or package imports. Missing environments are reported, not assumed.
 - Keep draft, adopted, implemented and qualified statuses distinct in every report and document.
 
@@ -97,4 +97,4 @@ Every change must preserve these; each links to its owning section.
 
 ## 10. Open findings to keep visible
 
-Do not treat these as resolved, and do not fix them inside root files: the R0 contracts still lack explicit mappings for knowledge-authorization management, MCP review/revocation and Model Proxy communication; the documentation checkers depend on previous-architecture paths and skip missing inputs silently; the recovery diagram, prose and incident table disagree on when the new recovery epoch is established; the directory example in `delivery.md` still lists separate `docs/design` and `docs/adr` directories. References are in [README.md](README.md#known-limitations-for-the-next-phase).
+The four P01 findings (contract mappings, checker scope, recovery-epoch ordering, directory example) were closed on 2026-09-14. Keep visible instead: the DEVELOPMENT_ONLY inventory, bearer fixture and plaintext gRPC in the new services; `buf breaking` has no recorded baseline until the new inputs are committed; every G gate is `NOT_RUN`. References are in [README.md](README.md#known-limitations-for-the-next-phase).

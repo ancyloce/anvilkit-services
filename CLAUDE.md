@@ -9,8 +9,8 @@ Claude-specific entry point for `anvilkit-services`. The shared working rules fo
 
 ## Claude Code specifics
 
-- `docs/`, `contracts/`, `outputs/` and `logs/` are gitignored. A Git worktree or fresh clone therefore lacks the architecture documents and the legacy contracts; run documentation and contract tasks in the primary checkout and edit files there.
+- Only `docs/archive/`, `outputs/`, `logs/` and `.local/` are gitignored, but the new inputs (docs, contracts, modules) are untracked until the user stages them; a Git worktree therefore still lacks them. Run tasks in the primary checkout and edit files there.
 - Git is read-only for Claude (`AGENTS.md`, section 4): no commit, push, staging, branch switching or history rewriting unless the user asks for that exact action in the current message. Commit and push may also be hook-blocked; a block is the policy working.
-- `python3 tools/check-docs.py` is the read-only documentation check. `python3 tools/run-verification.py` regenerates derived artifacts and runs container/browser proofs in every mode, including `--static`; never run it as a read-only check.
+- Read-only checks: `python3 tools/check-docs.py`, `python3 tools/check-contracts.py`, `python3 tools/generate-contracts.py --check`, `python3 tools/run-verification.py --static`. `python3 tools/generate-contracts.py` without `--check` rewrites the checked-in bindings; `deploy/dev/up.sh` starts containers and a kind cluster.
 - Recalled memories and older session notes may describe the previous architecture (v3.12, CD-01 to CD-05, W1–W3, P0/P1 stages, `docs/design/`, `docs/architecture/plans/`). The current baseline is architecture V4.0 revision 2 under `docs/architecture/`; verify any remembered path, command or gate against the checkout before using it.
 - Report as `AGENTS.md`, section 8 requires: which checks ran, their PASS/FAIL/UNEXECUTED results, and what remains unverified. Never present `NOT_RUN` or `NOT_VERIFIED` items as passing.
