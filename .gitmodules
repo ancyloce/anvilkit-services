@@ -13,3 +13,6 @@
 [submodule "jobs/shared/access-sidecar"]
 	path = jobs/shared/access-sidecar
 	url = https://github.com/ancyloce/anvilkit-job-access-sidecar
+[submodule "contracts"]
+	path = contracts
+	url = https://github.com/ancyloce/anvilkit-agent-contracts.git
