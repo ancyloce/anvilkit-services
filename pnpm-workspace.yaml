@@ -2,3 +2,7 @@ packages:
   - "apps/*"
   - "packages/*"
   - "services/*"
+# protobufjs (transitive of @grpc/grpc-js) has a postinstall that only prints a
+# notice; its build script is denied so installs need no interactive approval.
+allowBuilds:
+  protobufjs: false
