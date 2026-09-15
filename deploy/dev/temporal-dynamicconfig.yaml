@@ -1,0 +1,3 @@
+# Temporal dynamic configuration for the DEVELOPMENT_ONLY foundation. Empty on
+# purpose: defaults apply; production limits are deployment inputs (ENV-05).
+{}

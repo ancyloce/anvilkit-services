@@ -1,0 +1,75 @@
+# DEVELOPMENT_ONLY foundation for the replacement implementation (delivery.md P03).
+# Isolated from the legacy anvilkit-local stack: its own project name, bridge
+# network, loopback-only published ports and volumes. It is a reduced local
+# topology, never HA evidence and never a production layout; production uses
+# CloudNativePG clusters and a separately deployed Temporal (platform.md DD-10).
+name: anvilkit-dev
+
+services:
+  postgres:
+    image: postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
+    restart: unless-stopped
+    env_file: ../../.local/dev/postgres.env
+    ports:
+      - "127.0.0.1:25432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./postgres-init.sh:/docker-entrypoint-initdb.d/10-anvilkit.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d anvilkit_control"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+
+  temporal-schema:
+    image: temporalio/admin-tools:1.31.2@sha256:dbc5fcd6ee8f0f4d808bf765af9a87dea9d8a283abfdcfbd2fc148496ba66107
+    env_file: ../../.local/dev/temporal.env
+    environment:
+      SQL_PLUGIN: postgres12
+      SQL_HOST: postgres
+      SQL_PORT: "5432"
+    entrypoint: ["/bin/sh", "/setup/temporal-setup.sh", "schemas"]
+    volumes:
+      - ./temporal-setup.sh:/setup/temporal-setup.sh:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  temporal:
+    image: temporalio/server:1.31.2@sha256:6b02e5176631c8d28f010735a3a73c69423a9adbcfad7e5dfe23836c904b7e26
+    restart: unless-stopped
+    env_file: ../../.local/dev/temporal.env
+    environment:
+      DB: postgres12
+      DB_PORT: "5432"
+      POSTGRES_SEEDS: postgres
+      DBNAME: temporal
+      VISIBILITY_DBNAME: temporal_visibility
+      BIND_ON_IP: 0.0.0.0
+      TEMPORAL_BROADCAST_ADDRESS: 127.0.0.1
+      NUM_HISTORY_SHARDS: "4"
+    ports:
+      - "127.0.0.1:27233:7233"
+    volumes:
+      - ./temporal-dynamicconfig.yaml:/etc/temporal/config/dynamicconfig/docker.yaml:ro
+    depends_on:
+      temporal-schema:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "nc", "-z", "127.0.0.1", "7233"]
+      interval: 2s
+      timeout: 3s
+      retries: 40
+
+  temporal-namespace:
+    image: temporalio/admin-tools:1.31.2@sha256:dbc5fcd6ee8f0f4d808bf765af9a87dea9d8a283abfdcfbd2fc148496ba66107
+    entrypoint: ["/bin/sh", "/setup/temporal-setup.sh", "namespace"]
+    volumes:
+      - ./temporal-setup.sh:/setup/temporal-setup.sh:ro
+    depends_on:
+      temporal:
+        condition: service_healthy
+
+volumes:
+  postgres-data:

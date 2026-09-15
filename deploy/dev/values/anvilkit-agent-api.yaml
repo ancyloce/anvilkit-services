@@ -1,0 +1,28 @@
+# DEVELOPMENT_ONLY environment values of anvilkit-agent-api for the kind cluster
+# of the development foundation. The chart itself is owned by the API
+# repository (services/agent/api/deploy/chart); this file is the parent's
+# environment combination for it. Secrets stay out of Git: the principals
+# Secret is created by deploy/dev/api-chart.sh from .local/dev/api-principals.json.
+# control.address (the host-side Control reached from inside kind through the
+# Docker network gateway) is machine-specific and is set by the script.
+replicaCount: 1
+image:
+  repository: anvilkit-agent-api
+  tag: dev
+  # A locally built image is loaded into the kind node by name; a registry-served
+  # image is pinned here by digest instead (image.digest).
+  pullPolicy: Never
+auth:
+  mode: fixture
+  principalsSecret:
+    name: anvilkit-agent-api-principals
+    key: principals.json
+podDisruptionBudget:
+  enabled: false
+resources:
+  requests:
+    cpu: 50m
+    memory: 32Mi
+  limits:
+    cpu: 500m
+    memory: 128Mi

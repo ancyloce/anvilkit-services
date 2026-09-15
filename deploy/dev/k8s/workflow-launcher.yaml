@@ -1,0 +1,41 @@
+# Least-privilege identity for the Workflow launcher (DD-03 §4, DD-10 §4):
+# create/read/delete Jobs and read Pods in anvilkit-components only; no exec,
+# no ephemeral containers, no secrets, no token minting.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: anvilkit-components
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: anvilkit-agent-workflow
+  namespace: anvilkit-components
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: anvilkit-agent-workflow-launcher
+  namespace: anvilkit-components
+rules:
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["create", "get", "list", "watch", "delete"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: anvilkit-agent-workflow-launcher
+  namespace: anvilkit-components
+subjects:
+  - kind: ServiceAccount
+    name: anvilkit-agent-workflow
+    namespace: anvilkit-components
+roleRef:
+  kind: Role
+  name: anvilkit-agent-workflow-launcher
+  apiGroup: rbac.authorization.k8s.io

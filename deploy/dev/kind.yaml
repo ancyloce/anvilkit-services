@@ -1,0 +1,8 @@
+# kind cluster for real Kubernetes Job acceptance in development (P03/P05).
+# DEVELOPMENT_ONLY: not RKE2, no Cilium, no gVisor RuntimeClass; it proves the
+# launcher/observer path against a real Kubernetes API, not isolation (P09).
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: anvilkit-dev
+nodes:
+  - role: control-plane
