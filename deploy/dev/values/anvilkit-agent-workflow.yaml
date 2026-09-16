@@ -1,0 +1,31 @@
+# DEVELOPMENT_ONLY environment values of anvilkit-agent-workflow for the kind
+# cluster of the development foundation. The chart itself is owned by the
+# Workflow repository (services/agent/workflow/deploy/chart); this file is the
+# parent's environment combination for it. The worker carries no secret; its
+# launcher identity is the chart's ServiceAccount (in-cluster token). The
+# Control endpoint is the Control release in the same namespace; the Temporal
+# address (the foundation as the cluster reaches it) is machine-specific and
+# is set by the script. The two in-cluster replicas poll the same Temporal
+# namespace as host-side workers of the integration scenarios: uninstall (or
+# scale to zero) this release before running those scenarios.
+replicaCount: 2
+image:
+  repository: anvilkit-agent-workflow
+  tag: dev
+  pullPolicy: Never
+control:
+  address: anvilkit-agent-control.anvilkit-apps.svc.cluster.local:9101
+launcher:
+  namespace: anvilkit-components
+  backend: kind-anvilkit-dev
+  imageRegistry: localhost:5001
+  sidecarControlAddress: anvilkit-agent-control.anvilkit-apps.svc.cluster.local:9101
+podDisruptionBudget:
+  enabled: false
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 1000m
+    memory: 256Mi

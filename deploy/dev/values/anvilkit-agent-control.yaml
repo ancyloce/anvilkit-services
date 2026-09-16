@@ -1,0 +1,44 @@
+# DEVELOPMENT_ONLY environment values of anvilkit-agent-control for the kind
+# cluster of the development foundation. The chart itself is owned by the
+# Control repository (services/agent/control/deploy/chart); this file is the
+# parent's environment combination for it. Secrets stay out of Git: the
+# database, migrator, inventory and artifact Secrets are created by
+# deploy/dev/control-chart.sh from .local/dev/. The addresses of the
+# foundation as the cluster reaches them (temporal.address, the S3 endpoints)
+# are machine-specific and are set by the script.
+replicaCount: 2
+image:
+  repository: anvilkit-agent-control
+  tag: dev
+  # A locally built image is loaded into the kind node by name; a registry-served
+  # image is pinned here by digest instead (image.digest).
+  pullPolicy: Never
+database:
+  secret:
+    name: anvilkit-agent-control-database
+    key: url
+inventory:
+  s3:
+    bucket: anvilkit-inventory
+    secret:
+      name: anvilkit-agent-control-inventory
+artifacts:
+  enabled: true
+  s3:
+    bucket: anvilkit-artifacts
+    secret:
+      name: anvilkit-agent-control-artifacts
+migration:
+  enabled: true
+  secret:
+    name: anvilkit-agent-control-migrator
+    key: url
+podDisruptionBudget:
+  enabled: false
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 1000m
+    memory: 256Mi

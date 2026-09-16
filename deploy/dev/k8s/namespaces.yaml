@@ -1,0 +1,14 @@
+# The namespaces of the development foundation (platform-owned, DD-10 §1):
+# anvilkit-components runs the launched Jobs under the P09 policies and the
+# components node pool; anvilkit-apps hosts the service releases installed
+# by deploy/dev/{api,control,workflow}-chart.sh. Identities and RBAC belong
+# to the charts that need them (the Workflow chart owns the launcher's).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: anvilkit-components
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: anvilkit-apps

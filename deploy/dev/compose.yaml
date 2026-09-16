@@ -2,7 +2,10 @@
 # Isolated from the legacy anvilkit-local stack: its own project name, bridge
 # network, loopback-only published ports and volumes. It is a reduced local
 # topology, never HA evidence and never a production layout; production uses
-# CloudNativePG clusters and a separately deployed Temporal (platform.md DD-10).
+# CloudNativePG clusters, a separately deployed Temporal (platform.md DD-10)
+# and the qualified object backends of C09 (the MinIO below is the S3 API of
+# the artifact store for P08 only; it is not RGW and qualifies no failure
+# domain, placement or retention).
 name: anvilkit-dev
 
 services:
@@ -71,5 +74,41 @@ services:
       temporal:
         condition: service_healthy
 
+  # The object stores: one S3-compatible API with the versioned artifact
+  # bucket of P08 (anvilkit-artifacts, the foundation's root credentials in
+  # .local/dev/minio.env) and the shared inventory bucket of the Control
+  # replicas in the kind cluster (anvilkit-inventory, its own user and policy
+  # in .local/dev/minio-inventory.env), on its own volume. Host-side runs keep
+  # the filesystem inventory; either way the two permission boundaries are
+  # separate credentials.
+  minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+    restart: unless-stopped
+    command: ["server", "/data"]
+    env_file: ../../.local/dev/minio.env
+    ports:
+      - "127.0.0.1:29000:9000"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 2s
+      timeout: 3s
+      retries: 40
+      start_period: 5s
+
+  minio-setup:
+    image: minio/mc@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727
+    env_file:
+      - ../../.local/dev/minio.env
+      - ../../.local/dev/minio-inventory.env
+    entrypoint: ["/bin/sh", "/setup/minio-setup.sh"]
+    volumes:
+      - ./minio-setup.sh:/setup/minio-setup.sh:ro
+    depends_on:
+      minio:
+        condition: service_healthy
+
 volumes:
   postgres-data:
+  minio-data:
