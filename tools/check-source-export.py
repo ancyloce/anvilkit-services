@@ -6,10 +6,12 @@ Usage: python3 tools/check-source-export.py [--keep DIR] [--skip-build]
 A `.gitignore` edit is not evidence that the design and build inputs are included in the
 source. This check computes the export set the way Git would: the parent's tracked files
 plus its untracked files that are not ignored, and, for each replacement repository mounted
-in the tree (the contracts repository at contracts/ and the API repository at
-services/agent/api, whether already registered as submodules or still nested checkouts),
-that repository's own tracked plus untracked-not-ignored files. The legacy submodules
-(services/agent/{control,workflow,model-proxy}, jobs/shared/access-sidecar) stay excluded.
+in the tree (the contracts repository at contracts/, the API, Control and Workflow
+repositories at services/agent/{api,control,workflow} and the access sidecar repository at
+jobs/shared/access-sidecar, whether already registered as submodules or still nested
+checkouts), that repository's own tracked plus untracked-not-ignored files. The submodules
+without an implementation (services/agent/{model-proxy,knowledge,mcp}, jobs/validator) stay
+excluded.
 Then:
 
   1. Required inputs: every file under each declared input directory and every anchor file
@@ -47,8 +49,9 @@ pyenv_check.require("yaml", "jsonschema", "referencing", "openapi_spec_validator
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 # Repositories of the replacement mounted inside this tree: their content is source,
-# listed through their own Git. The legacy submodules are everything else with a gitlink.
-REPLACEMENT_REPOS = ("contracts", "services/agent/api")
+# listed through their own Git. Every other gitlink is a submodule without an
+# implementation in this closure (excluded).
+REPLACEMENT_REPOS = ("contracts", "services/agent/api", "services/agent/control", "services/agent/workflow", "jobs/shared/access-sidecar")
 REQUIRED_DIRS = (
     "contracts/proto",
     "contracts/openapi",
@@ -62,10 +65,13 @@ REQUIRED_DIRS = (
     "contracts/tests/go",
     "contracts/tools",
     "docs/architecture",
+    "jobs/codegen",
     "jobs/migration",
+    "jobs/shared/access-sidecar",
+    "deploy/policies",
     "services/agent/api",
-    "services/anvilkit-agent-control",
-    "services/anvilkit-agent-workflow",
+    "services/agent/control",
+    "services/agent/workflow",
     "tests/contracts",
     "tests/integration",
     "deploy/dev",
@@ -88,19 +94,37 @@ REQUIRED_FILES = (
     "contracts/python/pyproject.toml", "contracts/tests/go/go.mod",
     "contracts/tools/generate.py", "contracts/tools/check.py", "contracts/tools/verify.py",
     "contracts/tools/pyenv_check.py", "contracts/tools/requirements.txt", "contracts/tools/verification-env.sh",
-    "jobs/migration/internal/migrate/sql/control/00001_init.sql",
-    "jobs/migration/internal/migrate/sql/control/00002_stage_manifest_bytes.sql",
-    "jobs/migration/internal/migrate/sql/control/00003_dispatch_denial_code.sql",
-    "jobs/migration/internal/migrate/sql/control/00004_usage_observation_presence.sql",
+    "jobs/codegen/go.mod", "jobs/codegen/go.sum", "jobs/codegen/config.yaml", "jobs/codegen/Dockerfile", "jobs/codegen/README.md",
+    "jobs/codegen/agent/resources.json", "jobs/codegen/fixtures/fixed-input.txt",
+    "jobs/shared/access-sidecar/go.mod", "jobs/shared/access-sidecar/go.sum", "jobs/shared/access-sidecar/config.yaml",
+    "jobs/shared/access-sidecar/Dockerfile", "jobs/shared/access-sidecar/README.md", "jobs/shared/access-sidecar/LICENSE",
+    "deploy/policies/kyverno/anvilkit-components-jobs.yaml", "deploy/policies/kyverno/anvilkit-components-registries.dev.yaml",
+    "deploy/policies/seccomp/anvilkit-candidate.json", "deploy/policies/seccomp/generate.sh",
+    "deploy/policies/network/anvilkit-components-egress.yaml", "deploy/policies/check.sh", "deploy/policies/README.md",
+    "deploy/dev/images.sh", "deploy/dev/docker/access-sidecar.dev.Dockerfile",
     "jobs/migration/internal/migrate/sql/knowledge/00001_init.sql",
     "jobs/migration/internal/migrate/sql/mcp/00001_init.sql",
     "package.json", "pnpm-workspace.yaml", "pnpm-lock.yaml",
-    "services/anvilkit-agent-control/sqlc.yaml",
     "services/agent/api/go.mod", "services/agent/api/go.sum", "services/agent/api/config.yaml",
     "services/agent/api/README.md", "services/agent/api/LICENSE", "services/agent/api/Dockerfile", "services/agent/api/.dockerignore",
     "services/agent/api/deploy/chart/Chart.yaml", "services/agent/api/deploy/chart/values.yaml",
     "services/agent/api/.github/workflows/ci.yml",
-    "services/anvilkit-agent-control/config.yaml", "services/anvilkit-agent-workflow/config.yaml",
+    "services/agent/control/go.mod", "services/agent/control/go.sum", "services/agent/control/config.yaml", "services/agent/control/sqlc.yaml",
+    "services/agent/control/README.md", "services/agent/control/LICENSE", "services/agent/control/Dockerfile", "services/agent/control/.dockerignore",
+    "services/agent/control/tools/sqlc.sh", "services/agent/control/.github/workflows/ci.yml",
+    "services/agent/control/deploy/chart/Chart.yaml", "services/agent/control/deploy/chart/values.yaml",
+    "services/agent/control/internal/migrate/sql/00001_init.sql",
+    "services/agent/control/internal/migrate/sql/00002_stage_manifest_bytes.sql",
+    "services/agent/control/internal/migrate/sql/00003_dispatch_denial_code.sql",
+    "services/agent/control/internal/migrate/sql/00004_usage_observation_presence.sql",
+    "services/agent/control/internal/migrate/sql/00005_effects_and_recovery.sql",
+    "services/agent/control/internal/migrate/sql/00006_artifacts.sql",
+    "services/agent/workflow/go.mod", "services/agent/workflow/go.sum", "services/agent/workflow/config.yaml",
+    "services/agent/workflow/README.md", "services/agent/workflow/LICENSE", "services/agent/workflow/Dockerfile", "services/agent/workflow/.dockerignore",
+    "services/agent/workflow/.github/workflows/ci.yml",
+    "services/agent/workflow/deploy/chart/Chart.yaml", "services/agent/workflow/deploy/chart/values.yaml",
+    "deploy/dev/control-chart.sh", "deploy/dev/workflow-chart.sh", "deploy/dev/api-chart.sh",
+    "deploy/dev/values/anvilkit-agent-api.yaml", "deploy/dev/values/anvilkit-agent-control.yaml", "deploy/dev/values/anvilkit-agent-workflow.yaml",
     "tools/check-docs.py", "tools/check-contracts.py", "tools/generate-contracts.py",
     "tools/run-verification.py", "tools/check-source-export.py", "tools/pyenv_check.py",
     "tools/requirements.txt", "tools/verification-env.sh",
@@ -204,15 +228,19 @@ def main() -> int:
             dst.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(src, dst)
         env = dict(os.environ, GOFLAGS="-mod=readonly")
-        steps: list[tuple[str, list[str], pathlib.Path]] = [
+        steps: list[tuple] = [
             ("docs", [sys.executable, "tools/check-docs.py"], target),
             ("contracts", [sys.executable, "tools/check-contracts.py"], target),
         ]
         if not a.skip_build:
             for mod in re.findall(r"^\s*\./(\S+)", (target / "go.work").read_text(encoding="utf-8"), flags=re.M):
                 steps.append((f"go build {mod}", ["go", "build", "-buildvcs=false", "./..."], target / mod))
-        for name, cmd, cwd in steps:
-            p = subprocess.run(cmd, cwd=cwd, env=env, capture_output=True, text=True)
+            # The service repositories also build alone: without the workspace, from their
+            # own go.mod against the published contracts module (their independent delivery).
+            for repo in ("services/agent/api", "services/agent/control", "services/agent/workflow"):
+                steps.append((f"go build {repo} (GOWORK=off)", ["go", "build", "-buildvcs=false", "./..."], target / repo, {"GOWORK": "off"}))
+        for name, cmd, cwd, *extra in steps:
+            p = subprocess.run(cmd, cwd=cwd, env=dict(env, **(extra[0] if extra else {})), capture_output=True, text=True)
             status = "PASS" if p.returncode == 0 else "FAIL"
             print(f"{status:<5} {name}")
             if p.returncode != 0:

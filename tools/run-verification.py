@@ -25,7 +25,9 @@ Steps, in order:
   go          go build/vet/test per module in go.work  unit tests; Docker-backed tests (Testcontainers) run
                                                        unless ANVILKIT_SKIP_DOCKER_TESTS=1
   integration go test -tags integration ...           real PostgreSQL/Temporal/Kubernetes proofs; needs the
-                                                       deploy/dev foundation (deploy/dev/README.md)
+                                                       deploy/dev foundation (deploy/dev/README.md); for the
+                                                       Workflow repository's cluster scenario the parent
+                                                       starts a Control from the Control repository first
 
 Each step prints PASS, FAIL or UNEXECUTED; an UNEXECUTED step is one whose environment is
 missing and is never counted as a pass. Exit code 1 if anything failed, 2 if something could
@@ -37,12 +39,15 @@ steps would then report failures of the machine rather than of the checkout.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import os
 import pathlib
 import re
 import shutil
+import socket
 import subprocess
 import sys
+import tempfile
 import time
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
@@ -134,6 +139,56 @@ def step_python() -> tuple[str, str]:
     return ("PASS" if p.returncode == 0 else "FAIL"), detail
 
 
+@contextlib.contextmanager
+def prepared_control(env: dict):
+    """The cross-service dependency of the Workflow repository's cluster scenario
+    (services/agent/workflow, internal/adapters/kubernetes, tag integration): a
+    Control built from the Control repository, bound to every interface so a Job
+    Pod's sidecar reaches it through the kind network gateway, with the artifact
+    store as the cluster reaches it. The Workflow repository builds nothing but
+    itself and reads the endpoints from ANVILKIT_INTEGRATION_CONTROL_ADDRESS (host
+    side) and ANVILKIT_INTEGRATION_SIDECAR_CONTROL_ADDRESS (as the Pod reaches it);
+    without a gateway or artifact endpoint the scenario skips on its own."""
+    gateway, artifacts = env.get("ANVILKIT_DEV_KIND_GATEWAY"), env.get("ANVILKIT_DEV_ARTIFACTS_ENDPOINT_CLUSTER")
+    if not gateway or not artifacts:
+        yield env, "no kind gateway / cluster artifact endpoint in the environment; the Workflow cluster scenario skips"
+        return
+    control = ROOT / "services/agent/control"
+    with tempfile.TemporaryDirectory(prefix="anvilkit-control-") as scratch:
+        binary = pathlib.Path(scratch) / "anvilkit-agent-control"
+        built = run(["go", "build", "-o", str(binary), "./cmd/anvilkit-agent-control"], control, env)
+        if built.returncode != 0:
+            raise RuntimeError("build of services/agent/control failed: " + (built.stdout + built.stderr)[-2000:])
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            port = probe.getsockname()[1]
+        proc_env = dict(env, ANVILKIT_CONTROL_CONFIG=str(control / "config.yaml"), ANVILKIT_CONTROL_LISTEN=f"0.0.0.0:{port}",
+                        ANVILKIT_CONTROL_DATABASE_URL=env["ANVILKIT_DEV_CONTROL_DSN"], ANVILKIT_CONTROL_INVENTORY_DIR=str(pathlib.Path(scratch) / "inventory"),
+                        ANVILKIT_CONTROL_TEMPORAL_ADDRESS=env["ANVILKIT_DEV_TEMPORAL_ADDRESS"], ANVILKIT_CONTROL_ARTIFACTS_S3_ENDPOINT=artifacts)
+        log = open(pathlib.Path(scratch) / "control.log", "w", encoding="utf-8")
+        proc = subprocess.Popen([str(binary)], cwd=control, env=proc_env, stdout=log, stderr=subprocess.STDOUT)
+        try:
+            deadline = time.time() + 60
+            while time.time() < deadline:
+                with socket.socket() as s:
+                    s.settimeout(0.5)
+                    try:
+                        s.connect(("127.0.0.1", port))
+                        break
+                    except OSError:
+                        time.sleep(0.2)
+            else:
+                raise RuntimeError("the prepared Control did not open its listener")
+            yield dict(env, ANVILKIT_INTEGRATION_CONTROL_ADDRESS=f"127.0.0.1:{port}", ANVILKIT_INTEGRATION_SIDECAR_CONTROL_ADDRESS=f"{gateway}:{port}"), f"Control prepared on 0.0.0.0:{port}"
+        finally:
+            proc.terminate()
+            try:
+                proc.wait(timeout=30)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+            log.close()
+
+
 def step_integration() -> tuple[str, str]:
     missing = [v for v in ("ANVILKIT_DEV_CONTROL_DSN", "ANVILKIT_DEV_TEMPORAL_ADDRESS", "KUBECONFIG") if not os.environ.get(v)]
     if missing:
@@ -142,7 +197,17 @@ def step_integration() -> tuple[str, str]:
     for mod in workspace_modules():
         if not list(mod.rglob("*_integration_test.go")):
             continue
-        p = run(["go", "test", "-tags", "integration", "-count=1", "./..."], mod, dict(os.environ))
+        env = dict(os.environ)
+        if mod == ROOT / "services/agent/workflow":
+            # The parent prepares the cross-service dependency of that repository's scenario.
+            try:
+                with prepared_control(env) as (env, note):
+                    out.append(f"{mod.relative_to(ROOT)}: {note}")
+                    p = run(["go", "test", "-tags", "integration", "-count=1", "./..."], mod, env)
+            except RuntimeError as exc:
+                return "FAIL", "\n".join(out + [str(exc)])
+        else:
+            p = run(["go", "test", "-tags", "integration", "-count=1", "./..."], mod, env)
         out.append(f"{mod.relative_to(ROOT)}: integration -> {'ok' if p.returncode == 0 else 'FAIL'}")
         if p.returncode != 0:
             return "FAIL", "\n".join(out + [p.stdout[-3000:], p.stderr[-2000:]])

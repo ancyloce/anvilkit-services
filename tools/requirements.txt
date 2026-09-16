@@ -1,7 +1,7 @@
 # Pinned Python toolchain of the verification tools (tools/*.py) and the Python
 # consumer package. Interpreter: CPython 3.12 (tools/verification-env.sh checks it).
-# Full freeze of .local/verification-venv on 2026-09-14; update only through
-# tools/verification-env.sh --upgrade followed by a reviewed diff of this file.
+# Full freeze of .local/verification-venv on 2026-09-14; update only through a
+# reviewed diff of this file (tools/verification-env.sh has no upgrade mode).
 Jinja2==3.1.6
 MarkupSafe==3.0.3
 PyYAML==6.0.2
