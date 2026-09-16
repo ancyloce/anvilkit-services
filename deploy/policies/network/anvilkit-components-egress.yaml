@@ -1,0 +1,17 @@
+# Pod-level network isolation of the Job namespace (DD-10 §2): default deny
+# in both directions for every Pod of anvilkit-components. The environment
+# adds one egress policy that admits the sidecar's upstreams (Control, the
+# object store, later Model Proxy/Knowledge/MCP) by address and port; the
+# development foundation generates that policy from the machine's addresses
+# (deploy/dev/up.sh). A Pod NetworkPolicy isolates Pods, not the two
+# containers of one Pod: the candidate container is kept off the network by
+# its syscall profile (deploy/policies/seccomp) and, on the target runtime,
+# by gVisor; this file alone proves nothing about same-Pod egress.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: anvilkit-components-default-deny
+  namespace: anvilkit-components
+spec:
+  podSelector: {}
+  policyTypes: ["Ingress", "Egress"]

@@ -1,0 +1,254 @@
+# Admission policy of the Job namespace (DD-10 §4, SEC-09): every Pod and
+# Job in anvilkit-components must be one of the fixed templates the
+# launcher renders from a reviewed profile. Nothing here is a general
+# admission platform: the images are the qualified digests of
+# contracts/jobs/profiles.json, the layouts are DD-03 §5 verbatim, the
+# fixture command is the reviewed entrypoint, the profile id binds the
+# layout, the candidate-code label and the RuntimeClass, and anything
+# else, including a reviewed image with another command, an extra
+# environment variable, a lifecycle hook, a probe, a volume that is not an
+# emptyDir, a mount with a subPath or propagation, a token, a capability,
+# or a container the layout does not have, is denied. Kyverno 1.19
+# ValidatingPolicy (CEL). The Pod policy matches pods only so that Kyverno
+# autogen (podControllers: jobs) evaluates the same rules against a Job's
+# template at Job admission, i.e. against what the launcher submits; the
+# ephemeral-container subresource has its own policy below. The registry
+# allowlist is the environment's separate policy
+# (anvilkit-components-registries.yaml).
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: anvilkit-components-pods
+spec:
+  validationActions: [Deny]
+  failurePolicy: Fail
+  evaluation:
+    admission:
+      enabled: true
+    background:
+      enabled: false
+  autogen:
+    podControllers:
+      controllers: [jobs]
+  matchConstraints:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: anvilkit-components
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["pods"]
+  variables:
+    # Qualified image digests: contracts/jobs/profiles.json. A digest is the
+    # identity; the registry is the environment's placement.
+    - name: fixtureDigests
+      expression: "['sha256:9db7b59979c38555a39def84a31fb98b5296952f9e3afd4f6f11f05b07adfab0']"
+    - name: supervisorDigests
+      expression: "['sha256:88277b08d8bb19c2ddeb2316bf7c2becdb3c6b9290de5f0c3ac6975c0e67d2ef']"
+    - name: sidecarDigests
+      expression: "['sha256:10dc306f82e2d1b6ed72032e6ba6863dd01e25480aa1c3d49803a20febc9632a']"
+    - name: supervisorEnv
+      expression: "['ANVILKIT_LAUNCH_ID', 'ANVILKIT_ATTEMPT_ID', 'ANVILKIT_LAUNCH_ENVELOPE']"
+    - name: sidecarEnv
+      expression: "['ANVILKIT_SIDECAR_CONTROL_ADDRESS', 'ANVILKIT_SIDECAR_IDENTITY_MODE', 'ANVILKIT_SIDECAR_BACKEND', 'ANVILKIT_SIDECAR_LAUNCH_KEY', 'ANVILKIT_SIDECAR_POD_UID', 'ANVILKIT_SIDECAR_LAUNCH_ENVELOPE']"
+    - name: fixtureEnv
+      expression: "['ANVILKIT_LAUNCH_ID', 'ANVILKIT_ATTEMPT_ID']"
+    # The reviewed entrypoint of local-check-v1 (contracts/jobs/profiles.json),
+    # verbatim: the fixture image is a general-purpose busybox, so the
+    # command is what makes it the fixture.
+    - name: fixtureCommand
+      expression: |-
+        ['/bin/sh', '-c', r'''set -e; d=$(printf "anvilkit-local-check-v1\n" | sha256sum | cut -d" " -f1); printf '{"schemaVersion":1,"launchId":"%s","attemptId":"%s","jobKind":"validator","profileId":"local-check-v1","verdict":"certified","outputs":[{"class":"result","digest":"sha256:%s","sizeBytes":"24"}],"completedAt":"%s"}' "$ANVILKIT_LAUNCH_ID" "$ANVILKIT_ATTEMPT_ID" "$d" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > /dev/termination-log''']
+    - name: supervisorCommand
+      expression: "['/usr/local/bin/anvilkit-codegen-supervisor']"
+    - name: inits
+      expression: "has(object.spec.initContainers) ? object.spec.initContainers : []"
+    - name: containers
+      expression: "object.spec.containers + variables.inits"
+    - name: names
+      expression: "object.spec.containers.map(c, c.name)"
+    - name: initNames
+      expression: "variables.inits.map(c, c.name)"
+    - name: isHarness
+      expression: "variables.names == ['supervisor'] && variables.initNames == ['access-sidecar']"
+    - name: isFixture
+      expression: "variables.names == ['fixture'] && size(variables.inits) == 0"
+    - name: labels
+      expression: "has(object.metadata.labels) ? object.metadata.labels : {}"
+    - name: candidateCode
+      expression: "'anvilkit.io/candidate-code' in variables.labels && variables.labels['anvilkit.io/candidate-code'] == 'true'"
+    - name: profileID
+      expression: "'anvilkit.io/profile-id' in variables.labels ? variables.labels['anvilkit.io/profile-id'] : ''"
+    - name: runtimeClass
+      expression: "has(object.spec.runtimeClassName) ? object.spec.runtimeClassName : ''"
+  validations:
+    - message: "no ephemeral container may be added to a Job Pod"
+      expression: "!has(object.spec.ephemeralContainers) || size(object.spec.ephemeralContainers) == 0"
+    - message: "a Job Pod carries the launcher's labels (launch-key, attempt-id, profile-id, candidate-code) and the create-request marker"
+      expression: >-
+        ['anvilkit.io/launch-key', 'anvilkit.io/attempt-id', 'anvilkit.io/profile-id', 'anvilkit.io/candidate-code'].all(k, k in variables.labels)
+        && has(object.metadata.annotations) && 'anvilkit.io/create-request' in object.metadata.annotations
+    - message: "a Job Pod is the fixture layout (one container 'fixture', no init container) or the harness layout (the 'supervisor' container and the 'access-sidecar' native sidecar as its only init container), nothing else"
+      expression: "variables.isFixture || variables.isHarness"
+    - message: "the profile id binds the layout, the candidate-code label and the RuntimeClass: local-check-v1 is the fixture layout without candidate code or RuntimeClass, harness-wiring-dev-v1 the harness layout without candidate code or RuntimeClass, codegen-fixed-v1 the harness layout with candidate code under the gvisor RuntimeClass; no other profile is admitted"
+      expression: >-
+        (variables.profileID == 'local-check-v1' && variables.isFixture && !variables.candidateCode && variables.runtimeClass == '')
+        || (variables.profileID == 'harness-wiring-dev-v1' && variables.isHarness && !variables.candidateCode && variables.runtimeClass == '')
+        || (variables.profileID == 'codegen-fixed-v1' && variables.isHarness && variables.candidateCode && variables.runtimeClass == 'gvisor')
+    - message: "the access sidecar is a native sidecar (restartPolicy Always) and no other container restarts"
+      expression: >-
+        variables.inits.all(c, c.name == 'access-sidecar' && has(c.restartPolicy) && c.restartPolicy == 'Always')
+        && object.spec.containers.all(c, !has(c.restartPolicy))
+    - message: "restartPolicy Never, no ServiceAccount token, no service links, no host namespace, no shared process namespace"
+      expression: >-
+        object.spec.restartPolicy == 'Never'
+        && has(object.spec.automountServiceAccountToken) && object.spec.automountServiceAccountToken == false
+        && (!has(object.spec.serviceAccountName) || object.spec.serviceAccountName == 'default')
+        && (!has(object.spec.hostNetwork) || !object.spec.hostNetwork)
+        && (!has(object.spec.hostPID) || !object.spec.hostPID)
+        && (!has(object.spec.hostIPC) || !object.spec.hostIPC)
+        && (!has(object.spec.shareProcessNamespace) || !object.spec.shareProcessNamespace)
+        && (!has(object.spec.hostAliases) || size(object.spec.hostAliases) == 0)
+        && (!has(object.spec.enableServiceLinks) ? false : !object.spec.enableServiceLinks)
+    - message: "only emptyDir volumes: no hostPath, CSI, Secret, ConfigMap, projected token or PVC enters a Job Pod"
+      expression: "!has(object.spec.volumes) || object.spec.volumes.all(v, has(v.emptyDir))"
+    - message: "every container image is pinned by a qualified digest"
+      expression: >-
+        variables.containers.all(c,
+          c.image.matches('^.+@sha256:[0-9a-f]{64}$')
+          && (c.name == 'fixture' ? variables.fixtureDigests.exists(d, c.image.endsWith('@' + d))
+              : c.name == 'supervisor' ? variables.supervisorDigests.exists(d, c.image.endsWith('@' + d))
+              : c.name == 'access-sidecar' ? variables.sidecarDigests.exists(d, c.image.endsWith('@' + d))
+              : false))
+    - message: "no container takes arguments, envFrom, ports, devices, stdin or a tty; every container drops all capabilities, forbids privilege escalation, is not privileged, has a read-only root and a seccomp profile"
+      expression: >-
+        variables.containers.all(c,
+          !has(c.args) && !has(c.envFrom) && !has(c.volumeDevices) && !has(c.ports)
+          && (!has(c.stdin) || !c.stdin) && (!has(c.tty) || !c.tty)
+          && has(c.securityContext)
+          && has(c.securityContext.allowPrivilegeEscalation) && !c.securityContext.allowPrivilegeEscalation
+          && has(c.securityContext.readOnlyRootFilesystem) && c.securityContext.readOnlyRootFilesystem
+          && (!has(c.securityContext.privileged) || !c.securityContext.privileged)
+          && !has(c.securityContext.procMount)
+          && has(c.securityContext.capabilities) && has(c.securityContext.capabilities.drop) && c.securityContext.capabilities.drop == ['ALL']
+          && has(c.securityContext.seccompProfile))
+    - message: "no container declares a lifecycle hook (postStart/preStop) or a liveness, readiness or startup probe: nothing but the reviewed entrypoint runs in a Job container"
+      expression: "variables.containers.all(c, !has(c.lifecycle) && !has(c.livenessProbe) && !has(c.readinessProbe) && !has(c.startupProbe))"
+    - message: "a volume mount names a volume and a mount path only: no subPath, subPathExpr, mountPropagation or recursiveReadOnly"
+      expression: "variables.containers.all(c, !has(c.volumeMounts) || c.volumeMounts.all(m, !has(m.subPath) && !has(m.subPathExpr) && !has(m.mountPropagation) && !has(m.recursiveReadOnly)))"
+    - message: "the fixture container runs exactly the reviewed local-check-v1 entrypoint"
+      expression: "!variables.isFixture || variables.containers.all(c, has(c.command) && c.command == variables.fixtureCommand)"
+    - message: "the fixture container runs no candidate code: no added capability, no user, no mount, the fixture environment only"
+      expression: >-
+        !variables.isFixture || variables.containers.all(c,
+          (!has(c.securityContext.capabilities.add) || size(c.securityContext.capabilities.add) == 0)
+          && !has(c.securityContext.runAsUser)
+          && c.securityContext.seccompProfile.type == 'RuntimeDefault'
+          && (!has(c.volumeMounts) || size(c.volumeMounts) == 0)
+          && (!has(c.env) || c.env.all(e, e.name in variables.fixtureEnv && !has(e.valueFrom))))
+    - message: "a fixture Pod runs no candidate code and has no volume"
+      expression: "!variables.isFixture || (!variables.candidateCode && (!has(object.spec.volumes) || size(object.spec.volumes) == 0))"
+    - message: "the harness Pod has exactly the workspace, verdict and sockets emptyDirs, supplementary groups 0 and 10001, and the components node pool"
+      expression: >-
+        !variables.isHarness || (
+          has(object.spec.volumes) && object.spec.volumes.map(v, v.name) == ['workspace', 'verdict', 'sockets']
+          && has(object.spec.securityContext) && has(object.spec.securityContext.supplementalGroups) && object.spec.securityContext.supplementalGroups == [0, 10001]
+          && has(object.spec.nodeSelector) && 'anvilkit.io/pool' in object.spec.nodeSelector && object.spec.nodeSelector['anvilkit.io/pool'] == 'components')
+    - message: "the supervisor is the qualified entrypoint as UID 0 with SETUID, SETGID and SETPCAP only, the candidate syscall profile, the launch environment only, and the workspace, verdict and read-only sockets mounts"
+      expression: >-
+        !variables.isHarness || variables.containers.exists(c, c.name == 'supervisor'
+          && has(c.command) && c.command == variables.supervisorCommand
+          && has(c.securityContext.runAsUser) && c.securityContext.runAsUser == 0
+          && has(c.securityContext.runAsGroup) && c.securityContext.runAsGroup == 0
+          && has(c.securityContext.capabilities.add) && c.securityContext.capabilities.add == ['SETUID', 'SETGID', 'SETPCAP']
+          && c.securityContext.seccompProfile.type == 'Localhost' && has(c.securityContext.seccompProfile.localhostProfile) && c.securityContext.seccompProfile.localhostProfile == 'anvilkit/candidate.json'
+          && has(c.env) && c.env.all(e, e.name in variables.supervisorEnv && !has(e.valueFrom)) && c.env.map(e, e.name) == variables.supervisorEnv
+          && has(c.volumeMounts) && c.volumeMounts.map(m, m.name + ':' + m.mountPath + ':' + string(has(m.readOnly) && m.readOnly)) == ['workspace:/workspace:false', 'verdict:/anvilkit/verdict:false', 'sockets:/run/anvilkit:true'])
+    - message: "the access sidecar runs as UID 10002 without capabilities, RuntimeDefault seccomp, the sidecar environment only with the Pod UID from the downward API, and the sockets mount alone"
+      expression: >-
+        !variables.isHarness || variables.inits.exists(c, c.name == 'access-sidecar'
+          && !has(c.command)
+          && has(c.securityContext.runAsUser) && c.securityContext.runAsUser == 10002
+          && has(c.securityContext.runAsGroup) && c.securityContext.runAsGroup == 10002
+          && has(c.securityContext.runAsNonRoot) && c.securityContext.runAsNonRoot
+          && (!has(c.securityContext.capabilities.add) || size(c.securityContext.capabilities.add) == 0)
+          && c.securityContext.seccompProfile.type == 'RuntimeDefault'
+          && has(c.env) && c.env.map(e, e.name) == variables.sidecarEnv
+          && c.env.all(e, e.name == 'ANVILKIT_SIDECAR_POD_UID'
+              ? (has(e.valueFrom) && has(e.valueFrom.fieldRef) && e.valueFrom.fieldRef.fieldPath == 'metadata.uid')
+              : !has(e.valueFrom))
+          && has(c.volumeMounts) && c.volumeMounts.map(m, m.name + ':' + m.mountPath + ':' + string(has(m.readOnly) && m.readOnly)) == ['sockets:/run/anvilkit:false'])
+    - message: "a Pod that runs candidate code needs the gVisor RuntimeClass (an unqualified candidate profile is denied)"
+      expression: "!variables.candidateCode || variables.runtimeClass == 'gvisor'"
+    - message: "a harness Pod without candidate code is the development wiring fixture: it must not name a RuntimeClass it does not qualify"
+      expression: "!(variables.isHarness && !variables.candidateCode) || variables.runtimeClass == ''"
+---
+# The ephemeral-container subresource (kubectl debug): never in a Job Pod.
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: anvilkit-components-ephemeral
+spec:
+  validationActions: [Deny]
+  failurePolicy: Fail
+  evaluation:
+    admission:
+      enabled: true
+    background:
+      enabled: false
+  autogen:
+    podControllers:
+      controllers: []
+  matchConstraints:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: anvilkit-components
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["pods/ephemeralcontainers"]
+  validations:
+    - message: "no ephemeral container may be added to a Job Pod"
+      expression: "!has(object.spec.ephemeralContainers) || size(object.spec.ephemeralContainers) == 0"
+---
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: anvilkit-components-jobs
+spec:
+  validationActions: [Deny]
+  failurePolicy: Fail
+  evaluation:
+    admission:
+      enabled: true
+    background:
+      enabled: false
+  autogen:
+    podControllers:
+      controllers: []
+  matchConstraints:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: anvilkit-components
+    resourceRules:
+      - apiGroups: ["batch"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["jobs"]
+  validations:
+    - message: "a Job runs one Pod once, without retries, under an absolute deadline, never suspended, and its Pods are not garbage-collected behind the launcher's evidence"
+      expression: >-
+        has(object.spec.backoffLimit) && object.spec.backoffLimit == 0
+        && has(object.spec.completions) && object.spec.completions == 1
+        && has(object.spec.parallelism) && object.spec.parallelism == 1
+        && has(object.spec.activeDeadlineSeconds) && object.spec.activeDeadlineSeconds >= 1 && object.spec.activeDeadlineSeconds <= 86400
+        && (!has(object.spec.suspend) || !object.spec.suspend)
+        && !has(object.spec.ttlSecondsAfterFinished)
+    - message: "a Job carries the launcher's labels and create-request marker on itself and its template"
+      expression: >-
+        has(object.metadata.labels) && has(object.spec.template.metadata.labels)
+        && ['anvilkit.io/launch-key', 'anvilkit.io/attempt-id', 'anvilkit.io/profile-id', 'anvilkit.io/candidate-code'].all(k, k in object.metadata.labels && k in object.spec.template.metadata.labels && object.metadata.labels[k] == object.spec.template.metadata.labels[k])
+        && has(object.metadata.annotations) && 'anvilkit.io/create-request' in object.metadata.annotations
+        && has(object.spec.template.metadata.annotations) && 'anvilkit.io/create-request' in object.spec.template.metadata.annotations

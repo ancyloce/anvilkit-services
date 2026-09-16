@@ -1,0 +1,63 @@
+# Rendered by the launcher (TestRenderPolicyFixtures); do not edit.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  annotations:
+    anvilkit.io/create-request: "1"
+  labels:
+    anvilkit.io/attempt-id: att_policy
+    anvilkit.io/candidate-code: "false"
+    anvilkit.io/launch-key: policy-local-check-v1
+    anvilkit.io/profile-id: local-check-v1
+  name: policy-local-check-v1
+  namespace: anvilkit-components
+spec:
+  activeDeadlineSeconds: 120
+  backoffLimit: 0
+  completions: 1
+  parallelism: 1
+  template:
+    metadata:
+      annotations:
+        anvilkit.io/create-request: "1"
+      labels:
+        anvilkit.io/attempt-id: att_policy
+        anvilkit.io/candidate-code: "false"
+        anvilkit.io/launch-key: policy-local-check-v1
+        anvilkit.io/profile-id: local-check-v1
+    spec:
+      automountServiceAccountToken: false
+      containers:
+      - command:
+        - /bin/sh
+        - -c
+        - set -e; d=$(printf "anvilkit-local-check-v1\n" | sha256sum | cut -d" " -f1);
+          printf '{"schemaVersion":1,"launchId":"%s","attemptId":"%s","jobKind":"validator","profileId":"local-check-v1","verdict":"certified","outputs":[{"class":"result","digest":"sha256:%s","sizeBytes":"24"}],"completedAt":"%s"}'
+          "$ANVILKIT_LAUNCH_ID" "$ANVILKIT_ATTEMPT_ID" "$d" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          > /dev/termination-log
+        env:
+        - name: ANVILKIT_LAUNCH_ID
+          value: lch_policy
+        - name: ANVILKIT_ATTEMPT_ID
+          value: att_policy
+        image: docker.io/library/busybox@sha256:9db7b59979c38555a39def84a31fb98b5296952f9e3afd4f6f11f05b07adfab0
+        name: fixture
+        resources:
+          limits:
+            cpu: 100m
+            memory: 64Mi
+          requests:
+            cpu: 100m
+            memory: 64Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+          seccompProfile:
+            type: RuntimeDefault
+        terminationMessagePolicy: File
+      enableServiceLinks: false
+      restartPolicy: Never
+status: {}

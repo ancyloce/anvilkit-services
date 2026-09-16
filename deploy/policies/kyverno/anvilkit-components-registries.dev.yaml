@@ -1,0 +1,41 @@
+# Environment policy of the development foundation: where the qualified
+# images may be pulled from, for every container of a Job Pod (the native
+# sidecar in initContainers included). The digest policy
+# (anvilkit-components-jobs) is environment-independent; this file names
+# the registries of the kind cluster (the local registry of
+# deploy/dev/up.sh and Docker Hub for the P05 busybox fixture). A
+# production environment replaces it with its Harbor registry.
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: anvilkit-components-registries
+spec:
+  validationActions: [Deny]
+  failurePolicy: Fail
+  evaluation:
+    admission:
+      enabled: true
+    background:
+      enabled: false
+  # Pods only, so that autogen evaluates the same rule against a Job's template
+  # at Job admission; ephemeral containers are denied outright by
+  # anvilkit-components-ephemeral (anvilkit-components-jobs.yaml).
+  autogen:
+    podControllers:
+      controllers: [jobs]
+  matchConstraints:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: anvilkit-components
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["pods"]
+  validations:
+    - message: "images of this environment come from localhost:5001 (the development registry) or docker.io/library/busybox (the P05 fixture): every container, native sidecars in initContainers and ephemeral containers included"
+      expression: >-
+        (object.spec.containers
+          + (has(object.spec.initContainers) ? object.spec.initContainers : [])
+          + (has(object.spec.ephemeralContainers) ? object.spec.ephemeralContainers : [])
+        ).all(c, c.image.startsWith('localhost:5001/') || c.image.startsWith('docker.io/library/busybox@'))

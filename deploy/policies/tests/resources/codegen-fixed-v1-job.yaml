@@ -1,0 +1,139 @@
+# Rendered by the launcher (TestRenderPolicyFixtures); do not edit.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  annotations:
+    anvilkit.io/create-request: "1"
+  labels:
+    anvilkit.io/attempt-id: att_policy
+    anvilkit.io/candidate-code: "true"
+    anvilkit.io/launch-key: policy-codegen-fixed-v1
+    anvilkit.io/profile-id: codegen-fixed-v1
+  name: policy-codegen-fixed-v1
+  namespace: anvilkit-components
+spec:
+  activeDeadlineSeconds: 600
+  backoffLimit: 0
+  completions: 1
+  parallelism: 1
+  template:
+    metadata:
+      annotations:
+        anvilkit.io/create-request: "1"
+      labels:
+        anvilkit.io/attempt-id: att_policy
+        anvilkit.io/candidate-code: "true"
+        anvilkit.io/launch-key: policy-codegen-fixed-v1
+        anvilkit.io/profile-id: codegen-fixed-v1
+    spec:
+      automountServiceAccountToken: false
+      containers:
+      - command:
+        - /usr/local/bin/anvilkit-codegen-supervisor
+        env:
+        - name: ANVILKIT_LAUNCH_ID
+          value: lch_policy
+        - name: ANVILKIT_ATTEMPT_ID
+          value: att_policy
+        - name: ANVILKIT_LAUNCH_ENVELOPE
+          value: '{"attemptId":"att_policy","deadline":"2026-09-16T12:10:00Z","executionEpoch":"1","inputs":[{"digest":"sha256:abeb263b000189efdd8206ff39eeb4f2f7f3217f1c480491868b46da4a21c6a8","name":"fixed-input"}],"jobKind":"codegen","launchEpoch":"1","launchId":"lch_policy","launchKey":"policy-codegen-fixed-v1","operationId":"op_policy","profileId":"codegen-fixed-v1","profileRevision":"1","schemaVersion":1}'
+        image: localhost:5001/anvilkit-codegen@sha256:88277b08d8bb19c2ddeb2316bf7c2becdb3c6b9290de5f0c3ac6975c0e67d2ef
+        name: supervisor
+        resources:
+          limits:
+            cpu: 500m
+            memory: 256Mi
+          requests:
+            cpu: 500m
+            memory: 256Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            add:
+            - SETUID
+            - SETGID
+            - SETPCAP
+            drop:
+            - ALL
+          privileged: false
+          readOnlyRootFilesystem: true
+          runAsGroup: 0
+          runAsNonRoot: false
+          runAsUser: 0
+          seccompProfile:
+            localhostProfile: anvilkit/candidate.json
+            type: Localhost
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /workspace
+          name: workspace
+        - mountPath: /anvilkit/verdict
+          name: verdict
+        - mountPath: /run/anvilkit
+          name: sockets
+          readOnly: true
+      enableServiceLinks: false
+      initContainers:
+      - env:
+        - name: ANVILKIT_SIDECAR_CONTROL_ADDRESS
+          value: 172.22.0.1:9101
+        - name: ANVILKIT_SIDECAR_IDENTITY_MODE
+          value: development
+        - name: ANVILKIT_SIDECAR_BACKEND
+          value: kind-anvilkit-dev
+        - name: ANVILKIT_SIDECAR_LAUNCH_KEY
+          value: policy-codegen-fixed-v1
+        - name: ANVILKIT_SIDECAR_POD_UID
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.uid
+        - name: ANVILKIT_SIDECAR_LAUNCH_ENVELOPE
+          value: '{"attemptId":"att_policy","deadline":"2026-09-16T12:10:00Z","executionEpoch":"1","inputs":[{"digest":"sha256:abeb263b000189efdd8206ff39eeb4f2f7f3217f1c480491868b46da4a21c6a8","name":"fixed-input"}],"jobKind":"codegen","launchEpoch":"1","launchId":"lch_policy","launchKey":"policy-codegen-fixed-v1","operationId":"op_policy","profileId":"codegen-fixed-v1","profileRevision":"1","schemaVersion":1}'
+        image: localhost:5001/anvilkit-job-access-sidecar@sha256:10dc306f82e2d1b6ed72032e6ba6863dd01e25480aa1c3d49803a20febc9632a
+        name: access-sidecar
+        resources:
+          limits:
+            cpu: 100m
+            memory: 64Mi
+          requests:
+            cpu: 100m
+            memory: 64Mi
+        restartPolicy: Always
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          privileged: false
+          readOnlyRootFilesystem: true
+          runAsGroup: 10002
+          runAsNonRoot: true
+          runAsUser: 10002
+          seccompProfile:
+            type: RuntimeDefault
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /run/anvilkit
+          name: sockets
+      nodeSelector:
+        anvilkit.io/pool: components
+      restartPolicy: Never
+      runtimeClassName: gvisor
+      securityContext:
+        supplementalGroups:
+        - 0
+        - 10001
+      shareProcessNamespace: false
+      volumes:
+      - emptyDir:
+          sizeLimit: 1Gi
+        name: workspace
+      - emptyDir:
+          sizeLimit: 256Mi
+        name: verdict
+      - emptyDir:
+          medium: Memory
+          sizeLimit: 1Mi
+        name: sockets
+status: {}
