@@ -19,3 +19,9 @@
 [submodule "services/agent/knowledge"]
 	path = services/agent/knowledge
 	url = https://github.com/ancyloce/anvilkit-agent-knowledge.git
+[submodule "services/agent/mcp"]
+	path = services/agent/mcp
+	url = https://github.com/ancyloce/anvilkit-agent-mcp.git
+[submodule "jobs/validator"]
+	path = jobs/validator
+	url = https://github.com/ancyloce/anvilkit-job-validator.git
