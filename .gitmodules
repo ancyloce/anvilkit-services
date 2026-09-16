@@ -16,3 +16,6 @@
 [submodule "contracts"]
 	path = contracts
 	url = https://github.com/ancyloce/anvilkit-agent-contracts.git
+[submodule "services/agent/knowledge"]
+	path = services/agent/knowledge
+	url = https://github.com/ancyloce/anvilkit-agent-knowledge.git
