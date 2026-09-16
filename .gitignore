@@ -42,12 +42,25 @@ outputs/
 
 # Generated local Compose credentials and configuration
 /.local/compose/
+/.local/dev/
 
-# Docs
-docs/
+# Historical documentation; docs/README.md and docs/architecture/ are the tracked baseline
+docs/archive/
 
 # Logs
 logs/
 
-# Contracts
-contracts/
+# Contract sources and generated bindings live in the contracts submodule (contracts/, its own
+# repository); tools/generate-contracts.py --check fails on drift there and in Control's sqlc output.
+
+# Pinned Python verification environment created by tools/verification-env.sh
+/.local/verification-venv/
+
+# Every other machine-local state under .local/: verified source snapshots (.local/baseline/),
+# the preserved legacy API worktree (.local/legacy/) and local tool binaries (.local/bin/)
+/.local/
+
+# Python byte-code, editable-install metadata and pytest cache of the verification tools
+__pycache__/
+*.egg-info/
+.pytest_cache/
