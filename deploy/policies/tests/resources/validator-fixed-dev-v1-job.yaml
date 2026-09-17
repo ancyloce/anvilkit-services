@@ -37,8 +37,8 @@ spec:
         - name: ANVILKIT_ATTEMPT_ID
           value: att_policy
         - name: ANVILKIT_LAUNCH_ENVELOPE
-          value: '{"attemptId":"att_policy","deadline":"2026-09-16T12:10:00Z","executionEpoch":"1","inputs":[{"digest":"sha256:abeb263b000189efdd8206ff39eeb4f2f7f3217f1c480491868b46da4a21c6a8","name":"fixed-input"}],"jobKind":"validator","launchEpoch":"1","launchId":"lch_policy","launchKey":"policy-validator-fixed-dev-v1","operationId":"op_policy","profileId":"validator-fixed-dev-v1","profileRevision":"4","schemaVersion":1}'
-        image: localhost:5001/anvilkit-validator@sha256:cee19cb824f58f71584b292dd13d915755c7f0f3ff04d103d264c2acd27e5468
+          value: '{"attemptId":"att_policy","deadline":"2026-09-16T12:10:00Z","executionEpoch":"1","inputs":[{"digest":"sha256:abeb263b000189efdd8206ff39eeb4f2f7f3217f1c480491868b46da4a21c6a8","name":"fixed-input"}],"jobKind":"validator","launchEpoch":"1","launchId":"lch_policy","launchKey":"policy-validator-fixed-dev-v1","operationId":"op_policy","profileId":"validator-fixed-dev-v1","profileRevision":"5","schemaVersion":1}'
+        image: localhost:5001/anvilkit-validator@sha256:80c5eabc4cc80e568d1a398c32ea5d81a90f98c997c60aeb6f3794daa47e5c13
         name: supervisor
         resources:
           limits:
@@ -90,7 +90,7 @@ spec:
               apiVersion: v1
               fieldPath: metadata.uid
         - name: ANVILKIT_SIDECAR_LAUNCH_ENVELOPE
-          value: '{"attemptId":"att_policy","deadline":"2026-09-16T12:10:00Z","executionEpoch":"1","inputs":[{"digest":"sha256:abeb263b000189efdd8206ff39eeb4f2f7f3217f1c480491868b46da4a21c6a8","name":"fixed-input"}],"jobKind":"validator","launchEpoch":"1","launchId":"lch_policy","launchKey":"policy-validator-fixed-dev-v1","operationId":"op_policy","profileId":"validator-fixed-dev-v1","profileRevision":"4","schemaVersion":1}'
+          value: '{"attemptId":"att_policy","deadline":"2026-09-16T12:10:00Z","executionEpoch":"1","inputs":[{"digest":"sha256:abeb263b000189efdd8206ff39eeb4f2f7f3217f1c480491868b46da4a21c6a8","name":"fixed-input"}],"jobKind":"validator","launchEpoch":"1","launchId":"lch_policy","launchKey":"policy-validator-fixed-dev-v1","operationId":"op_policy","profileId":"validator-fixed-dev-v1","profileRevision":"5","schemaVersion":1}'
         image: localhost:5001/anvilkit-job-access-sidecar@sha256:0d12442eb1f75dab2036ee679979e3bcfc86ad801e6775e88d10a3fabdb7367a
         name: access-sidecar
         resources:

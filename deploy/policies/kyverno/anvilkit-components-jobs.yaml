@@ -45,7 +45,7 @@ spec:
     - name: fixtureDigests
       expression: "['sha256:9db7b59979c38555a39def84a31fb98b5296952f9e3afd4f6f11f05b07adfab0']"
     - name: supervisorDigests
-      expression: "['sha256:262b46398818c5164c1eb7defa977cd5d9ae94092a819d28c8bf86f3878b4864', 'sha256:cee19cb824f58f71584b292dd13d915755c7f0f3ff04d103d264c2acd27e5468']"
+      expression: "['sha256:262b46398818c5164c1eb7defa977cd5d9ae94092a819d28c8bf86f3878b4864', 'sha256:80c5eabc4cc80e568d1a398c32ea5d81a90f98c997c60aeb6f3794daa47e5c13']"
     - name: sidecarDigests
       expression: "['sha256:0d12442eb1f75dab2036ee679979e3bcfc86ad801e6775e88d10a3fabdb7367a']"
     - name: supervisorEnv
@@ -68,7 +68,7 @@ spec:
     - name: validatorCommand
       expression: "['/usr/local/bin/node', '/anvilkit/validator/dist/job.js']"
     - name: validatorDigest
-      expression: "'sha256:cee19cb824f58f71584b292dd13d915755c7f0f3ff04d103d264c2acd27e5468'"
+      expression: "'sha256:80c5eabc4cc80e568d1a398c32ea5d81a90f98c997c60aeb6f3794daa47e5c13'"
     - name: inits
       expression: "has(object.spec.initContainers) ? object.spec.initContainers : []"
     - name: containers
