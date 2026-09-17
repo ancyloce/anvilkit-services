@@ -1,0 +1,23 @@
+// Go workspace for the replacement implementation (delivery.md "Target
+// placement and ownership"). Each service and Job class is its own module and
+// builds independently with GOWORK=off; the workspace only makes multi-module
+// development convenient. The generated contract module comes from the
+// contracts submodule (its own repository, released as go/vX.Y.Z); the API,
+// Control and Workflow live in their own repositories at
+// services/agent/{api,control,workflow}, the access sidecar in its own
+// repository at jobs/shared/access-sidecar (P09). The remaining submodules
+// under services/agent (knowledge, mcp, model-proxy) and jobs/validator hold
+// no implementation yet and are outside this closure.
+go 1.26.8
+
+use (
+	./contracts/go
+	./jobs/codegen
+	./jobs/migration
+	./jobs/shared/access-sidecar
+	./services/agent/api
+	./services/agent/control
+	./services/agent/workflow
+	./tests/contracts
+	./tests/integration
+)
