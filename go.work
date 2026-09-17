@@ -8,7 +8,7 @@
 // repository at jobs/shared/access-sidecar (P09). The remaining submodules
 // under services/agent (knowledge, mcp, model-proxy) and jobs/validator hold
 // no implementation yet and are outside this closure.
-go 1.26.8
+go 1.27.0
 
 use (
 	./contracts/go
