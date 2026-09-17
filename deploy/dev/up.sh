@@ -1,7 +1,8 @@
 #!/bin/sh
 # Brings up the DEVELOPMENT_ONLY foundation: PostgreSQL 17 + Temporal 1.31.2 +
-# the MinIO object stores (the versioned artifact bucket of P08 and the shared
-# inventory bucket of the in-cluster Control replicas) in the anvilkit-dev
+# the MinIO object stores (the versioned artifact bucket of P08, the shared
+# inventory bucket of the in-cluster Control replicas and the Model Proxy's
+# record/evidence bucket of P11) in the anvilkit-dev
 # Compose project, the three owned schemas (Control's through its own
 # repository's migration Job, knowledge/mcp through jobs/migration), and a
 # kind cluster with the least-privilege launcher identity for host-side
@@ -40,6 +41,17 @@ if [ ! -f "$LOCAL/minio-inventory.env" ]; then
 fi
 IUSER=$(sed -n 's/^ANVILKIT_INVENTORY_ACCESS_KEY_ID=//p' "$LOCAL/minio-inventory.env")
 IPASS=$(sed -n 's/^ANVILKIT_INVENTORY_SECRET_ACCESS_KEY=//p' "$LOCAL/minio-inventory.env")
+if [ ! -f "$LOCAL/minio-model-proxy.env" ]; then
+  # The Model Proxy's record and evidence store (P11): its own user and
+  # bucket, a permission boundary of its own beside the artifact store and
+  # the inventory.
+  PK=$(head -c 24 /dev/urandom | base64 | tr -d '/+=' | head -c 20)
+  PS=$(head -c 24 /dev/urandom | base64 | tr -d '/+=' | head -c 32)
+  printf 'ANVILKIT_MODEL_PROXY_STORE_ACCESS_KEY_ID=anvilkit-model-proxy-%s\nANVILKIT_MODEL_PROXY_STORE_SECRET_ACCESS_KEY=%s\n' "$PK" "$PS" > "$LOCAL/minio-model-proxy.env"
+  chmod 600 "$LOCAL/minio-model-proxy.env"
+fi
+PUSER=$(sed -n 's/^ANVILKIT_MODEL_PROXY_STORE_ACCESS_KEY_ID=//p' "$LOCAL/minio-model-proxy.env")
+PPASS=$(sed -n 's/^ANVILKIT_MODEL_PROXY_STORE_SECRET_ACCESS_KEY=//p' "$LOCAL/minio-model-proxy.env")
 
 # --wait only on the long-running services; schema setup runs as their dependency and
 # the namespace and bucket steps are one-shots that must not trip --wait on re-runs.
@@ -170,6 +182,25 @@ JSON
   chmod 600 "$LOCAL/api-principals.json"
 fi
 TA=$(python3 -c "import json,sys; d=json.load(open('$LOCAL/api-principals.json')); print(next(k for k,v in d.items() if v['tenantId']=='tenant_a'))")
+if [ ! -f "$LOCAL/model-proxy-principals.json" ]; then
+  # The Model Proxy's DEVELOPMENT_ONLY bearer principals (P11): one token for
+  # the Workflow's Activities, one for the access sidecar of a Job, one for
+  # Control's original-identity query.
+  PW_TOKEN=$(head -c 24 /dev/urandom | base64 | tr -d '/+=' | head -c 32)
+  PS_TOKEN=$(head -c 24 /dev/urandom | base64 | tr -d '/+=' | head -c 32)
+  PC_TOKEN=$(head -c 24 /dev/urandom | base64 | tr -d '/+=' | head -c 32)
+  cat > "$LOCAL/model-proxy-principals.json" <<JSON
+{
+  "${PW_TOKEN}": {"principalId": "anvilkit-agent-workflow", "kind": "workflow"},
+  "${PS_TOKEN}": {"principalId": "anvilkit-job-access-sidecar", "kind": "sidecar"},
+  "${PC_TOKEN}": {"principalId": "anvilkit-agent-control", "kind": "control"}
+}
+JSON
+  chmod 600 "$LOCAL/model-proxy-principals.json"
+fi
+PW_TOKEN=$(python3 -c "import json; d=json.load(open('$LOCAL/model-proxy-principals.json')); print(next(k for k,v in d.items() if v['kind']=='workflow'))")
+PS_TOKEN=$(python3 -c "import json; d=json.load(open('$LOCAL/model-proxy-principals.json')); print(next(k for k,v in d.items() if v['kind']=='sidecar'))")
+PC_TOKEN=$(python3 -c "import json; d=json.load(open('$LOCAL/model-proxy-principals.json')); print(next(k for k,v in d.items() if v['kind']=='control'))")
 
 cat > "$LOCAL/env.sh" <<ENV
 # source this file: DEVELOPMENT_ONLY connection settings for the replacement services
@@ -217,6 +248,23 @@ export ANVILKIT_DEV_TEMPORAL_ADDRESS_CLUSTER="${TEMPORAL_KIND_IP}:7233"
 export ANVILKIT_DEV_INVENTORY_BUCKET="anvilkit-inventory"
 export ANVILKIT_DEV_INVENTORY_ACCESS_KEY_ID="${IUSER}"
 export ANVILKIT_DEV_INVENTORY_SECRET_ACCESS_KEY="${IPASS}"
+# The Model Proxy (P11): its reviewed file, the contracts it validates
+# against, the Control placement, its DEVELOPMENT_ONLY bearer principals and
+# its record/evidence store on the MinIO (own bucket and user; secrets,
+# environment-only). Host-side runs and the integration scenarios keep the
+# filesystem store; the chart uses the bucket. No route credential is set
+# here: the controlled route is enabled only by the scenarios' own copies.
+export ANVILKIT_MODEL_PROXY_CONFIG="$ROOT/services/agent/model-proxy/config.yaml"
+export ANVILKIT_MODEL_PROXY_CONTRACTS_DIR="$ROOT/contracts"
+export ANVILKIT_MODEL_PROXY_CONTROL_ADDRESS="127.0.0.1:9101"
+export ANVILKIT_MODEL_PROXY_PRINCIPALS_FILE="$LOCAL/model-proxy-principals.json"
+export ANVILKIT_MODEL_PROXY_STORE_DIR="$LOCAL/model-proxy-store"
+export ANVILKIT_DEV_MODEL_PROXY_BUCKET="anvilkit-model-proxy"
+export ANVILKIT_DEV_MODEL_PROXY_ACCESS_KEY_ID="${PUSER}"
+export ANVILKIT_DEV_MODEL_PROXY_SECRET_ACCESS_KEY="${PPASS}"
+export ANVILKIT_DEV_MODEL_PROXY_TOKEN_WORKFLOW="${PW_TOKEN}"
+export ANVILKIT_DEV_MODEL_PROXY_TOKEN_SIDECAR="${PS_TOKEN}"
+export ANVILKIT_DEV_MODEL_PROXY_TOKEN_CONTROL="${PC_TOKEN}"
 export ANVILKIT_KYVERNO_CLI="$KYVERNO_DIR/kyverno"
 export ANVILKIT_DEV_API_TOKEN_A="${TA}"
 ENV

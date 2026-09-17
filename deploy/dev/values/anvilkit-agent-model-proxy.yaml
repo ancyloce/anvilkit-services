@@ -1,0 +1,39 @@
+# DEVELOPMENT_ONLY environment values of anvilkit-agent-model-proxy for the
+# kind cluster of the development foundation. The chart itself is owned by
+# the Model Proxy repository (services/agent/model-proxy/deploy/chart); this
+# file is the parent's environment combination for it. Secrets stay out of
+# Git: the store credentials and the bearer principals file are created by
+# deploy/dev/model-proxy-chart.sh from .local/dev/. The Control endpoint is
+# the Control release in the same namespace; the store endpoint (the
+# foundation's MinIO as the cluster reaches it) is machine-specific and is
+# set by the script. No route credential Secret is referenced: the
+# controlled route stays declared and unserved in the cluster (the
+# integration scenarios enable it on host-side Proxies with their own
+# copies), and no real provider route exists.
+replicaCount: 2
+image:
+  repository: anvilkit-agent-model-proxy
+  tag: dev
+  pullPolicy: Never
+control:
+  address: anvilkit-agent-control.anvilkit-apps.svc.cluster.local:9101
+identity:
+  mode: development
+  principalsSecret:
+    name: anvilkit-agent-model-proxy-principals
+    key: principals.json
+store:
+  s3:
+    bucket: anvilkit-model-proxy
+    secret:
+      name: anvilkit-agent-model-proxy-store
+routeCredentials: []
+podDisruptionBudget:
+  enabled: false
+resources:
+  requests:
+    cpu: 50m
+    memory: 96Mi
+  limits:
+    cpu: 1000m
+    memory: 384Mi

@@ -12,6 +12,9 @@
 #     bucket (.local/dev/minio-inventory.env), so the two permission
 #     boundaries stay separate as Control's configuration requires. Host-side
 #     development runs keep the filesystem inventory.
+#   - anvilkit-model-proxy: the Model Proxy's call records and private native
+#     evidence (P11; conditional creates and replaces by ETag), reached with
+#     its own user and bucket-limited policy (.local/dev/minio-model-proxy.env).
 set -eu
 mc alias set dev http://minio:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null
 mc mb --ignore-existing dev/anvilkit-artifacts >/dev/null
@@ -31,4 +34,19 @@ if ! mc admin user info dev "$ANVILKIT_INVENTORY_ACCESS_KEY_ID" >/dev/null 2>&1;
   mc admin user add dev "$ANVILKIT_INVENTORY_ACCESS_KEY_ID" "$ANVILKIT_INVENTORY_SECRET_ACCESS_KEY" >/dev/null
 fi
 mc admin policy attach dev anvilkit-inventory --user "$ANVILKIT_INVENTORY_ACCESS_KEY_ID" >/dev/null 2>&1 || true
-echo "object stores ready: anvilkit-artifacts (versioned), anvilkit-inventory (own user)"
+mc mb --ignore-existing dev/anvilkit-model-proxy >/dev/null
+cat > /tmp/model-proxy-policy.json <<'POLICY'
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {"Effect": "Allow", "Action": ["s3:ListBucket", "s3:GetBucketLocation"], "Resource": ["arn:aws:s3:::anvilkit-model-proxy"]},
+    {"Effect": "Allow", "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"], "Resource": ["arn:aws:s3:::anvilkit-model-proxy/*"]}
+  ]
+}
+POLICY
+mc admin policy create dev anvilkit-model-proxy /tmp/model-proxy-policy.json >/dev/null
+if ! mc admin user info dev "$ANVILKIT_MODEL_PROXY_STORE_ACCESS_KEY_ID" >/dev/null 2>&1; then
+  mc admin user add dev "$ANVILKIT_MODEL_PROXY_STORE_ACCESS_KEY_ID" "$ANVILKIT_MODEL_PROXY_STORE_SECRET_ACCESS_KEY" >/dev/null
+fi
+mc admin policy attach dev anvilkit-model-proxy --user "$ANVILKIT_MODEL_PROXY_STORE_ACCESS_KEY_ID" >/dev/null 2>&1 || true
+echo "object stores ready: anvilkit-artifacts (versioned), anvilkit-inventory (own user), anvilkit-model-proxy (own user)"

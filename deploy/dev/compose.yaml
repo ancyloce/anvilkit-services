@@ -102,6 +102,7 @@ services:
     env_file:
       - ../../.local/dev/minio.env
       - ../../.local/dev/minio-inventory.env
+      - ../../.local/dev/minio-model-proxy.env
     entrypoint: ["/bin/sh", "/setup/minio-setup.sh"]
     volumes:
       - ./minio-setup.sh:/setup/minio-setup.sh:ro
