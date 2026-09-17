@@ -79,13 +79,29 @@ if [ "${1:-}" = "--cluster" ]; then
       if out=$(kubectl --context "$CTX" create --dry-run=server -f "$f" 2>&1); then got=pass; else got=fail; fi
     fi
     if [ "$got" = "$expect" ]; then
-      printf 'PASS cluster/%-8s %-36s %s\n' "$who" "$case" "$got"
+      reason=admitted
+      if [ "$got" = fail ]; then
+        if echo "$out" | grep -q 'denied.*request\|denied the request'; then reason=policy;
+        elif echo "$out" | grep -q 'is invalid\|Forbidden: cannot be set on create'; then reason=api-structural;
+        else reason=other-rejection; fi
+      fi
+      printf 'PASS cluster/%-8s %-36s %s (%s)\n' "$who" "$case" "$got" "$reason"
+      # F1/F2 regressions must reach the policy with a structurally valid
+      # Job through the real launcher, not pass on an unrelated API error.
+      case "$case" in
+        job-node-name|job-scheduler-unreviewed|job-*-resources-*|job-*-limits-*|job-*-requests-*|job-*-size-*|job-*-medium-*)
+          if [ "$reason" != policy ]; then
+            printf 'FAIL expected policy rejection: %s\n%s\n' "$case" "$out"
+            failures=$((failures+1))
+          fi ;;
+      esac
     else
       printf 'FAIL cluster/%-8s %-36s expected %s, got %s\n' "$who" "$case" "$expect" "$got"
       echo "$out" | tail -n 4 | sed 's/^/      | /'
       failures=$((failures+1))
     fi
   done
+  "$PY" "$POLICIES/tests/mutate.py" --cluster-lifecycle "$POLICIES/tests/resources" "$CTX" "$LAUNCHER" || failures=$((failures+1))
 fi
 echo "policy checks: $total cases, $failures failures"
 [ "$failures" -eq 0 ]

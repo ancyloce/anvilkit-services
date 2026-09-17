@@ -22,6 +22,9 @@ import copy
 import json
 import pathlib
 import sys
+import subprocess
+import time
+import uuid
 
 import yaml  # PyYAML (the verification venv)
 
@@ -44,6 +47,8 @@ def cases(resources: pathlib.Path):
     job = load(resources / "harness-wiring-dev-v1-job.yaml")
     fixture_job = load(resources / "local-check-v1-job.yaml")
     candidate_job = load(resources / "codegen-fixed-v1-job.yaml")
+    validator = load(resources / "validator-fixed-dev-v1-pod.yaml")
+    validator_job = load(resources / "validator-fixed-dev-v1-job.yaml")
     out = {}
 
     def add(case, base, mutate, expect="fail"):
@@ -58,6 +63,20 @@ def cases(resources: pathlib.Path):
     add("valid-fixture-pod", fixture, lambda o: None, "pass")
     add("valid-harness-job", job, lambda o: None, "pass")
     add("valid-fixture-job", fixture_job, lambda o: None, "pass")
+    add("valid-validator-pod", validator, lambda o: None, "pass")
+    add("valid-validator-job", validator_job, lambda o: None, "pass")
+    # The fixed validator (P10d): its command and image bind its profile id;
+    # the codegen supervisor's command or image under the validator profile,
+    # the validator's under a codegen profile, or a validator relabeled as
+    # candidate code are refused.
+    add("validator-with-codegen-command", validator, lambda o: container(o, "supervisor").__setitem__("command", ["/usr/local/bin/anvilkit-codegen-supervisor"]))
+    add("validator-with-codegen-image", validator, lambda o: container(o, "supervisor").__setitem__("image", container(harness, "supervisor")["image"]))
+    add("validator-command-extended", validator, lambda o: container(o, "supervisor")["command"].append("--unsafe"))
+    add("validator-claims-harness-profile", validator, lambda o: o["metadata"]["labels"].__setitem__("anvilkit.io/profile-id", "harness-wiring-dev-v1"))
+    add("harness-claims-validator-profile", harness, lambda o: o["metadata"]["labels"].__setitem__("anvilkit.io/profile-id", "validator-fixed-dev-v1"))
+    add("validator-as-candidate-code", validator, lambda o: o["metadata"]["labels"].__setitem__("anvilkit.io/candidate-code", "true"))
+    add("validator-with-runtime-class", validator, lambda o: o["spec"].__setitem__("runtimeClassName", "gvisor"))
+    add("validator-job-with-codegen-command", validator_job, lambda o: container(o["spec"]["template"], "supervisor").__setitem__("command", ["/usr/local/bin/anvilkit-codegen-supervisor"]))
     add("valid-candidate-job", candidate_job, lambda o: None, "pass")
 
     def sup(o):
@@ -100,6 +119,27 @@ def cases(resources: pathlib.Path):
     add("shared-process-namespace", harness, lambda o: o["spec"].__setitem__("shareProcessNamespace", True))
     add("restart-always", harness, lambda o: o["spec"].__setitem__("restartPolicy", "Always"))
     add("node-pool-changed", harness, lambda o: o["spec"].__setitem__("nodeSelector", {}))
+    add("node-name", harness, lambda o: o["spec"].__setitem__("nodeName", "unreviewed-node"))
+    add("scheduler-unreviewed", harness, lambda o: o["spec"].__setitem__("schedulerName", "unreviewed-scheduler"))
+    add("valid-default-scheduler", harness, lambda o: o["spec"].__setitem__("schedulerName", "default-scheduler"), "pass")
+    # Both containers and all temporary volumes, as Pods and at Job admission.
+    for prefix, base, spec in [("pod", harness, lambda o: o), ("job", job, lambda o: o["spec"]["template"])]:
+        add(prefix + "-node-name", base, lambda o: spec(o)["spec"].__setitem__("nodeName", "unreviewed-node"))
+        add(prefix + "-scheduler-unreviewed", base, lambda o: spec(o)["spec"].__setitem__("schedulerName", "unreviewed-scheduler"))
+        for name in ["supervisor", "access-sidecar"]:
+            add(prefix + "-" + name + "-resources-removed", base, lambda o: container(spec(o), name).pop("resources"))
+            add(prefix + "-" + name + "-limits-removed", base, lambda o: container(spec(o), name)["resources"].pop("limits"))
+            for field in ["requests", "limits"]:
+                for resource, value in [("cpu", "10m" if field == "requests" else "2"), ("memory", "16Mi" if field == "requests" else "8Gi")]:
+                    add(prefix + "-" + name + "-" + field + "-" + resource, base,
+                        lambda o: container(spec(o), name)["resources"][field].__setitem__(resource, value))
+        for name in ["workspace", "verdict", "sockets"]:
+            def volume(o):
+                return next(v["emptyDir"] for v in spec(o)["spec"]["volumes"] if v["name"] == name)
+            add(prefix + "-" + name + "-size-removed", base, lambda o: volume(o).pop("sizeLimit"))
+            add(prefix + "-" + name + "-size-changed", base, lambda o: volume(o).__setitem__("sizeLimit", "8Gi"))
+            add(prefix + "-" + name + "-medium-changed", base, lambda o: volume(o).__setitem__("medium", "" if name == "sockets" else "Memory"))
+        add(prefix + "-sockets-medium-removed", base, lambda o: next(v["emptyDir"] for v in spec(o)["spec"]["volumes"] if v["name"] == "sockets").pop("medium"))
     add("extra-container", harness, lambda o: o["spec"]["containers"].append(copy.deepcopy(sup(o)) | {"name": "extra"}))
     add("init-container", harness, lambda o: o["spec"]["initContainers"].append({"name": "init", "image": sup(o)["image"], "command": ["true"]}))
     add("sidecar-not-native", harness, lambda o: side(o).pop("restartPolicy"))
@@ -168,7 +208,67 @@ def cases(resources: pathlib.Path):
     return out
 
 
+def cluster_lifecycle(resources, context, launcher):
+    """Use real scheduler binding, Pod UPDATE and ephemeralcontainers UPDATE.
+
+    Only this probe's Job is created/deleted. The launcher creates Jobs; the
+    administrator observes and tests subresources the launcher cannot access.
+    """
+    admin = ["kubectl", "--context", context]
+    identity = ["kubectl", "--kubeconfig", launcher]
+    namespace = "anvilkit-components"
+
+    def run(who, args, obj=None):
+        return subprocess.run(who + args, input=None if obj is None else json.dumps(obj),
+                              capture_output=True, text=True, timeout=90)
+
+    def passed(proc, label):
+        if proc.returncode:
+            raise RuntimeError(label + ": " + proc.stderr)
+        print("PASS cluster " + label, flush=True)
+        return proc.stdout
+
+    job = load(resources / "harness-wiring-dev-v1-job.yaml")
+    job["metadata"]["name"] = "p09-policy-" + uuid.uuid4().hex[:10]
+    name = job["metadata"]["name"]
+    passed(run(identity, ["create", "-f", "-"], job), "launcher creates scheduling probe")
+    try:
+        deadline = time.monotonic() + 60
+        pod = None
+        while time.monotonic() < deadline:
+            result = run(admin, ["get", "pods", "-n", namespace, "-l", "batch.kubernetes.io/job-name=" + name, "-o", "json"])
+            if result.returncode:
+                raise RuntimeError(result.stderr)
+            items = json.loads(result.stdout)["items"]
+            if items and items[0]["spec"].get("nodeName"):
+                pod = items[0]
+                break
+            time.sleep(0.5)
+        if pod is None:
+            raise RuntimeError("scheduler did not bind the probe Pod")
+        print("PASS cluster normal default-scheduler binding to " + pod["spec"]["nodeName"], flush=True)
+        # The existing nodeName must not prevent an otherwise valid update.
+        passed(run(admin, ["annotate", "pod", pod["metadata"]["name"], "-n", namespace,
+                            "anvilkit.io/p09-update=verified", "--overwrite"]), "scheduled Pod UPDATE")
+        pod = json.loads(passed(run(admin, ["get", "pod", pod["metadata"]["name"], "-n", namespace, "-o", "json"]), "read scheduled Pod"))
+        path = "/api/v1/namespaces/" + namespace + "/pods/" + pod["metadata"]["name"] + "/ephemeralcontainers"
+        pod["spec"]["ephemeralContainers"] = [{"name": "p09-debug", "image": pod["spec"]["containers"][0]["image"], "command": ["/bin/true"]}]
+        denied = run(identity, ["replace", "--raw", path, "-f", "-"], pod)
+        if denied.returncode == 0 or "cannot update resource" not in denied.stderr or '"pods/ephemeralcontainers"' not in denied.stderr:
+            raise RuntimeError("expected launcher RBAC rejection: " + denied.stderr)
+        print("PASS cluster ephemeralcontainers UPDATE launcher: RBAC rejection", flush=True)
+        denied = run(admin, ["replace", "--raw", path, "-f", "-"], pod)
+        if denied.returncode == 0 or "anvilkit-components-ephemeral" not in denied.stderr or "denied" not in denied.stderr:
+            raise RuntimeError("expected admin policy rejection (not structural/RBAC): " + denied.stderr)
+        print("PASS cluster ephemeralcontainers UPDATE admin: policy rejection", flush=True)
+    finally:
+        passed(run(identity, ["delete", "job", name, "-n", namespace, "--wait=true", "--timeout=60s"]), "remove only the probe Job")
+    return 0
+
+
 def main() -> int:
+    if sys.argv[1] == "--cluster-lifecycle":
+        return cluster_lifecycle(pathlib.Path(sys.argv[2]), sys.argv[3], sys.argv[4])
     resources, out = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
     out.mkdir(parents=True, exist_ok=True)
     expectations = {}

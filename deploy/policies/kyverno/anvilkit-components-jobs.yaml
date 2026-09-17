@@ -45,9 +45,9 @@ spec:
     - name: fixtureDigests
       expression: "['sha256:9db7b59979c38555a39def84a31fb98b5296952f9e3afd4f6f11f05b07adfab0']"
     - name: supervisorDigests
-      expression: "['sha256:88277b08d8bb19c2ddeb2316bf7c2becdb3c6b9290de5f0c3ac6975c0e67d2ef']"
+      expression: "['sha256:262b46398818c5164c1eb7defa977cd5d9ae94092a819d28c8bf86f3878b4864', 'sha256:cee19cb824f58f71584b292dd13d915755c7f0f3ff04d103d264c2acd27e5468']"
     - name: sidecarDigests
-      expression: "['sha256:10dc306f82e2d1b6ed72032e6ba6863dd01e25480aa1c3d49803a20febc9632a']"
+      expression: "['sha256:0d12442eb1f75dab2036ee679979e3bcfc86ad801e6775e88d10a3fabdb7367a']"
     - name: supervisorEnv
       expression: "['ANVILKIT_LAUNCH_ID', 'ANVILKIT_ATTEMPT_ID', 'ANVILKIT_LAUNCH_ENVELOPE']"
     - name: sidecarEnv
@@ -62,6 +62,13 @@ spec:
         ['/bin/sh', '-c', r'''set -e; d=$(printf "anvilkit-local-check-v1\n" | sha256sum | cut -d" " -f1); printf '{"schemaVersion":1,"launchId":"%s","attemptId":"%s","jobKind":"validator","profileId":"local-check-v1","verdict":"certified","outputs":[{"class":"result","digest":"sha256:%s","sizeBytes":"24"}],"completedAt":"%s"}' "$ANVILKIT_LAUNCH_ID" "$ANVILKIT_ATTEMPT_ID" "$d" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > /dev/termination-log''']
     - name: supervisorCommand
       expression: "['/usr/local/bin/anvilkit-codegen-supervisor']"
+    # The reviewed entrypoint of the fixed validator image (P10d,
+    # validator-fixed-dev-v1): the same harness layout with the validator's
+    # trusted process as the supervisor container.
+    - name: validatorCommand
+      expression: "['/usr/local/bin/node', '/anvilkit/validator/dist/job.js']"
+    - name: validatorDigest
+      expression: "'sha256:cee19cb824f58f71584b292dd13d915755c7f0f3ff04d103d264c2acd27e5468'"
     - name: inits
       expression: "has(object.spec.initContainers) ? object.spec.initContainers : []"
     - name: containers
@@ -83,6 +90,13 @@ spec:
     - name: runtimeClass
       expression: "has(object.spec.runtimeClassName) ? object.spec.runtimeClassName : ''"
   validations:
+    # nodeName is assigned by scheduler binding, not by the launcher. Job
+    # UPDATE is also checked unconditionally in the Job policy below;
+    # scheduled Pod UPDATEs keep their legitimate nodeName.
+    - message: "new Pods and Job templates must not select a node directly"
+      expression: "request.operation == 'UPDATE' || !has(object.spec.nodeName) || object.spec.nodeName == ''"
+    - message: "only the reviewed default scheduler may place Job Pods"
+      expression: "!has(object.spec.schedulerName) || object.spec.schedulerName == '' || object.spec.schedulerName == 'default-scheduler'"
     - message: "no ephemeral container may be added to a Job Pod"
       expression: "!has(object.spec.ephemeralContainers) || size(object.spec.ephemeralContainers) == 0"
     - message: "a Job Pod carries the launcher's labels (launch-key, attempt-id, profile-id, candidate-code) and the create-request marker"
@@ -91,10 +105,11 @@ spec:
         && has(object.metadata.annotations) && 'anvilkit.io/create-request' in object.metadata.annotations
     - message: "a Job Pod is the fixture layout (one container 'fixture', no init container) or the harness layout (the 'supervisor' container and the 'access-sidecar' native sidecar as its only init container), nothing else"
       expression: "variables.isFixture || variables.isHarness"
-    - message: "the profile id binds the layout, the candidate-code label and the RuntimeClass: local-check-v1 is the fixture layout without candidate code or RuntimeClass, harness-wiring-dev-v1 the harness layout without candidate code or RuntimeClass, codegen-fixed-v1 the harness layout with candidate code under the gvisor RuntimeClass; no other profile is admitted"
+    - message: "the profile id binds the layout, the candidate-code label and the RuntimeClass: local-check-v1 is the fixture layout without candidate code or RuntimeClass, harness-wiring-dev-v1 and validator-fixed-dev-v1 the harness layout without candidate code or RuntimeClass, codegen-fixed-v1 the harness layout with candidate code under the gvisor RuntimeClass; no other profile is admitted"
       expression: >-
         (variables.profileID == 'local-check-v1' && variables.isFixture && !variables.candidateCode && variables.runtimeClass == '')
         || (variables.profileID == 'harness-wiring-dev-v1' && variables.isHarness && !variables.candidateCode && variables.runtimeClass == '')
+        || (variables.profileID == 'validator-fixed-dev-v1' && variables.isHarness && !variables.candidateCode && variables.runtimeClass == '')
         || (variables.profileID == 'codegen-fixed-v1' && variables.isHarness && variables.candidateCode && variables.runtimeClass == 'gvisor')
     - message: "the access sidecar is a native sidecar (restartPolicy Always) and no other container restarts"
       expression: >-
@@ -155,10 +170,29 @@ spec:
           has(object.spec.volumes) && object.spec.volumes.map(v, v.name) == ['workspace', 'verdict', 'sockets']
           && has(object.spec.securityContext) && has(object.spec.securityContext.supplementalGroups) && object.spec.securityContext.supplementalGroups == [0, 10001]
           && has(object.spec.nodeSelector) && 'anvilkit.io/pool' in object.spec.nodeSelector && object.spec.nodeSelector['anvilkit.io/pool'] == 'components')
+    - message: "harness requests and limits match the reviewed profile and native sidecar exactly"
+      expression: >-
+        !variables.isHarness || variables.containers.all(c,
+          has(c.resources) && has(c.resources.requests) && has(c.resources.limits)
+          && c.resources.requests == (c.name == 'access-sidecar'
+            ? {'cpu': '100m', 'memory': '64Mi'}
+            : variables.profileID == 'validator-fixed-dev-v1'
+              ? {'cpu': '1', 'memory': '1Gi'} : {'cpu': '500m', 'memory': '256Mi'})
+          && c.resources.limits == c.resources.requests)
+    - message: "harness emptyDir size limits and media match the reviewed template"
+      expression: >-
+        !variables.isHarness || object.spec.volumes.all(v,
+          has(v.emptyDir) && has(v.emptyDir.sizeLimit)
+          && v.emptyDir.sizeLimit == (v.name == 'workspace' ? '1Gi' : v.name == 'verdict' ? '256Mi' : '1Mi')
+          && (v.name == 'sockets' ? (has(v.emptyDir.medium) && v.emptyDir.medium == 'Memory')
+              : (!has(v.emptyDir.medium) || v.emptyDir.medium == '')))
     - message: "the supervisor is the qualified entrypoint as UID 0 with SETUID, SETGID and SETPCAP only, the candidate syscall profile, the launch environment only, and the workspace, verdict and read-only sockets mounts"
       expression: >-
         !variables.isHarness || variables.containers.exists(c, c.name == 'supervisor'
-          && has(c.command) && c.command == variables.supervisorCommand
+          && has(c.command)
+          && (variables.profileID == 'validator-fixed-dev-v1'
+              ? (c.command == variables.validatorCommand && c.image.endsWith('@' + variables.validatorDigest))
+              : c.command == variables.supervisorCommand)
           && has(c.securityContext.runAsUser) && c.securityContext.runAsUser == 0
           && has(c.securityContext.runAsGroup) && c.securityContext.runAsGroup == 0
           && has(c.securityContext.capabilities.add) && c.securityContext.capabilities.add == ['SETUID', 'SETGID', 'SETPCAP']
@@ -238,6 +272,8 @@ spec:
         operations: ["CREATE", "UPDATE"]
         resources: ["jobs"]
   validations:
+    - message: "a Job template must use scheduler binding, never nodeName"
+      expression: "!has(object.spec.template.spec.nodeName) || object.spec.template.spec.nodeName == ''"
     - message: "a Job runs one Pod once, without retries, under an absolute deadline, never suspended, and its Pods are not garbage-collected behind the launcher's evidence"
       expression: >-
         has(object.spec.backoffLimit) && object.spec.backoffLimit == 0
