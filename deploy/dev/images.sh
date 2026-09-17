@@ -1,11 +1,16 @@
 #!/bin/sh
-# Builds the P09 harness images and the P10 validator image and publishes
-# them to the development registry of the kind cluster (deploy/dev/up.sh
-# starts it), by digest:
+# Builds the P09 harness images, the P10 validator image and the P12 team
+# image and publishes them to the development registry of the kind cluster
+# (deploy/dev/up.sh starts it), by digest:
 #
 #   sh deploy/dev/images.sh          # build all, push, print the digests
 #   sh deploy/dev/images.sh --harness # P09 supervisor and sidecar only
 #
+# anvilkit-codegen-team (P12, jobs/codegen/Dockerfile.team) is the validator
+# image at the digest that Dockerfile names as its base, plus the supervisor
+# of jobs/codegen and the team package; it is built after the validator and
+# pinned by codegen-team-dev-v1 (DISABLED: it runs model-written code and
+# needs the gVisor qualification).
 # anvilkit-codegen builds from jobs/codegen alone (its own Dockerfile);
 # anvilkit-job-access-sidecar builds from its own Dockerfile against its
 # published, versioned contracts dependency; anvilkit-validator builds from
@@ -28,7 +33,8 @@ docker build --network=host ${ANVILKIT_DEV_GOPROXY:+--build-arg GOPROXY="$ANVILK
 docker build --network=host ${ANVILKIT_DEV_GOPROXY:+--build-arg GOPROXY="$ANVILKIT_DEV_GOPROXY"} -t "$REGISTRY/anvilkit-job-access-sidecar:dev" "$ROOT/jobs/shared/access-sidecar"
 if [ "${1:-}" != --harness ]; then
   docker build --network=host --build-context contracts="$ROOT/contracts" -t "$REGISTRY/anvilkit-validator:dev" "$ROOT/jobs/validator"
-  IMAGES="$IMAGES anvilkit-validator"
+  docker build --network=host ${ANVILKIT_DEV_GOPROXY:+--build-arg GOPROXY="$ANVILKIT_DEV_GOPROXY"} -f "$ROOT/jobs/codegen/Dockerfile.team" -t "$REGISTRY/anvilkit-codegen-team:dev" "$ROOT/jobs/codegen"
+  IMAGES="$IMAGES anvilkit-validator anvilkit-codegen-team"
 fi
 for image in $IMAGES; do
   docker push "$REGISTRY/$image:dev" >/dev/null
