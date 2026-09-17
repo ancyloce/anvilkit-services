@@ -1,0 +1,162 @@
+name: anvilkit-local
+
+# Control's approved local listener is loopback-only. Host networking preserves
+# that boundary without changing application code. This profile targets Linux/amd64.
+x-agent: &agent
+  platform: linux/amd64
+  network_mode: host
+  restart: unless-stopped
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  stop_grace_period: 30s
+  logging:
+    driver: local
+
+services:
+  postgres:
+    image: postgres:18.6-alpine@sha256:d3e1620b530c944afa6e887d22eb899824da68e19c52024bf98f5220c88a65b2
+    platform: linux/amd64
+    network_mode: host
+    restart: unless-stopped
+    env_file: ./.local/compose/postgres.env
+    command: [postgres, -c, listen_addresses=127.0.0.1, -p, "15432"]
+    volumes:
+      - postgres-data:/var/lib/postgresql
+      - ./.local/compose/postgres:/run/bootstrap:ro
+      - ./deploy/local/init-agent.sh:/docker-entrypoint-initdb.d/10-agent.sh:ro
+      - ./docs/archive/contracts/sql/roles-v1.sql:/contracts/roles-v1.sql:ro
+      - ./docs/archive/contracts/definitions/activation-v1.sql:/contracts/activation-v1.sql:ro
+      - ./docs/archive/contracts/sql/control-v1.sql:/contracts/control-v1.sql:ro
+    healthcheck:
+      test: [CMD-SHELL, 'PGPASSWORD="$$POSTGRES_PASSWORD" psql -h 127.0.0.1 -p 15432 -U postgres -d anvilkit_agent -v ON_ERROR_STOP=1 -qtAc "SELECT 1 FROM agent_control.local_checks LIMIT 0" >/dev/null']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 10s
+    stop_grace_period: 30s
+    logging:
+      driver: local
+
+  temporal-schema:
+    image: temporalio/admin-tools:1.31.2@sha256:dbc5fcd6ee8f0f4d808bf765af9a87dea9d8a283abfdcfbd2fc148496ba66107
+    platform: linux/amd64
+    network_mode: host
+    env_file: ./.local/compose/schema.env
+    entrypoint: [/bin/sh, /setup/temporal.sh, schemas]
+    volumes:
+      - ./deploy/local/temporal.sh:/setup/temporal.sh:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  temporal:
+    image: temporalio/server:1.31.2@sha256:6b02e5176631c8d28f010735a3a73c69423a9adbcfad7e5dfe23836c904b7e26
+    platform: linux/amd64
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      TEMPORAL_SERVER_CONFIG_FILE_PATH: /run/local/server.yaml
+    volumes:
+      - ./.local/compose/temporal:/run/local:ro
+    depends_on:
+      temporal-schema:
+        condition: service_completed_successfully
+    healthcheck:
+      test: [CMD, nc, -z, 127.0.0.1, "17233"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    stop_grace_period: 30s
+    logging:
+      driver: local
+
+  temporal-namespace:
+    image: temporalio/admin-tools:1.31.2@sha256:dbc5fcd6ee8f0f4d808bf765af9a87dea9d8a283abfdcfbd2fc148496ba66107
+    platform: linux/amd64
+    network_mode: host
+    entrypoint: [/bin/sh, /setup/temporal.sh, namespace]
+    volumes:
+      - ./deploy/local/temporal.sh:/setup/temporal.sh:ro
+      - ./.local/compose/admin:/run/local:ro
+    depends_on:
+      temporal:
+        condition: service_healthy
+
+  # The legacy Control and Workflow. services/agent/{control,workflow} now hold
+  # the replacement implementations (the anvilkit-agent-control and
+  # anvilkit-agent-workflow repositories), so both services are pinned to the
+  # legacy artifacts like the API below: the images built from the old
+  # worktrees on 2026-09-13 (re-tagged legacy-20260916, never rebuilt from the
+  # replacement) and, for a rebuild, the preserved legacy worktree snapshots
+  # under .local/legacy/ (each old worktree with its uncommitted README edit
+  # and the ignored retained contracts it builds against; see delivery.md,
+  # cleanup record). They are removed only by the P24 handover.
+  anvilkit-agent-control:
+    <<: *agent
+    image: anvilkit-local-anvilkit-agent-control:legacy-20260916
+    build:
+      context: ./.local/legacy/anvilkit-agent-control-20260916/worktree
+      dockerfile: ../../../../deploy/local/Service.Dockerfile
+      args:
+        SERVICE_BINARY: anvilkit-agent-control
+    entrypoint: [/usr/local/bin/anvilkit-agent-control]
+    env_file: ./.local/compose/control.env
+    volumes:
+      - ./.local/compose/control:/run/local:ro
+      - intake-data:/var/lib/anvilkit/intake
+      - artifact-data:/var/lib/anvilkit/artifacts
+    depends_on:
+      postgres:
+        condition: service_healthy
+      temporal-namespace:
+        condition: service_completed_successfully
+
+  anvilkit-agent-workflow:
+    <<: *agent
+    image: anvilkit-local-anvilkit-agent-workflow:legacy-20260916
+    build:
+      context: ./.local/legacy/anvilkit-agent-workflow-20260916/worktree
+      dockerfile: ../../../../deploy/local/Service.Dockerfile
+      args:
+        SERVICE_BINARY: anvilkit-agent-workflow
+    entrypoint: [/usr/local/bin/anvilkit-agent-workflow]
+    env_file: ./.local/compose/workflow.env
+    volumes:
+      - ./.local/compose/workflow:/run/local:ro
+    depends_on:
+      temporal-namespace:
+        condition: service_completed_successfully
+
+  # The legacy API. services/agent/api now holds the replacement implementation
+  # (anvilkit-agent-api repository), so this service is pinned to the legacy
+  # artifact: the image built from the old worktree (tagged legacy-20260915,
+  # never rebuilt from the replacement) and, for a rebuild, the preserved
+  # legacy source snapshot under .local/legacy/ (the old worktree including
+  # its uncommitted changes and retained contracts; see delivery.md, cleanup
+  # record). It is removed only by the P24 handover.
+  anvilkit-agent-api:
+    <<: *agent
+    image: anvilkit-local-anvilkit-agent-api:legacy-20260915
+    build:
+      context: ./.local/legacy/anvilkit-agent-api-20260915/worktree
+      dockerfile: ../../../../deploy/local/Service.Dockerfile
+      args:
+        SERVICE_BINARY: anvilkit-agent-api
+    entrypoint: [/usr/local/bin/anvilkit-agent-api]
+    env_file: ./.local/compose/api.env
+    volumes:
+      - ./.local/compose/api:/run/local:ro
+    depends_on:
+      anvilkit-agent-control:
+        condition: service_started
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, "http://127.0.0.1:18081/readyz"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  postgres-data:
+  intake-data:
+  artifact-data:
