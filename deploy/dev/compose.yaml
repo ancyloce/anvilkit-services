@@ -110,6 +110,67 @@ services:
       minio:
         condition: service_healthy
 
+  # P14 (DEVELOPMENT_ONLY): NATS JetStream for the committed-fact bus (the
+  # three domain streams are created by nats-setup from deploy/dev/nats) and
+  # two Valkey instances — the queue instance BullMQ uses and a separate
+  # cache instance — so the separation the architecture requires (C03: queue
+  # and cache use independent instances) is real even here. Single nodes:
+  # neither Sentinel failover nor JetStream replication is qualified by
+  # this foundation.
+  nats:
+    image: nats:2.12.4-alpine@sha256:31c6ed3b2da61645aaa3ad9217b5a52b34b6ebd555ecb71259cd7723c59ae1ea
+    restart: unless-stopped
+    command: ["--jetstream", "--store_dir", "/data", "--name", "anvilkit-dev", "--http_port", "8222"]
+    ports:
+      - "127.0.0.1:24222:4222"
+    volumes:
+      - nats-data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8222/healthz"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  nats-setup:
+    image: natsio/nats-box:0.19.0@sha256:00f10dd4156f28ece84bb3a52cf356ef220ebaa0494310caa90dec184d9e2b89
+    environment:
+      NATS_URL: nats://nats:4222
+    entrypoint: ["/bin/sh", "/setup/nats-setup.sh"]
+    volumes:
+      - ./nats-setup.sh:/setup/nats-setup.sh:ro
+      - ./nats:/setup/nats:ro
+    depends_on:
+      nats:
+        condition: service_healthy
+
+  valkey-queue:
+    image: valkey/valkey:9.0.2-alpine@sha256:68677f85c863830af7836ff07c4a13b7f085ebeff62f4dedb71499ca27d229f2
+    restart: unless-stopped
+    command: ["valkey-server", "--appendonly", "yes", "--save", ""]
+    ports:
+      - "127.0.0.1:26379:6379"
+    volumes:
+      - valkey-queue-data:/data
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  valkey-cache:
+    image: valkey/valkey:9.0.2-alpine@sha256:68677f85c863830af7836ff07c4a13b7f085ebeff62f4dedb71499ca27d229f2
+    restart: unless-stopped
+    command: ["valkey-server", "--save", ""]
+    ports:
+      - "127.0.0.1:26380:6379"
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
 volumes:
   postgres-data:
   minio-data:
+  nats-data:
+  valkey-queue-data:

@@ -14,6 +14,19 @@ CREATE ROLE anvilkit_${domain}_app LOGIN PASSWORD '${ANVILKIT_DEV_PASSWORD}';
 CREATE ROLE anvilkit_${domain}_migrator LOGIN PASSWORD '${ANVILKIT_DEV_PASSWORD}';
 CREATE DATABASE anvilkit_${domain} OWNER anvilkit_${domain}_migrator;
 SQL
+  # P14: the owner queue relay identity of the knowledge/mcp domains and
+  # the Knowledge outbox forwarder identity (least privilege, granted by
+  # migration 00002); Control has neither.
+  if [ "$domain" != control ]; then
+    psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d postgres <<SQL
+CREATE ROLE anvilkit_${domain}_relay LOGIN PASSWORD '${ANVILKIT_DEV_PASSWORD}';
+SQL
+  fi
+  if [ "$domain" = knowledge ]; then
+    psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d postgres <<SQL
+CREATE ROLE anvilkit_knowledge_forwarder LOGIN PASSWORD '${ANVILKIT_DEV_PASSWORD}';
+SQL
+  fi
   # The app role must not be able to create objects in the domain schema.
   psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "anvilkit_${domain}" <<SQL
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;

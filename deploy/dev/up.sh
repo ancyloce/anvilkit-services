@@ -55,9 +55,11 @@ PPASS=$(sed -n 's/^ANVILKIT_MODEL_PROXY_STORE_SECRET_ACCESS_KEY=//p' "$LOCAL/min
 
 # --wait only on the long-running services; schema setup runs as their dependency and
 # the namespace and bucket steps are one-shots that must not trip --wait on re-runs.
-docker compose -f "$ROOT/deploy/dev/compose.yaml" up -d --wait --wait-timeout 180 postgres temporal minio
+docker compose -f "$ROOT/deploy/dev/compose.yaml" up -d --wait --wait-timeout 180 postgres temporal minio nats valkey-queue valkey-cache
 docker compose -f "$ROOT/deploy/dev/compose.yaml" run --rm --no-deps temporal-namespace >/dev/null
 docker compose -f "$ROOT/deploy/dev/compose.yaml" run --rm --no-deps minio-setup >/dev/null
+# P14: the three domain streams of the event catalog on the JetStream.
+docker compose -f "$ROOT/deploy/dev/compose.yaml" run --rm --no-deps nats-setup >/dev/null
 
 # Control's schema is service-owned: its repository's migration Job
 # (services/agent/control, cmd/anvilkit-migration) applies it; the
@@ -65,6 +67,15 @@ docker compose -f "$ROOT/deploy/dev/compose.yaml" run --rm --no-deps minio-setup
 # those services own them.
 (cd "$ROOT/services/agent/control" && GOWORK=off go run ./cmd/anvilkit-migration \
   -dsn "postgres://anvilkit_control_migrator:${PW}@127.0.0.1:25432/anvilkit_control?sslmode=disable")
+# P14: the owner queue relay identities and the Knowledge outbox forwarder
+# identity that migration 00002 grants to (postgres-init.sh creates them on a
+# fresh data directory; an existing foundation gets them here, idempotently).
+for role in anvilkit_knowledge_relay anvilkit_mcp_relay anvilkit_knowledge_forwarder; do
+  docker compose -f "$ROOT/deploy/dev/compose.yaml" exec -T postgres psql -v ON_ERROR_STOP=1 -U postgres -d postgres -tAc \
+    "SELECT 1 FROM pg_roles WHERE rolname = '$role'" | grep -qx 1 \
+    || docker compose -f "$ROOT/deploy/dev/compose.yaml" exec -T postgres psql -v ON_ERROR_STOP=1 -U postgres -d postgres -c \
+      "CREATE ROLE $role LOGIN PASSWORD '$PW'" >/dev/null
+done
 for domain in knowledge mcp; do
   (cd "$ROOT/jobs/migration" && go run ./cmd/anvilkit-migration -domain "$domain" \
     -dsn "postgres://anvilkit_${domain}_migrator:${PW}@127.0.0.1:25432/anvilkit_${domain}?sslmode=disable")
@@ -267,5 +278,37 @@ export ANVILKIT_DEV_MODEL_PROXY_TOKEN_SIDECAR="${PS_TOKEN}"
 export ANVILKIT_DEV_MODEL_PROXY_TOKEN_CONTROL="${PC_TOKEN}"
 export ANVILKIT_KYVERNO_CLI="$KYVERNO_DIR/kyverno"
 export ANVILKIT_DEV_API_TOKEN_A="${TA}"
+# P14 (DEVELOPMENT_ONLY): the JetStream, the queue Valkey (BullMQ) and the
+# separate cache Valkey; the owned databases of Knowledge and MCP with their
+# app, relay, forwarder and migrator identities; the placements of the
+# Knowledge and MCP owners, the Knowledge forwarder sidecar, the owner queue
+# relays and the Background Worker for host-side runs and the integration
+# scenario (services/agent/{knowledge,mcp,background-worker}). Secrets
+# (database and queue URLs) are environment-only.
+export ANVILKIT_DEV_NATS_URL="nats://127.0.0.1:24222"
+export ANVILKIT_DEV_QUEUE_URL="redis://127.0.0.1:26379"
+export ANVILKIT_DEV_CACHE_URL="redis://127.0.0.1:26380"
+export ANVILKIT_DEV_KNOWLEDGE_DSN="postgres://anvilkit_knowledge_app:${PW}@127.0.0.1:25432/anvilkit_knowledge?sslmode=disable"
+export ANVILKIT_DEV_KNOWLEDGE_RELAY_DSN="postgres://anvilkit_knowledge_relay:${PW}@127.0.0.1:25432/anvilkit_knowledge?sslmode=disable"
+export ANVILKIT_DEV_KNOWLEDGE_FORWARDER_DSN="postgres://anvilkit_knowledge_forwarder:${PW}@127.0.0.1:25432/anvilkit_knowledge?sslmode=disable"
+export ANVILKIT_DEV_KNOWLEDGE_MIGRATOR_DSN="postgres://anvilkit_knowledge_migrator:${PW}@127.0.0.1:25432/anvilkit_knowledge?sslmode=disable"
+export ANVILKIT_DEV_MCP_DSN="postgres://anvilkit_mcp_app:${PW}@127.0.0.1:25432/anvilkit_mcp?sslmode=disable"
+export ANVILKIT_DEV_MCP_RELAY_DSN="postgres://anvilkit_mcp_relay:${PW}@127.0.0.1:25432/anvilkit_mcp?sslmode=disable"
+export ANVILKIT_DEV_MCP_MIGRATOR_DSN="postgres://anvilkit_mcp_migrator:${PW}@127.0.0.1:25432/anvilkit_mcp?sslmode=disable"
+export ANVILKIT_KNOWLEDGE_CONFIG="$ROOT/services/agent/knowledge/config.yaml"
+export ANVILKIT_KNOWLEDGE_DATABASE_URL="\$ANVILKIT_DEV_KNOWLEDGE_DSN"
+export ANVILKIT_KNOWLEDGE_CONTROL_ADDRESS="127.0.0.1:9101"
+export ANVILKIT_FORWARDER_DATABASE_URL="\$ANVILKIT_DEV_KNOWLEDGE_FORWARDER_DSN"
+export ANVILKIT_FORWARDER_NATS_URL="\$ANVILKIT_DEV_NATS_URL"
+export ANVILKIT_MCP_CONFIG="$ROOT/services/agent/mcp/config.yaml"
+export ANVILKIT_MCP_DATABASE_URL="\$ANVILKIT_DEV_MCP_DSN"
+export ANVILKIT_MCP_NATS_URL="\$ANVILKIT_DEV_NATS_URL"
+export ANVILKIT_MCP_CONTROL_ADDRESS="127.0.0.1:9101"
+export ANVILKIT_BACKGROUND_WORKER_CONFIG="$ROOT/services/agent/background-worker/config.yaml"
+export ANVILKIT_BACKGROUND_WORKER_QUEUE_URL="\$ANVILKIT_DEV_QUEUE_URL"
+export ANVILKIT_BACKGROUND_WORKER_NATS_URL="\$ANVILKIT_DEV_NATS_URL"
+export ANVILKIT_BACKGROUND_WORKER_KNOWLEDGE_ADDRESS="127.0.0.1:9105"
+export ANVILKIT_BACKGROUND_WORKER_MCP_ADDRESS="127.0.0.1:9106"
+export ANVILKIT_BACKGROUND_WORKER_CONTRACTS_DIR="$ROOT/contracts"
 ENV
 echo "dev foundation ready; source $LOCAL/env.sh"
