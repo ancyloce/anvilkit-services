@@ -5,9 +5,12 @@
 // contracts submodule (its own repository, released as go/vX.Y.Z); the API,
 // Control and Workflow live in their own repositories at
 // services/agent/{api,control,workflow}, the access sidecar in its own
-// repository at jobs/shared/access-sidecar (P09). The remaining submodules
-// under services/agent (knowledge, mcp, model-proxy) and jobs/validator hold
-// no implementation yet and are outside this closure.
+// repository at jobs/shared/access-sidecar (P09); since P14 the MCP service
+// at services/agent/mcp and the Knowledge outbox forwarder sidecar (a Go
+// module inside the TypeScript Knowledge repository) at
+// services/agent/knowledge/forwarder. The TypeScript packages
+// (services/agent/{knowledge,model-proxy,background-worker}, jobs/validator,
+// jobs/codegen/team) are outside this closure.
 go 1.27.0
 
 use (
@@ -17,6 +20,8 @@ use (
 	./jobs/shared/access-sidecar
 	./services/agent/api
 	./services/agent/control
+	./services/agent/knowledge/forwarder
+	./services/agent/mcp
 	./services/agent/workflow
 	./tests/contracts
 	./tests/integration
