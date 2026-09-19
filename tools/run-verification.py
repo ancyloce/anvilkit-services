@@ -21,7 +21,28 @@ Steps, in order:
   ts          pnpm install --frozen-lockfile in        the TypeScript consumer type-checks (tsc), lints (Biome)
               contracts/, then check-types/lint/test   and agrees with the fixtures (Vitest)
               in contracts/ts
+  validator   pnpm install --frozen-lockfile, then     the validator Job package (P10) type-checks, lints,
+              check-types/lint/profiles:check/build/   verifies its profiles, compiles and certifies its fixed
+              test in jobs/validator                   component (Vitest; real build, SSR and Chromium steps)
+  team        pnpm install --frozen-lockfile, then     the codegen team package (P12) type-checks, lints,
+              check-types, lint, build, tools:check,   builds, checks its reviewed tools document and tests
+              test in jobs/codegen/team                (Vitest; a countable sidecar double, the real
+                                                       validator chain when jobs/validator is built)
+  model-proxy pnpm install --frozen-lockfile, then     the Model Proxy (P11) type-checks, lints, builds and
+              check-types/lint/build/test in           proves its guards and call scenarios (Vitest: the real
+              services/agent/model-proxy               pi-ai path against a countable upstream, a fake
+                                                       Control, two instances on one store, mTLS; the S3
+                                                       store against the foundation's MinIO when present)
   python      pytest in contracts/python               the pydantic consumer agrees with the inference fixtures
+  knowledge   pnpm install --frozen-lockfile, then     the Knowledge owner (P14) type-checks, lints, builds and
+              check-types/lint/build/test in           tests (Vitest; real PostgreSQL through Testcontainers;
+              services/agent/knowledge                 --static leaves the tests out); its Go forwarder sidecar
+                                                       module is a go.work module of the go step
+  background  pnpm install --frozen-lockfile, then     the Background Worker and owner queue relay (P14)
+              check-types/lint/build/test in           type-check, lint, build and test (Vitest; real
+              services/agent/background-worker         PostgreSQL, Valkey and NATS through Testcontainers)
+  profiles    python packages/profile-schemas/         the shared configuration schemas' cross-language
+              python/config_generation.py --fixtures   fixtures pass the Python consumer example (P14-06)
   go          go build/vet/test per module in go.work  unit tests; Docker-backed tests (Testcontainers) run
                                                        unless ANVILKIT_SKIP_DOCKER_TESTS=1
   integration go test -tags integration ...           real PostgreSQL/Temporal/Kubernetes proofs; needs the
@@ -133,9 +154,145 @@ def step_ts() -> tuple[str, str]:
     return "PASS", "\n".join(out)
 
 
+VALIDATOR_PKG = ROOT / "jobs" / "validator"
+
+
+def step_validator() -> tuple[str, str]:
+    """The validator Job package (P10): its locked install (no lifecycle script),
+    type check, lint, profile digests and toolchain, the compiled dist the
+    integration step's host-process scenario runs, and the tests (the build,
+    SSR and Chromium steps run real processes)."""
+    pnpm = shutil.which("pnpm")
+    if not pnpm or not shutil.which("node"):
+        return "UNEXECUTED", "pnpm/node are not on PATH (Node.js 24 LTS and the packageManager of jobs/validator/package.json are required)"
+    out = []
+    for name, cmd in (
+        ("install", [pnpm, "install", "--frozen-lockfile"]),
+        ("check-types", [pnpm, "run", "check-types"]),
+        ("lint", [pnpm, "run", "lint"]),
+        ("profiles:check", [pnpm, "run", "profiles:check"]),
+        ("build", [pnpm, "run", "build"]),
+        ("test", [pnpm, "run", "test"]),
+    ):
+        p = run(cmd, VALIDATOR_PKG, dict(os.environ))
+        out.append(f"jobs/validator: pnpm {name} -> {'ok' if p.returncode == 0 else 'FAIL'}")
+        if p.returncode != 0:
+            return "FAIL", "\n".join(out + [p.stdout[-2000:], p.stderr[-2000:]])
+    return "PASS", "\n".join(out)
+
+
+MODEL_PROXY_PKG = ROOT / "services" / "agent" / "model-proxy"
+
+
+def step_model_proxy() -> tuple[str, str]:
+    """The Model Proxy (P11): its locked install (no lifecycle script), type
+    check, lint, build and tests; the contract document comes from the
+    contracts checkout of this repository."""
+    pnpm = shutil.which("pnpm")
+    if not pnpm or not shutil.which("node"):
+        return "UNEXECUTED", "pnpm/node are not on PATH (Node.js 24 LTS and the packageManager of services/agent/model-proxy/package.json are required)"
+    env = dict(os.environ, ANVILKIT_MODEL_PROXY_CONTRACTS_DIR=str(CONTRACTS))
+    out = []
+    for name, cmd in (
+        ("install", [pnpm, "install", "--frozen-lockfile", "--ignore-scripts"]),
+        ("check-types", [pnpm, "run", "check-types"]),
+        ("lint", [pnpm, "run", "lint"]),
+        ("build", [pnpm, "run", "build"]),
+        ("test", [pnpm, "run", "test"]),
+    ):
+        p = run(cmd, MODEL_PROXY_PKG, env)
+        out.append(f"services/agent/model-proxy: pnpm {name} -> {'ok' if p.returncode == 0 else 'FAIL'}")
+        if p.returncode != 0:
+            return "FAIL", "\n".join(out + [p.stdout[-2000:], p.stderr[-2000:]])
+    return "PASS", "\n".join(out)
+
+
+TEAM_PKG = ROOT / "jobs" / "codegen" / "team"
+
+
+def step_team() -> tuple[str, str]:
+    """The codegen team package (P12): its locked install (better-sqlite3's
+    prebuilt binary is the one lifecycle script its workspace file allows),
+    type check, lint, build (the coder and coordinator the tests and the
+    integration scenario spawn), the reviewed tools document checked against
+    the build, and the tests (a countable sidecar double; the validation test
+    runs the real validator chain from jobs/validator when it is built)."""
+    pnpm = shutil.which("pnpm")
+    if not pnpm or not shutil.which("node"):
+        return "UNEXECUTED", "pnpm/node are not on PATH (Node.js 24 LTS and the packageManager of jobs/codegen/team/package.json are required)"
+    env = dict(os.environ, ANVILKIT_CODEGEN_TEAM_CONTRACTS_DIR=str(CONTRACTS))
+    out = []
+    for name, cmd in (
+        ("install", [pnpm, "install", "--frozen-lockfile"]),
+        ("check-types", [pnpm, "run", "check-types"]),
+        ("lint", [pnpm, "run", "lint"]),
+        ("build", [pnpm, "run", "build"]),
+        ("tools:check", [pnpm, "run", "tools:check"]),
+        ("test", [pnpm, "run", "test"]),
+    ):
+        p = run(cmd, TEAM_PKG, env)
+        out.append(f"jobs/codegen/team: pnpm {name} -> {'ok' if p.returncode == 0 else 'FAIL'}")
+        if p.returncode != 0:
+            return "FAIL", "\n".join(out + [p.stdout[-2000:], p.stderr[-2000:]])
+    return "PASS", "\n".join(out)
+
+
 def step_python() -> tuple[str, str]:
     p = run([PY, "-m", "pytest", "-q"], PY_PKG, dict(os.environ))
     detail = f"{PY_PKG.relative_to(ROOT)}: pytest -> {'ok' if p.returncode == 0 else 'FAIL'}\n{p.stdout[-1500:]}"
+    return ("PASS" if p.returncode == 0 else "FAIL"), detail
+
+
+KNOWLEDGE_PKG = ROOT / "services" / "agent" / "knowledge"
+BACKGROUND_WORKER_PKG = ROOT / "services" / "agent" / "background-worker"
+PROFILE_SCHEMAS = ROOT / "packages" / "profile-schemas"
+
+
+def pnpm_package(rel: pathlib.Path, env: dict, scripts: tuple[str, ...] = ("check-types", "lint", "build", "test")) -> tuple[str, str]:
+    """The locked install (no lifecycle script) and the named scripts of one
+    TypeScript package outside the workspace."""
+    pnpm = shutil.which("pnpm")
+    if not pnpm or not shutil.which("node"):
+        return "UNEXECUTED", f"pnpm/node are not on PATH (Node.js 24 LTS and the packageManager of {rel}/package.json are required)"
+    out = []
+    for name, cmd in (("install", [pnpm, "install", "--frozen-lockfile", "--ignore-scripts"]),) + tuple((s, [pnpm, "run", s]) for s in scripts):
+        p = run(cmd, ROOT / rel, env)
+        out.append(f"{rel}: pnpm {name} -> {'ok' if p.returncode == 0 else 'FAIL'}")
+        if p.returncode != 0:
+            return "FAIL", "\n".join(out + [p.stdout[-2000:], p.stderr[-2000:]])
+    return "PASS", "\n".join(out)
+
+
+def step_knowledge(static: bool) -> tuple[str, str]:
+    """The Knowledge owner (P14): type check, lint, build (the entries the
+    forwarder test and the integration scenario spawn) and tests (Vitest;
+    Docker-backed PostgreSQL through Testcontainers, so --static leaves the
+    tests out). The Go forwarder sidecar module is covered by the go step."""
+    if static:
+        return pnpm_package(pathlib.Path("services/agent/knowledge"), dict(os.environ), ("check-types", "lint", "build"))
+    if not shutil.which("docker"):
+        return "UNEXECUTED", "docker is not on PATH; the Knowledge tests need Testcontainers (use --static for the build alone)"
+    return pnpm_package(pathlib.Path("services/agent/knowledge"), dict(os.environ))
+
+
+def step_background_worker(static: bool) -> tuple[str, str]:
+    """The Background Worker and owner queue relay (P14): type check, lint,
+    build and tests (Vitest; Docker-backed PostgreSQL, Valkey and NATS
+    through Testcontainers, so --static leaves the tests out)."""
+    env = dict(os.environ, ANVILKIT_BACKGROUND_WORKER_CONTRACTS_DIR=str(CONTRACTS))
+    if static:
+        return pnpm_package(pathlib.Path("services/agent/background-worker"), env, ("check-types", "lint", "build"))
+    if not shutil.which("docker"):
+        return "UNEXECUTED", "docker is not on PATH; the Background Worker tests need Testcontainers (use --static for the build alone)"
+    return pnpm_package(pathlib.Path("services/agent/background-worker"), env)
+
+
+def step_profile_schemas() -> tuple[str, str]:
+    """The shared configuration schemas (P14-06): the Python consumer example
+    runs the cross-language fixture cases (the Go and TypeScript consumers
+    run the same file in their own tests)."""
+    p = run([PY, str(PROFILE_SCHEMAS / "python" / "config_generation.py"), "--fixtures", str(PROFILE_SCHEMAS / "fixtures.json")], PROFILE_SCHEMAS, dict(os.environ))
+    detail = f"packages/profile-schemas: python fixtures -> {'ok' if p.returncode == 0 else 'FAIL'}\n{p.stdout[-1500:]}{p.stderr[-800:]}"
     return ("PASS" if p.returncode == 0 else "FAIL"), detail
 
 
@@ -226,7 +383,13 @@ def main() -> int:
         ("contracts", lambda: script([PY, "tools/check-contracts.py"])),
         ("export", lambda: script([PY, "tools/check-source-export.py"])),
         ("ts", step_ts),
+        ("validator", step_validator),
+        ("model-proxy", step_model_proxy),
+        ("team", step_team),
         ("python", step_python),
+        ("knowledge", lambda: step_knowledge(a.static)),
+        ("background", lambda: step_background_worker(a.static)),
+        ("profiles", step_profile_schemas),
         ("go", lambda: step_go(a.static)),
         ("integration", step_integration),
     ]

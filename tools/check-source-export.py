@@ -7,11 +7,13 @@ A `.gitignore` edit is not evidence that the design and build inputs are include
 source. This check computes the export set the way Git would: the parent's tracked files
 plus its untracked files that are not ignored, and, for each replacement repository mounted
 in the tree (the contracts repository at contracts/, the API, Control and Workflow
-repositories at services/agent/{api,control,workflow} and the access sidecar repository at
-jobs/shared/access-sidecar, whether already registered as submodules or still nested
-checkouts), that repository's own tracked plus untracked-not-ignored files. The submodules
-without an implementation (services/agent/{model-proxy,knowledge,mcp}, jobs/validator) stay
-excluded.
+repositories at services/agent/{api,control,workflow,model-proxy}, since P14 the Knowledge
+and MCP repositories at services/agent/{knowledge,mcp}, the access sidecar repository at
+jobs/shared/access-sidecar and the validator repository at jobs/validator, whether already
+registered as submodules or still nested checkouts), that repository's own tracked plus
+untracked-not-ignored files. The Background Worker (services/agent/background-worker) and the
+shared configuration schemas (packages/profile-schemas) are plain directories of the parent
+until their repositories exist.
 Then:
 
   1. Required inputs: every file under each declared input directory and every anchor file
@@ -51,7 +53,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 # Repositories of the replacement mounted inside this tree: their content is source,
 # listed through their own Git. Every other gitlink is a submodule without an
 # implementation in this closure (excluded).
-REPLACEMENT_REPOS = ("contracts", "services/agent/api", "services/agent/control", "services/agent/workflow", "jobs/shared/access-sidecar")
+REPLACEMENT_REPOS = ("contracts", "services/agent/api", "services/agent/control", "services/agent/workflow", "services/agent/model-proxy", "services/agent/knowledge", "services/agent/mcp", "jobs/shared/access-sidecar", "jobs/validator")
 REQUIRED_DIRS = (
     "contracts/proto",
     "contracts/openapi",
@@ -66,12 +68,33 @@ REQUIRED_DIRS = (
     "contracts/tools",
     "docs/architecture",
     "jobs/codegen",
+    "jobs/codegen/team/src",
+    "jobs/codegen/team/test",
+    "jobs/codegen/agent/team/prompts",
     "jobs/migration",
     "jobs/shared/access-sidecar",
+    "jobs/validator/src",
+    "jobs/validator/test",
+    "jobs/validator/profiles",
+    "jobs/validator/fixtures",
     "deploy/policies",
     "services/agent/api",
     "services/agent/control",
     "services/agent/workflow",
+    "services/agent/model-proxy/src",
+    "services/agent/model-proxy/test",
+    "services/agent/model-proxy/deploy",
+    "services/agent/knowledge/src",
+    "services/agent/knowledge/test",
+    "services/agent/knowledge/forwarder",
+    "services/agent/knowledge/deploy",
+    "services/agent/mcp/cmd",
+    "services/agent/mcp/internal",
+    "services/agent/mcp/deploy",
+    "services/agent/background-worker/src",
+    "services/agent/background-worker/test",
+    "services/agent/background-worker/deploy",
+    "packages/profile-schemas",
     "tests/contracts",
     "tests/integration",
     "deploy/dev",
@@ -96,14 +119,23 @@ REQUIRED_FILES = (
     "contracts/tools/pyenv_check.py", "contracts/tools/requirements.txt", "contracts/tools/verification-env.sh",
     "jobs/codegen/go.mod", "jobs/codegen/go.sum", "jobs/codegen/config.yaml", "jobs/codegen/Dockerfile", "jobs/codegen/README.md",
     "jobs/codegen/agent/resources.json", "jobs/codegen/fixtures/fixed-input.txt",
+    "jobs/codegen/Dockerfile.team", "jobs/codegen/team.yaml", "jobs/codegen/fixtures/brief.json", "jobs/codegen/agent/team/tools.json",
+    "jobs/codegen/team/package.json", "jobs/codegen/team/pnpm-lock.yaml", "jobs/codegen/team/pnpm-workspace.yaml",
+    "jobs/codegen/team/tsconfig.json", "jobs/codegen/team/tsconfig.build.json", "jobs/codegen/team/biome.json",
+    "jobs/codegen/team/vitest.config.ts", "jobs/codegen/team/README.md",
     "jobs/shared/access-sidecar/go.mod", "jobs/shared/access-sidecar/go.sum", "jobs/shared/access-sidecar/config.yaml",
     "jobs/shared/access-sidecar/Dockerfile", "jobs/shared/access-sidecar/README.md", "jobs/shared/access-sidecar/LICENSE",
+    "jobs/validator/package.json", "jobs/validator/pnpm-lock.yaml", "jobs/validator/pnpm-workspace.yaml", "jobs/validator/tsconfig.json",
+    "jobs/validator/tsconfig.build.json", "jobs/validator/biome.json", "jobs/validator/vitest.config.ts", "jobs/validator/config.yaml",
+    "jobs/validator/Dockerfile", "jobs/validator/README.md", "jobs/validator/LICENSE",
     "deploy/policies/kyverno/anvilkit-components-jobs.yaml", "deploy/policies/kyverno/anvilkit-components-registries.dev.yaml",
     "deploy/policies/seccomp/anvilkit-candidate.json", "deploy/policies/seccomp/generate.sh",
     "deploy/policies/network/anvilkit-components-egress.yaml", "deploy/policies/check.sh", "deploy/policies/README.md",
     "deploy/dev/images.sh", "deploy/dev/docker/access-sidecar.dev.Dockerfile",
     "jobs/migration/internal/migrate/sql/knowledge/00001_init.sql",
+    "jobs/migration/internal/migrate/sql/knowledge/00002_background.sql",
     "jobs/migration/internal/migrate/sql/mcp/00001_init.sql",
+    "jobs/migration/internal/migrate/sql/mcp/00002_background.sql",
     "package.json", "pnpm-workspace.yaml", "pnpm-lock.yaml",
     "services/agent/api/go.mod", "services/agent/api/go.sum", "services/agent/api/config.yaml",
     "services/agent/api/README.md", "services/agent/api/LICENSE", "services/agent/api/Dockerfile", "services/agent/api/.dockerignore",
@@ -123,12 +155,40 @@ REQUIRED_FILES = (
     "services/agent/workflow/README.md", "services/agent/workflow/LICENSE", "services/agent/workflow/Dockerfile", "services/agent/workflow/.dockerignore",
     "services/agent/workflow/.github/workflows/ci.yml",
     "services/agent/workflow/deploy/chart/Chart.yaml", "services/agent/workflow/deploy/chart/values.yaml",
-    "deploy/dev/control-chart.sh", "deploy/dev/workflow-chart.sh", "deploy/dev/api-chart.sh",
+    "services/agent/model-proxy/package.json", "services/agent/model-proxy/pnpm-lock.yaml", "services/agent/model-proxy/pnpm-workspace.yaml",
+    "services/agent/model-proxy/tsconfig.json", "services/agent/model-proxy/biome.json", "services/agent/model-proxy/vitest.config.ts",
+    "services/agent/model-proxy/build.mjs", "services/agent/model-proxy/config.yaml", "services/agent/model-proxy/README.md",
+    "services/agent/model-proxy/LICENSE", "services/agent/model-proxy/Dockerfile", "services/agent/model-proxy/.dockerignore",
+    "services/agent/model-proxy/.github/workflows/ci.yml",
+    "services/agent/model-proxy/deploy/chart/Chart.yaml", "services/agent/model-proxy/deploy/chart/values.yaml",
+    "services/agent/knowledge/package.json", "services/agent/knowledge/pnpm-lock.yaml", "services/agent/knowledge/pnpm-workspace.yaml",
+    "services/agent/knowledge/tsconfig.json", "services/agent/knowledge/biome.json", "services/agent/knowledge/vitest.config.ts",
+    "services/agent/knowledge/build.mjs", "services/agent/knowledge/config.yaml", "services/agent/knowledge/README.md",
+    "services/agent/knowledge/LICENSE", "services/agent/knowledge/Dockerfile", "services/agent/knowledge/.github/workflows/ci.yml",
+    "services/agent/knowledge/forwarder/go.mod", "services/agent/knowledge/forwarder/go.sum",
+    "services/agent/knowledge/deploy/chart/Chart.yaml", "services/agent/knowledge/deploy/chart/values.yaml",
+    "services/agent/mcp/go.mod", "services/agent/mcp/go.sum", "services/agent/mcp/config.yaml", "services/agent/mcp/sqlc.yaml",
+    "services/agent/mcp/README.md", "services/agent/mcp/LICENSE", "services/agent/mcp/Dockerfile", "services/agent/mcp/tools/sqlc.sh",
+    "services/agent/mcp/.github/workflows/ci.yml",
+    "services/agent/mcp/deploy/chart/Chart.yaml", "services/agent/mcp/deploy/chart/values.yaml",
+    "services/agent/background-worker/package.json", "services/agent/background-worker/pnpm-lock.yaml", "services/agent/background-worker/pnpm-workspace.yaml",
+    "services/agent/background-worker/tsconfig.json", "services/agent/background-worker/biome.json", "services/agent/background-worker/vitest.config.ts",
+    "services/agent/background-worker/build.mjs", "services/agent/background-worker/config.yaml", "services/agent/background-worker/README.md",
+    "services/agent/background-worker/Dockerfile", "services/agent/background-worker/.github/workflows/ci.yml",
+    "services/agent/background-worker/deploy/chart/Chart.yaml", "services/agent/background-worker/deploy/chart/values.yaml",
+    "packages/profile-schemas/apollo-snapshot.schema.json", "packages/profile-schemas/config-generation.schema.json",
+    "packages/profile-schemas/fixtures.json", "packages/profile-schemas/python/config_generation.py", "packages/profile-schemas/README.md",
+    "deploy/dev/nats-setup.sh", "deploy/dev/nats/anvilkit-knowledge.json", "deploy/dev/nats/anvilkit-mcp.json", "deploy/dev/nats/anvilkit-control.json",
+    "deploy/dev/control-chart.sh", "deploy/dev/workflow-chart.sh", "deploy/dev/api-chart.sh", "deploy/dev/model-proxy-chart.sh",
     "deploy/dev/values/anvilkit-agent-api.yaml", "deploy/dev/values/anvilkit-agent-control.yaml", "deploy/dev/values/anvilkit-agent-workflow.yaml",
+    "deploy/dev/values/anvilkit-agent-model-proxy.yaml",
     "tools/check-docs.py", "tools/check-contracts.py", "tools/generate-contracts.py",
     "tools/run-verification.py", "tools/check-source-export.py", "tools/pyenv_check.py",
     "tools/requirements.txt", "tools/verification-env.sh",
 )
+# This P10 directory is generated from checked source by host-bundles.ts;
+# it is a build cache, never a required source input or an exported artifact.
+GENERATED_OUTPUT_PREFIXES = ("jobs/validator/fixtures/host/browser/dist/", "services/agent/model-proxy/dist/", "jobs/codegen/team/dist/", "services/agent/knowledge/dist/", "services/agent/background-worker/dist/")
 EXCLUDED_PREFIXES = ("docs/archive/", "outputs/", "logs/", ".local/", "node_modules/")
 EXCLUDED_INFIXES = ("/node_modules/", "/__pycache__/", ".egg-info/")
 EXCLUDED_PATTERNS = (re.compile(r"(^|/)\.env(\.|$)"), re.compile(r"\.pem$"), re.compile(r"\.log$"), re.compile(r"\.kubeconfig$"))
@@ -190,10 +250,12 @@ def main() -> int:
             # A mounted repository's .git (a gitdir file or directory) is Git metadata, not an input.
             if path.is_file() and not any(part in ("__pycache__", "node_modules", ".pytest_cache", ".git") or part.endswith(".egg-info") for part in path.parts):
                 rel = path.relative_to(ROOT).as_posix()
+                if rel.startswith(GENERATED_OUTPUT_PREFIXES):
+                    continue
                 if rel not in files:
                     failures.append(f"file under a declared input directory is ignored or untracked-ignored: {rel}")
     for rel in sorted(files):
-        if rel.startswith(EXCLUDED_PREFIXES) or any(i in rel for i in EXCLUDED_INFIXES):
+        if rel.startswith(EXCLUDED_PREFIXES + GENERATED_OUTPUT_PREFIXES) or any(i in rel for i in EXCLUDED_INFIXES):
             failures.append(f"excluded path in the export set: {rel}")
         if any(p.search(rel) for p in EXCLUDED_PATTERNS):
             failures.append(f"secret or output pattern in the export set: {rel}")
@@ -237,7 +299,7 @@ def main() -> int:
                 steps.append((f"go build {mod}", ["go", "build", "-buildvcs=false", "./..."], target / mod))
             # The service repositories also build alone: without the workspace, from their
             # own go.mod against the published contracts module (their independent delivery).
-            for repo in ("services/agent/api", "services/agent/control", "services/agent/workflow"):
+            for repo in ("services/agent/api", "services/agent/control", "services/agent/workflow", "services/agent/mcp", "services/agent/knowledge/forwarder"):
                 steps.append((f"go build {repo} (GOWORK=off)", ["go", "build", "-buildvcs=false", "./..."], target / repo, {"GOWORK": "off"}))
         for name, cmd, cwd, *extra in steps:
             p = subprocess.run(cmd, cwd=cwd, env=dict(env, **(extra[0] if extra else {})), capture_output=True, text=True)
