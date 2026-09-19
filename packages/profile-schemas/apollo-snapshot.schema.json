@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:anvilkit:profile-schemas:apollo-snapshot:v1",
+  "title": "Apollo release snapshot",
+  "description": "The reviewed export of one Apollo release that a non-Go service (or a Go service without agollo) consumes as its central non-secret configuration (DD-09 §4/§5): app, cluster and namespace, the release key, when it was fetched and until when it may be used, and the configurations as dotted koanf-style keys with string values. Secrets and placements never appear; an expired or invalid snapshot never starts a configuration generation. schemaVersion is 1.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "appId", "cluster", "namespace", "releaseKey", "fetchedAt", "expiresAt", "configurations"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "appId": { "type": "string", "enum": ["anvilkit-agent-api", "anvilkit-agent-control", "anvilkit-agent-workflow", "anvilkit-agent-model-proxy", "anvilkit-agent-knowledge", "anvilkit-agent-mcp", "anvilkit-agent-background-worker", "anvilkit-agent-inference"] },
+    "cluster": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "namespace": { "type": "string", "enum": ["application", "model", "execution", "retrieval"] },
+    "releaseKey": { "type": "string", "pattern": "^[0-9]{14}-[0-9a-f]{12}$" },
+    "fetchedAt": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?(Z|[+-][0-9]{2}:[0-9]{2})$" },
+    "expiresAt": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?(Z|[+-][0-9]{2}:[0-9]{2})$" },
+    "configurations": {
+      "type": "object",
+      "propertyNames": { "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$", "not": { "pattern": "(^|\\.)(url|url_file|address|token|secret|password|access_key_id|secret_access_key|snapshot_file)$" } },
+      "additionalProperties": { "type": "string", "maxLength": 4096 }
+    }
+  }
+}

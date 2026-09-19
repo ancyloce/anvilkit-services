@@ -1,0 +1,66 @@
+{
+  "description": "Cross-language fixtures of the shared configuration schemas: every consumer (Go: services/agent/mcp internal/config; TypeScript: services/agent/knowledge src/config.ts; Python: packages/profile-schemas/python/config_generation.py) must accept the valid cases and reject the invalid ones with its own tooling. Snapshot cases are evaluated at the instant `now`.",
+  "now": "2026-09-17T12:00:00Z",
+  "cases": [
+    {
+      "name": "valid snapshot of the knowledge application namespace",
+      "schema": "apollo-snapshot",
+      "appId": "anvilkit-agent-knowledge",
+      "valid": true,
+      "instance": { "schemaVersion": 1, "appId": "anvilkit-agent-knowledge", "cluster": "default", "namespace": "application", "releaseKey": "20260917110000-0123456789ab", "fetchedAt": "2026-09-17T11:00:00Z", "expiresAt": "2026-09-17T13:00:00Z", "configurations": { "tasks.max_attempts": "5", "tasks.retry_delay": "10s" } }
+    },
+    {
+      "name": "expired snapshot is rejected",
+      "schema": "apollo-snapshot",
+      "appId": "anvilkit-agent-knowledge",
+      "valid": false,
+      "instance": { "schemaVersion": 1, "appId": "anvilkit-agent-knowledge", "cluster": "default", "namespace": "application", "releaseKey": "20260917110000-0123456789ab", "fetchedAt": "2026-09-17T10:00:00Z", "expiresAt": "2026-09-17T11:59:59Z", "configurations": {} }
+    },
+    {
+      "name": "snapshot of another service is rejected",
+      "schema": "apollo-snapshot",
+      "appId": "anvilkit-agent-knowledge",
+      "valid": false,
+      "instance": { "schemaVersion": 1, "appId": "anvilkit-agent-mcp", "cluster": "default", "namespace": "application", "releaseKey": "20260917110000-0123456789ab", "fetchedAt": "2026-09-17T11:00:00Z", "expiresAt": "2026-09-17T13:00:00Z", "configurations": {} }
+    },
+    {
+      "name": "snapshot carrying a secret key is rejected",
+      "schema": "apollo-snapshot",
+      "appId": "anvilkit-agent-knowledge",
+      "valid": false,
+      "instance": { "schemaVersion": 1, "appId": "anvilkit-agent-knowledge", "cluster": "default", "namespace": "application", "releaseKey": "20260917110000-0123456789ab", "fetchedAt": "2026-09-17T11:00:00Z", "expiresAt": "2026-09-17T13:00:00Z", "configurations": { "database.url": "postgres://x" } }
+    },
+    {
+      "name": "snapshot with an unknown field is rejected",
+      "schema": "apollo-snapshot",
+      "appId": "anvilkit-agent-knowledge",
+      "valid": false,
+      "instance": { "schemaVersion": 1, "appId": "anvilkit-agent-knowledge", "cluster": "default", "namespace": "application", "releaseKey": "20260917110000-0123456789ab", "fetchedAt": "2026-09-17T11:00:00Z", "expiresAt": "2026-09-17T13:00:00Z", "configurations": {}, "signed": true }
+    },
+    {
+      "name": "snapshot with a malformed release key is rejected",
+      "schema": "apollo-snapshot",
+      "appId": "anvilkit-agent-knowledge",
+      "valid": false,
+      "instance": { "schemaVersion": 1, "appId": "anvilkit-agent-knowledge", "cluster": "default", "namespace": "application", "releaseKey": "release-1", "fetchedAt": "2026-09-17T11:00:00Z", "expiresAt": "2026-09-17T13:00:00Z", "configurations": {} }
+    },
+    {
+      "name": "valid generation record",
+      "schema": "config-generation",
+      "valid": true,
+      "instance": { "schemaVersion": 1, "service": "anvilkit-agent-mcp", "configGeneration": "2", "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000", "secretRevision": "sha256:1111111111111111111111111111111111111111111111111111111111111111", "apolloRelease": "20260917110000-0123456789ab", "profiles": { "local-check-v1": "sha256:2222222222222222222222222222222222222222222222222222222222222222" } }
+    },
+    {
+      "name": "generation record carrying a secret value is rejected",
+      "schema": "config-generation",
+      "valid": false,
+      "instance": { "schemaVersion": 1, "service": "anvilkit-agent-mcp", "configGeneration": "2", "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000", "secretRevision": "postgres://user:password@db/anvilkit_mcp", "profiles": {} }
+    },
+    {
+      "name": "generation zero is rejected",
+      "schema": "config-generation",
+      "valid": false,
+      "instance": { "schemaVersion": 1, "service": "anvilkit-agent-mcp", "configGeneration": "0", "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000", "secretRevision": "sha256:1111111111111111111111111111111111111111111111111111111111111111", "profiles": {} }
+    }
+  ]
+}
