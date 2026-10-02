@@ -50,12 +50,27 @@ if [ ! -f "$LOCAL/minio-model-proxy.env" ]; then
   printf 'ANVILKIT_MODEL_PROXY_STORE_ACCESS_KEY_ID=anvilkit-model-proxy-%s\nANVILKIT_MODEL_PROXY_STORE_SECRET_ACCESS_KEY=%s\n' "$PK" "$PS" > "$LOCAL/minio-model-proxy.env"
   chmod 600 "$LOCAL/minio-model-proxy.env"
 fi
+if [ ! -f "$LOCAL/minio-knowledge.env" ]; then
+  # Knowledge's own object-store user (P15): uploads, source copies and
+  # parser results in the anvilkit-knowledge bucket only.
+  KK=$(head -c 12 /dev/urandom | od -An -tx1 | tr -d ' \n')
+  KS=$(head -c 24 /dev/urandom | base64 | tr -d '/+=' | head -c 32)
+  printf 'ANVILKIT_KNOWLEDGE_OBJECTS_ACCESS_KEY_ID=anvilkit-knowledge-%s\nANVILKIT_KNOWLEDGE_OBJECTS_SECRET_ACCESS_KEY=%s\n' "$KK" "$KS" > "$LOCAL/minio-knowledge.env"
+  chmod 600 "$LOCAL/minio-knowledge.env"
+fi
+if [ ! -f "$LOCAL/qdrant.env" ]; then
+  # P16: Qdrant's API key (Knowledge is its only client).
+  QK=$(head -c 24 /dev/urandom | base64 | tr -d '/+=' | head -c 32)
+  printf 'QDRANT__SERVICE__API_KEY=%s\n' "$QK" > "$LOCAL/qdrant.env"
+  chmod 600 "$LOCAL/qdrant.env"
+fi
+QKEY=$(sed -n 's/^QDRANT__SERVICE__API_KEY=//p' "$LOCAL/qdrant.env")
 PUSER=$(sed -n 's/^ANVILKIT_MODEL_PROXY_STORE_ACCESS_KEY_ID=//p' "$LOCAL/minio-model-proxy.env")
 PPASS=$(sed -n 's/^ANVILKIT_MODEL_PROXY_STORE_SECRET_ACCESS_KEY=//p' "$LOCAL/minio-model-proxy.env")
 
 # --wait only on the long-running services; schema setup runs as their dependency and
 # the namespace and bucket steps are one-shots that must not trip --wait on re-runs.
-docker compose -f "$ROOT/deploy/dev/compose.yaml" up -d --wait --wait-timeout 180 postgres temporal minio nats valkey-queue valkey-cache
+docker compose -f "$ROOT/deploy/dev/compose.yaml" up -d --wait --wait-timeout 180 postgres temporal minio nats valkey-queue valkey-cache qdrant
 docker compose -f "$ROOT/deploy/dev/compose.yaml" run --rm --no-deps temporal-namespace >/dev/null
 docker compose -f "$ROOT/deploy/dev/compose.yaml" run --rm --no-deps minio-setup >/dev/null
 # P14: the three domain streams of the event catalog on the JetStream.
@@ -70,7 +85,7 @@ docker compose -f "$ROOT/deploy/dev/compose.yaml" run --rm --no-deps nats-setup 
 # P14: the owner queue relay identities and the Knowledge outbox forwarder
 # identity that migration 00002 grants to (postgres-init.sh creates them on a
 # fresh data directory; an existing foundation gets them here, idempotently).
-for role in anvilkit_knowledge_relay anvilkit_mcp_relay anvilkit_knowledge_forwarder; do
+for role in anvilkit_knowledge_relay anvilkit_mcp_relay anvilkit_knowledge_forwarder anvilkit_knowledge_store_migrator anvilkit_knowledge_store; do
   docker compose -f "$ROOT/deploy/dev/compose.yaml" exec -T postgres psql -v ON_ERROR_STOP=1 -U postgres -d postgres -tAc \
     "SELECT 1 FROM pg_roles WHERE rolname = '$role'" | grep -qx 1 \
     || docker compose -f "$ROOT/deploy/dev/compose.yaml" exec -T postgres psql -v ON_ERROR_STOP=1 -U postgres -d postgres -c \
@@ -80,6 +95,15 @@ for domain in knowledge mcp; do
   (cd "$ROOT/jobs/migration" && go run ./cmd/anvilkit-migration -domain "$domain" \
     -dsn "postgres://anvilkit_${domain}_migrator:${PW}@127.0.0.1:25432/anvilkit_${domain}?sslmode=disable")
 done
+# P17: the PostgresStore vendor schema of the memory projection, migrated by
+# the Store's own migrations under its separate identity (Knowledge's
+# store-migrate entry; the service runs with ensureTables: false).
+if [ -f "$ROOT/services/agent/knowledge/dist/storemigrate.js" ]; then
+  (cd "$ROOT/services/agent/knowledge" && ANVILKIT_KNOWLEDGE_STORE_MIGRATION_URL="postgres://anvilkit_knowledge_store_migrator:${PW}@127.0.0.1:25432/anvilkit_knowledge?sslmode=disable" \
+    node dist/storemigrate.js)
+else
+  echo "UNEXECUTED: the memory Store schema (build services/agent/knowledge first, then re-run up.sh)" >&2
+fi
 
 if ! kind get clusters 2>/dev/null | grep -qx anvilkit-dev; then
   kind create cluster --config "$ROOT/deploy/dev/kind.yaml" --wait 120s
@@ -143,6 +167,9 @@ echo "b38228f367fc0fdc2b08f4c83ea50ac5f16c60ff8d62d76a66157c33c47b70ae  $KYVERNO
 kubectl --context kind-anvilkit-dev apply --server-side -f "$KYVERNO_DIR/install.yaml" >/dev/null
 kubectl --context kind-anvilkit-dev -n kyverno rollout status deploy/kyverno-admission-controller --timeout=240s >/dev/null
 kubectl --context kind-anvilkit-dev apply -f "$ROOT/deploy/policies/kyverno/anvilkit-components-jobs.yaml" -f "$ROOT/deploy/policies/kyverno/anvilkit-components-registries.dev.yaml" -f "$ROOT/deploy/policies/network/anvilkit-components-egress.yaml" >/dev/null
+# P15: the parser namespace's admission policies (the fixed parser template
+# and this environment's registry) and its default-deny network policy.
+kubectl --context kind-anvilkit-dev apply -f "$ROOT/deploy/policies/kyverno/anvilkit-parsing-jobs.yaml" -f "$ROOT/deploy/policies/kyverno/anvilkit-parsing-registries.dev.yaml" -f "$ROOT/deploy/policies/network/anvilkit-parsing-egress.yaml" >/dev/null
 # The foundation's PostgreSQL, Temporal and MinIO join the kind network so
 # the Control and Workflow releases in the cluster (and a Job's sidecar)
 # reach them by their kind-network addresses; the loopback-only published
@@ -156,6 +183,37 @@ KIND_GATEWAY=$(docker network inspect kind --format '{{range .IPAM.Config}}{{if 
 MINIO_KIND_IP=$(docker inspect anvilkit-dev-minio-1 --format '{{(index .NetworkSettings.Networks "kind").IPAddress}}')
 POSTGRES_KIND_IP=$(docker inspect anvilkit-dev-postgres-1 --format '{{(index .NetworkSettings.Networks "kind").IPAddress}}')
 TEMPORAL_KIND_IP=$(docker inspect anvilkit-dev-temporal-1 --format '{{(index .NetworkSettings.Networks "kind").IPAddress}}')
+# P15: the Knowledge parser launcher's identity for host-side runs: the
+# Knowledge chart's ServiceAccount, Role and RoleBinding rendered under the
+# release name anvilkit-agent-knowledge-host into anvilkit-parsing (the
+# chart owns the launcher RBAC), a 24 h token in its own kubeconfig, and the
+# egress rule that admits the object store (by its kind-network address)
+# for the parser Pods' trusted stager.
+helm template anvilkit-agent-knowledge-host "$ROOT/services/agent/knowledge/deploy/chart" -n anvilkit-parsing \
+  --set parser.enabled=true --set serviceAccount.name=anvilkit-agent-knowledge-host --set database.secret.name=unused --set nats.url=unused \
+  --set forwarder.database.secret.name=unused --set relay.database.secret.name=unused --set relay.queue.secret.name=unused \
+  -s templates/serviceaccount.yaml -s templates/rbac.yaml \
+  | kubectl --context kind-anvilkit-dev -n anvilkit-parsing apply -f - >/dev/null
+cat <<POLICY | kubectl --context kind-anvilkit-dev apply -f - >/dev/null
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: anvilkit-parsing-object-store
+  namespace: anvilkit-parsing
+spec:
+  podSelector:
+    matchLabels:
+      anvilkit.io/job-kind: parser
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - ipBlock:
+            cidr: ${MINIO_KIND_IP}/32
+      ports:
+        - protocol: TCP
+          port: 9000
+POLICY
+KTOKEN=$(kubectl --context kind-anvilkit-dev -n anvilkit-parsing create token anvilkit-agent-knowledge-host --duration 24h)
 TOKEN=$(kubectl --context kind-anvilkit-dev -n anvilkit-components create token anvilkit-agent-workflow-host --duration 24h)
 SERVER=$(kubectl config view --raw -o jsonpath='{.clusters[?(@.name=="kind-anvilkit-dev")].cluster.server}')
 CA=$(kubectl config view --raw -o jsonpath='{.clusters[?(@.name=="kind-anvilkit-dev")].cluster.certificate-authority-data}')
@@ -180,6 +238,27 @@ contexts:
 current-context: anvilkit-dev
 KUBE
 chmod 600 "$LOCAL/launcher.kubeconfig"
+cat > "$LOCAL/knowledge-launcher.kubeconfig" <<KUBE
+apiVersion: v1
+kind: Config
+clusters:
+  - name: anvilkit-dev
+    cluster:
+      server: ${SERVER}
+      certificate-authority-data: ${CA}
+users:
+  - name: anvilkit-agent-knowledge-host
+    user:
+      token: ${KTOKEN}
+contexts:
+  - name: anvilkit-dev
+    context:
+      cluster: anvilkit-dev
+      user: anvilkit-agent-knowledge-host
+      namespace: anvilkit-parsing
+current-context: anvilkit-dev
+KUBE
+chmod 600 "$LOCAL/knowledge-launcher.kubeconfig"
 
 if [ ! -f "$LOCAL/api-principals.json" ]; then
   TA=$(head -c 24 /dev/urandom | base64 | tr -d '/+=' | head -c 32)
@@ -292,6 +371,8 @@ export ANVILKIT_DEV_KNOWLEDGE_DSN="postgres://anvilkit_knowledge_app:${PW}@127.0
 export ANVILKIT_DEV_KNOWLEDGE_RELAY_DSN="postgres://anvilkit_knowledge_relay:${PW}@127.0.0.1:25432/anvilkit_knowledge?sslmode=disable"
 export ANVILKIT_DEV_KNOWLEDGE_FORWARDER_DSN="postgres://anvilkit_knowledge_forwarder:${PW}@127.0.0.1:25432/anvilkit_knowledge?sslmode=disable"
 export ANVILKIT_DEV_KNOWLEDGE_MIGRATOR_DSN="postgres://anvilkit_knowledge_migrator:${PW}@127.0.0.1:25432/anvilkit_knowledge?sslmode=disable"
+export ANVILKIT_DEV_KNOWLEDGE_STORE_DSN="postgres://anvilkit_knowledge_store:${PW}@127.0.0.1:25432/anvilkit_knowledge?sslmode=disable"
+export ANVILKIT_DEV_KNOWLEDGE_STORE_MIGRATOR_DSN="postgres://anvilkit_knowledge_store_migrator:${PW}@127.0.0.1:25432/anvilkit_knowledge?sslmode=disable"
 export ANVILKIT_DEV_MCP_DSN="postgres://anvilkit_mcp_app:${PW}@127.0.0.1:25432/anvilkit_mcp?sslmode=disable"
 export ANVILKIT_DEV_MCP_RELAY_DSN="postgres://anvilkit_mcp_relay:${PW}@127.0.0.1:25432/anvilkit_mcp?sslmode=disable"
 export ANVILKIT_DEV_MCP_MIGRATOR_DSN="postgres://anvilkit_mcp_migrator:${PW}@127.0.0.1:25432/anvilkit_mcp?sslmode=disable"
@@ -310,5 +391,22 @@ export ANVILKIT_BACKGROUND_WORKER_NATS_URL="\$ANVILKIT_DEV_NATS_URL"
 export ANVILKIT_BACKGROUND_WORKER_KNOWLEDGE_ADDRESS="127.0.0.1:9105"
 export ANVILKIT_BACKGROUND_WORKER_MCP_ADDRESS="127.0.0.1:9106"
 export ANVILKIT_BACKGROUND_WORKER_CONTRACTS_DIR="$ROOT/contracts"
+# P15 (DEVELOPMENT_ONLY): Knowledge's object store (own bucket and user; the
+# host endpoint for Knowledge, the kind-network endpoint the parser Pods'
+# presigned URLs are signed for), the parser launcher's kubeconfig and
+# registry, and the Inference placement (a container started by the
+# integration scenario or by hand: docker run -p 127.0.0.1:29108:9108
+# anvilkit-agent-inference:dev with ANVILKIT_INFERENCE_LISTEN=0.0.0.0:9108).
+export ANVILKIT_KNOWLEDGE_OBJECTS_ENDPOINT="http://127.0.0.1:29000"
+export ANVILKIT_KNOWLEDGE_OBJECTS_STAGE_ENDPOINT="http://${MINIO_KIND_IP}:9000"
+export ANVILKIT_KNOWLEDGE_OBJECTS_CREDENTIALS_FILE="$LOCAL/minio-knowledge.env"
+export ANVILKIT_KNOWLEDGE_KUBECONFIG="$LOCAL/knowledge-launcher.kubeconfig"
+export ANVILKIT_KNOWLEDGE_IMAGE_REGISTRY="localhost:5001"
+export ANVILKIT_DEV_INFERENCE_URL="http://127.0.0.1:29108"
+# P16 (DEVELOPMENT_ONLY): the Qdrant node of the foundation and its API key.
+export ANVILKIT_KNOWLEDGE_QDRANT_URL="http://127.0.0.1:26333"
+export ANVILKIT_KNOWLEDGE_QDRANT_API_KEY="${QKEY}"
+# P17 (DEVELOPMENT_ONLY): the runtime Store role of the memory projection.
+export ANVILKIT_KNOWLEDGE_STORE_DATABASE_URL="\$ANVILKIT_DEV_KNOWLEDGE_STORE_DSN"
 ENV
 echo "dev foundation ready; source $LOCAL/env.sh"

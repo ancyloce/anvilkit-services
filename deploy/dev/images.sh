@@ -5,6 +5,12 @@
 #
 #   sh deploy/dev/images.sh          # build all, push, print the digests
 #   sh deploy/dev/images.sh --harness # P09 supervisor and sidecar only
+#   sh deploy/dev/images.sh --parser  # P15 parser Job image only
+#
+# anvilkit-parser (P15, jobs/parser) is the fixed Docling parser Job image:
+# the hash-locked Python dependencies, the layout weights of its
+# models.lock and the contracts' job schema (named build context
+# "contracts"); parser-docling-dev-v1 pins its digest.
 #
 # anvilkit-codegen-team (P12, jobs/codegen/Dockerfile.team) is the validator
 # image at the digest that Dockerfile names as its base, plus the supervisor
@@ -25,16 +31,23 @@ set -eu
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 REGISTRY=${ANVILKIT_DEV_REGISTRY:-localhost:5001}
 case "${1:-}" in
-  ""|--harness) ;;
-  *) echo "usage: $0 [--harness]" >&2; exit 2 ;;
+  ""|--harness|--parser) ;;
+  *) echo "usage: $0 [--harness|--parser]" >&2; exit 2 ;;
 esac
+if [ "${1:-}" = --parser ]; then
+  docker build --network=host --build-context contracts="$ROOT/contracts" -t "$REGISTRY/anvilkit-parser:dev" "$ROOT/jobs/parser"
+  docker push "$REGISTRY/anvilkit-parser:dev" >/dev/null
+  printf '%s %s\n' anvilkit-parser "$(docker image inspect "$REGISTRY/anvilkit-parser:dev" --format '{{index .RepoDigests 0}}' | sed 's/.*@//')"
+  exit 0
+fi
 IMAGES="anvilkit-codegen anvilkit-job-access-sidecar"
 docker build --network=host ${ANVILKIT_DEV_GOPROXY:+--build-arg GOPROXY="$ANVILKIT_DEV_GOPROXY"} -t "$REGISTRY/anvilkit-codegen:dev" "$ROOT/jobs/codegen"
 docker build --network=host ${ANVILKIT_DEV_GOPROXY:+--build-arg GOPROXY="$ANVILKIT_DEV_GOPROXY"} -t "$REGISTRY/anvilkit-job-access-sidecar:dev" "$ROOT/jobs/shared/access-sidecar"
 if [ "${1:-}" != --harness ]; then
   docker build --network=host --build-context contracts="$ROOT/contracts" -t "$REGISTRY/anvilkit-validator:dev" "$ROOT/jobs/validator"
   docker build --network=host ${ANVILKIT_DEV_GOPROXY:+--build-arg GOPROXY="$ANVILKIT_DEV_GOPROXY"} -f "$ROOT/jobs/codegen/Dockerfile.team" -t "$REGISTRY/anvilkit-codegen-team:dev" "$ROOT/jobs/codegen"
-  IMAGES="$IMAGES anvilkit-validator anvilkit-codegen-team"
+  docker build --network=host --build-context contracts="$ROOT/contracts" -t "$REGISTRY/anvilkit-parser:dev" "$ROOT/jobs/parser"
+  IMAGES="$IMAGES anvilkit-validator anvilkit-codegen-team anvilkit-parser"
 fi
 for image in $IMAGES; do
   docker push "$REGISTRY/$image:dev" >/dev/null

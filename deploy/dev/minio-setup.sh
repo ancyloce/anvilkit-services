@@ -15,6 +15,10 @@
 #   - anvilkit-model-proxy: the Model Proxy's call records and private native
 #     evidence (P11; conditional creates and replaces by ETag), reached with
 #     its own user and bucket-limited policy (.local/dev/minio-model-proxy.env).
+#   - anvilkit-knowledge: Knowledge's uploads, content-addressed source
+#     copies and parser results (P15; create-only copies, presigned GET/PUT
+#     for the parser Jobs), reached with its own user and bucket-limited
+#     policy (.local/dev/minio-knowledge.env).
 set -eu
 mc alias set dev http://minio:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null
 mc mb --ignore-existing dev/anvilkit-artifacts >/dev/null
@@ -49,4 +53,19 @@ if ! mc admin user info dev "$ANVILKIT_MODEL_PROXY_STORE_ACCESS_KEY_ID" >/dev/nu
   mc admin user add dev "$ANVILKIT_MODEL_PROXY_STORE_ACCESS_KEY_ID" "$ANVILKIT_MODEL_PROXY_STORE_SECRET_ACCESS_KEY" >/dev/null
 fi
 mc admin policy attach dev anvilkit-model-proxy --user "$ANVILKIT_MODEL_PROXY_STORE_ACCESS_KEY_ID" >/dev/null 2>&1 || true
-echo "object stores ready: anvilkit-artifacts (versioned), anvilkit-inventory (own user), anvilkit-model-proxy (own user)"
+mc mb --ignore-existing dev/anvilkit-knowledge >/dev/null
+cat > /tmp/knowledge-policy.json <<'POLICY'
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {"Effect": "Allow", "Action": ["s3:ListBucket", "s3:GetBucketLocation"], "Resource": ["arn:aws:s3:::anvilkit-knowledge"]},
+    {"Effect": "Allow", "Action": ["s3:GetObject", "s3:PutObject"], "Resource": ["arn:aws:s3:::anvilkit-knowledge/*"]}
+  ]
+}
+POLICY
+mc admin policy create dev anvilkit-knowledge /tmp/knowledge-policy.json >/dev/null
+if ! mc admin user info dev "$ANVILKIT_KNOWLEDGE_OBJECTS_ACCESS_KEY_ID" >/dev/null 2>&1; then
+  mc admin user add dev "$ANVILKIT_KNOWLEDGE_OBJECTS_ACCESS_KEY_ID" "$ANVILKIT_KNOWLEDGE_OBJECTS_SECRET_ACCESS_KEY" >/dev/null
+fi
+mc admin policy attach dev anvilkit-knowledge --user "$ANVILKIT_KNOWLEDGE_OBJECTS_ACCESS_KEY_ID" >/dev/null 2>&1 || true
+echo "object stores ready: anvilkit-artifacts (versioned), anvilkit-inventory (own user), anvilkit-model-proxy (own user), anvilkit-knowledge (own user)"

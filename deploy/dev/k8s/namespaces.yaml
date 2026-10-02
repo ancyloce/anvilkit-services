@@ -12,3 +12,11 @@ apiVersion: v1
 kind: Namespace
 metadata:
   name: anvilkit-apps
+---
+# anvilkit-parsing runs the Knowledge launcher's Docling parser Jobs (P15)
+# under the parser policies (deploy/policies/kyverno/anvilkit-parsing-*.yaml);
+# the launcher's Role belongs to the Knowledge chart.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: anvilkit-parsing

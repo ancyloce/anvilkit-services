@@ -47,6 +47,7 @@ The Workflow's `execution` section is recorded into every run's history at its s
 | NATS JetStream (P14) | `127.0.0.1:24222` (monitoring on the container's 8222) | No authentication (ENV-03); the three domain streams `ANVILKIT_KNOWLEDGE`, `ANVILKIT_MCP`, `ANVILKIT_CONTROL` (`anvilkit.<domain>.>`) are created by `nats-setup` from the reviewed DEVELOPMENT_ONLY definitions under `deploy/dev/nats/` (file storage, one replica, 7-day retention, 1 MiB messages, 2-minute duplicate window) |
 | Valkey, queue instance (P14) | `127.0.0.1:26379` | The BullMQ instance (`ANVILKIT_DEV_QUEUE_URL`), append-only persistence; a single node — Sentinel failover is not qualified here |
 | Valkey, cache instance (P14) | `127.0.0.1:26380` | A separate instance (`ANVILKIT_DEV_CACHE_URL`), never the queue (C03) |
+| Qdrant 1.19.0 (P16) | `127.0.0.1:26333` | Knowledge's vector projection (`ANVILKIT_KNOWLEDGE_QDRANT_URL`, API key in `.local/dev/qdrant.env` as `ANVILKIT_KNOWLEDGE_QDRANT_API_KEY`); Knowledge creates the collections `anvilkit-knowledge-<generation>` and moves the alias `anvilkit-knowledge`; one node with replication 1 — the RF=3/WCF=2 layout is not qualified here |
 
 ## Running the LocalCheck chain by hand
 
