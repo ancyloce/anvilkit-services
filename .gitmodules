@@ -25,3 +25,12 @@
 [submodule "jobs/validator"]
 	path = jobs/validator
 	url = https://github.com/ancyloce/anvilkit-job-validator.git
+[submodule "services/agent/background-worker"]
+	path = services/agent/background-worker
+	url = https://github.com/ancyloce/anvilkit-agent-background-worker.git
+[submodule "services/agent/inference"]
+	path = services/agent/inference
+	url = https://github.com/ancyloce/anvilkit-agent-inference.git
+[submodule "jobs/parser"]
+	path = jobs/parser
+	url = https://github.com/ancyloce/anvilkit-job-parser.git
