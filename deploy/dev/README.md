@@ -161,12 +161,13 @@ Fixture requests: `node dist/localcheck.js request --source <source_id>` (Knowle
 | The foundation on the kind network | `anvilkit-dev-minio-1`, `anvilkit-dev-postgres-1` and `anvilkit-dev-temporal-1` connected to the `kind` network; `ANVILKIT_DEV_ARTIFACTS_ENDPOINT_CLUSTER`, `ANVILKIT_DEV_CONTROL_DSN_CLUSTER`, `ANVILKIT_DEV_TEMPORAL_ADDRESS_CLUSTER` in `env.sh` | A Job's sidecar uploads to the presigned URL Control issued (Control must sign for the address the Pod reaches); the Control and Workflow releases in the cluster reach the database and Temporal |
 | Gateway | `ANVILKIT_DEV_KIND_GATEWAY` in `env.sh` | A host-side Control listening on `0.0.0.0` is reached from a Pod at `<gateway>:<port>`; the verification chain starts such a Control from `services/agent/control` for the Workflow repository's cluster scenario and names it through `ANVILKIT_INTEGRATION_CONTROL_ADDRESS` / `ANVILKIT_INTEGRATION_SIDECAR_CONTROL_ADDRESS` |
 
-`sh deploy/dev/images.sh --harness` builds `anvilkit-codegen` from `jobs/codegen` and
+`sh deploy/dev/images.sh --harness` builds `anvilkit-codegen` from `jobs/codegen/supervisor` and
 `anvilkit-job-access-sidecar` from its own repository Dockerfile against the published
 contracts `go/v0.1.2`, then pushes both to the local Docker registry. Without `--harness`
 it also builds the P10 validator, preserving its named contracts build context, and the P12
-team image `anvilkit-codegen-team` (`jobs/codegen/Dockerfile.team`: the validator image at the
-digest that Dockerfile names as its base, plus the supervisor and the team package). Pin the
+team image `anvilkit-codegen-team` (`jobs/codegen/team/Dockerfile`: the validator image at the
+digest that Dockerfile names as its base, pulled from this registry, plus the supervisor's
+sources as the named build context `supervisor` and the team package). Pin the
 printed digests in `contracts/jobs/profiles.json` and the admission policy, increment every
 affected profile revision, regenerate with `contracts/tools/generate.py`, and render/check
 the templates with `sh deploy/policies/check.sh --cluster`. The [P09 acceptance record](../../docs/architecture/delivery.md#verification-p09-repair)
