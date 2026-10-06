@@ -34,3 +34,9 @@
 [submodule "jobs/parser"]
 	path = jobs/parser
 	url = https://github.com/ancyloce/anvilkit-job-parser.git
+[submodule "jobs/codegen/supervisor"]
+	path = jobs/codegen/supervisor
+	url = https://github.com/ancyloce/anvilkit-job-codegen-supervisor.git
+[submodule "jobs/codegen/team"]
+	path = jobs/codegen/team
+	url = https://github.com/ancyloce/anvilkit-job-codegen-team.git
