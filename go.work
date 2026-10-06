@@ -8,14 +8,15 @@
 // repository at jobs/shared/access-sidecar (P09); since P14 the MCP service
 // at services/agent/mcp and the Knowledge outbox forwarder sidecar (a Go
 // module inside the TypeScript Knowledge repository) at
-// services/agent/knowledge/forwarder. The TypeScript packages
+// services/agent/knowledge/forwarder; the codegen Job's trusted supervisor in
+// its own repository at jobs/codegen/supervisor. The TypeScript packages
 // (services/agent/{knowledge,model-proxy,background-worker}, jobs/validator,
 // jobs/codegen/team) are outside this closure.
 go 1.27.0
 
 use (
 	./contracts/go
-	./jobs/codegen
+	./jobs/codegen/supervisor
 	./jobs/migration
 	./jobs/shared/access-sidecar
 	./services/agent/api
