@@ -9,11 +9,13 @@ plus its untracked files that are not ignored, and, for each replacement reposit
 in the tree (the contracts repository at contracts/, the API, Control and Workflow
 repositories at services/agent/{api,control,workflow,model-proxy}, since P14 the Knowledge
 and MCP repositories at services/agent/{knowledge,mcp}, the access sidecar repository at
-jobs/shared/access-sidecar and the validator repository at jobs/validator, whether already
-registered as submodules or still nested checkouts), that repository's own tracked plus
-untracked-not-ignored files. The Background Worker (services/agent/background-worker) and the
-shared configuration schemas (packages/profile-schemas) are plain directories of the parent
-until their repositories exist.
+jobs/shared/access-sidecar, the validator repository at jobs/validator, since 2026-10-04,
+the Background Worker, Inference and parser Job repositories at
+services/agent/{background-worker,inference} and jobs/parser and, since 2026-10-06, the
+codegen Job's supervisor and team repositories at jobs/codegen/{supervisor,team}, whether
+already registered as submodules or still nested checkouts), that repository's own tracked plus
+untracked-not-ignored files. The shared configuration schemas (packages/profile-schemas) are a
+plain directory of the parent.
 Then:
 
   1. Required inputs: every file under each declared input directory and every anchor file
@@ -53,7 +55,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 # Repositories of the replacement mounted inside this tree: their content is source,
 # listed through their own Git. Every other gitlink is a submodule without an
 # implementation in this closure (excluded).
-REPLACEMENT_REPOS = ("contracts", "services/agent/api", "services/agent/control", "services/agent/workflow", "services/agent/model-proxy", "services/agent/knowledge", "services/agent/mcp", "jobs/shared/access-sidecar", "jobs/validator")
+REPLACEMENT_REPOS = ("contracts", "services/agent/api", "services/agent/control", "services/agent/workflow", "services/agent/model-proxy", "services/agent/knowledge", "services/agent/mcp", "jobs/shared/access-sidecar", "jobs/validator", "services/agent/background-worker", "services/agent/inference", "jobs/parser", "jobs/codegen/supervisor", "jobs/codegen/team")
 REQUIRED_DIRS = (
     "contracts/proto",
     "contracts/openapi",
@@ -67,10 +69,11 @@ REQUIRED_DIRS = (
     "contracts/tests/go",
     "contracts/tools",
     "docs/architecture",
-    "jobs/codegen",
+    "jobs/codegen/supervisor/cmd",
+    "jobs/codegen/supervisor/internal",
     "jobs/codegen/team/src",
     "jobs/codegen/team/test",
-    "jobs/codegen/agent/team/prompts",
+    "jobs/codegen/team/agent/team/prompts",
     "jobs/migration",
     "jobs/shared/access-sidecar",
     "jobs/validator/src",
@@ -94,10 +97,19 @@ REQUIRED_DIRS = (
     "services/agent/background-worker/src",
     "services/agent/background-worker/test",
     "services/agent/background-worker/deploy",
+    "services/agent/inference/src",
+    "services/agent/inference/tests",
+    "services/agent/inference/bin",
+    "services/agent/inference/deploy",
+    "jobs/parser/src",
+    "jobs/parser/tests",
+    "jobs/parser/bin",
     "packages/profile-schemas",
     "tests/contracts",
     "tests/integration",
+    "tests/evals/rag/corpus",
     "deploy/dev",
+    "deploy/handover",
 )
 REQUIRED_FILES = (
     "README.md", "AGENTS.md", "CLAUDE.md", "docs/README.md", "go.work", "go.work.sum",
@@ -117,9 +129,18 @@ REQUIRED_FILES = (
     "contracts/python/pyproject.toml", "contracts/tests/go/go.mod",
     "contracts/tools/generate.py", "contracts/tools/check.py", "contracts/tools/verify.py",
     "contracts/tools/pyenv_check.py", "contracts/tools/requirements.txt", "contracts/tools/verification-env.sh",
-    "jobs/codegen/go.mod", "jobs/codegen/go.sum", "jobs/codegen/config.yaml", "jobs/codegen/Dockerfile", "jobs/codegen/README.md",
-    "jobs/codegen/agent/resources.json", "jobs/codegen/fixtures/fixed-input.txt",
-    "jobs/codegen/Dockerfile.team", "jobs/codegen/team.yaml", "jobs/codegen/fixtures/brief.json", "jobs/codegen/agent/team/tools.json",
+    "jobs/codegen/README.md",
+    "jobs/codegen/supervisor/go.mod", "jobs/codegen/supervisor/go.sum", "jobs/codegen/supervisor/config.yaml",
+    "jobs/codegen/supervisor/Dockerfile", "jobs/codegen/supervisor/README.md", "jobs/codegen/supervisor/LICENSE",
+    "jobs/codegen/supervisor/agent/resources.json", "jobs/codegen/supervisor/fixtures/fixed-input.txt",
+    "jobs/codegen/supervisor/tools/sync-protocol.sh", "jobs/codegen/supervisor/.github/workflows/ci.yml",
+    "jobs/codegen/supervisor/internal/protocol/contract/protocol.schema.json",
+    "jobs/codegen/supervisor/internal/protocol/contract/fixtures.json", "jobs/codegen/supervisor/internal/protocol/contract/SOURCE",
+    "jobs/codegen/team/Dockerfile", "jobs/codegen/team/team.yaml", "jobs/codegen/team/fixtures/brief.json",
+    "jobs/codegen/team/agent/team/tools.json", "jobs/codegen/team/LICENSE", "jobs/codegen/team/.github/workflows/ci.yml",
+    "jobs/codegen/team/contract/protocol.schema.json", "jobs/codegen/team/contract/fixtures.json", "jobs/codegen/team/contract/SOURCE",
+    "jobs/codegen/team/tools/sync-protocol.sh", "jobs/codegen/team/tools/image-smoke.sh",
+    "contracts/jobs/codegen/protocol.schema.json", "contracts/jobs/codegen/fixtures.json",
     "jobs/codegen/team/package.json", "jobs/codegen/team/pnpm-lock.yaml", "jobs/codegen/team/pnpm-workspace.yaml",
     "jobs/codegen/team/tsconfig.json", "jobs/codegen/team/tsconfig.build.json", "jobs/codegen/team/biome.json",
     "jobs/codegen/team/vitest.config.ts", "jobs/codegen/team/README.md",
@@ -131,11 +152,29 @@ REQUIRED_FILES = (
     "deploy/policies/kyverno/anvilkit-components-jobs.yaml", "deploy/policies/kyverno/anvilkit-components-registries.dev.yaml",
     "deploy/policies/seccomp/anvilkit-candidate.json", "deploy/policies/seccomp/generate.sh",
     "deploy/policies/network/anvilkit-components-egress.yaml", "deploy/policies/check.sh", "deploy/policies/README.md",
+    "deploy/policies/kyverno/anvilkit-parsing-jobs.yaml", "deploy/policies/kyverno/anvilkit-parsing-registries.dev.yaml",
+    "deploy/policies/network/anvilkit-parsing-egress.yaml",
+    "jobs/parser/Dockerfile", "jobs/parser/pyproject.toml", "jobs/parser/requirements.in", "jobs/parser/requirements.lock",
+    "jobs/parser/models.lock", "jobs/parser/README.md", "jobs/parser/LICENSE", "jobs/parser/.github/workflows/ci.yml",
+    "services/agent/inference/Dockerfile", "services/agent/inference/pyproject.toml", "services/agent/inference/requirements.in",
+    "services/agent/inference/requirements.lock", "services/agent/inference/models.lock", "services/agent/inference/config.yaml",
+    "services/agent/inference/README.md", "services/agent/inference/LICENSE", "services/agent/inference/.github/workflows/ci.yml",
     "deploy/dev/images.sh", "deploy/dev/docker/access-sidecar.dev.Dockerfile",
     "jobs/migration/internal/migrate/sql/knowledge/00001_init.sql",
     "jobs/migration/internal/migrate/sql/knowledge/00002_background.sql",
+    "jobs/migration/internal/migrate/sql/knowledge/00003_ingestion.sql",
+    "jobs/migration/internal/migrate/sql/knowledge/00004_retrieval.sql",
+    "jobs/migration/internal/migrate/sql/knowledge/00005_memory.sql",
+    "jobs/migration/internal/migrate/sql/knowledge/00006_outbox_observation.sql",
+    "jobs/migration/internal/migrate/sql/knowledge/00007_memory_removals.sql",
+    "tests/evals/rag/cases.json", "tests/evals/rag/README.md",
+    "tests/evals/memory/cases.json", "tests/evals/memory/README.md",
     "jobs/migration/internal/migrate/sql/mcp/00001_init.sql",
     "jobs/migration/internal/migrate/sql/mcp/00002_background.sql",
+    "jobs/migration/internal/migrate/sql/mcp/00003_catalog_grants.sql", "jobs/migration/internal/migrate/sql/mcp/00004_tool_calls.sql",
+    "tests/integration/cmd/mcpfixture/main.go",
+    "jobs/validator/src/preview-origin.ts", "jobs/validator/fixtures/preview/frame.tsx",
+    "tests/integration/studio_integration_test.go",
     "package.json", "pnpm-workspace.yaml", "pnpm-lock.yaml",
     "services/agent/api/go.mod", "services/agent/api/go.sum", "services/agent/api/config.yaml",
     "services/agent/api/README.md", "services/agent/api/LICENSE", "services/agent/api/Dockerfile", "services/agent/api/.dockerignore",
@@ -151,6 +190,7 @@ REQUIRED_FILES = (
     "services/agent/control/internal/migrate/sql/00004_usage_observation_presence.sql",
     "services/agent/control/internal/migrate/sql/00005_effects_and_recovery.sql",
     "services/agent/control/internal/migrate/sql/00006_artifacts.sql",
+    "services/agent/control/internal/migrate/sql/00012_preview_builds.sql",
     "services/agent/workflow/go.mod", "services/agent/workflow/go.sum", "services/agent/workflow/config.yaml",
     "services/agent/workflow/README.md", "services/agent/workflow/LICENSE", "services/agent/workflow/Dockerfile", "services/agent/workflow/.dockerignore",
     "services/agent/workflow/.github/workflows/ci.yml",
@@ -174,7 +214,7 @@ REQUIRED_FILES = (
     "services/agent/background-worker/package.json", "services/agent/background-worker/pnpm-lock.yaml", "services/agent/background-worker/pnpm-workspace.yaml",
     "services/agent/background-worker/tsconfig.json", "services/agent/background-worker/biome.json", "services/agent/background-worker/vitest.config.ts",
     "services/agent/background-worker/build.mjs", "services/agent/background-worker/config.yaml", "services/agent/background-worker/README.md",
-    "services/agent/background-worker/Dockerfile", "services/agent/background-worker/.github/workflows/ci.yml",
+    "services/agent/background-worker/Dockerfile", "services/agent/background-worker/.github/workflows/ci.yml", "services/agent/background-worker/LICENSE",
     "services/agent/background-worker/deploy/chart/Chart.yaml", "services/agent/background-worker/deploy/chart/values.yaml",
     "packages/profile-schemas/apollo-snapshot.schema.json", "packages/profile-schemas/config-generation.schema.json",
     "packages/profile-schemas/fixtures.json", "packages/profile-schemas/python/config_generation.py", "packages/profile-schemas/README.md",
@@ -188,7 +228,7 @@ REQUIRED_FILES = (
 )
 # This P10 directory is generated from checked source by host-bundles.ts;
 # it is a build cache, never a required source input or an exported artifact.
-GENERATED_OUTPUT_PREFIXES = ("jobs/validator/fixtures/host/browser/dist/", "services/agent/model-proxy/dist/", "jobs/codegen/team/dist/", "services/agent/knowledge/dist/", "services/agent/background-worker/dist/")
+GENERATED_OUTPUT_PREFIXES = ("jobs/validator/fixtures/host/browser/dist/", "jobs/validator/fixtures/preview/dist/", "services/agent/model-proxy/dist/", "jobs/codegen/team/dist/", "services/agent/knowledge/dist/", "services/agent/background-worker/dist/")
 EXCLUDED_PREFIXES = ("docs/archive/", "outputs/", "logs/", ".local/", "node_modules/")
 EXCLUDED_INFIXES = ("/node_modules/", "/__pycache__/", ".egg-info/")
 EXCLUDED_PATTERNS = (re.compile(r"(^|/)\.env(\.|$)"), re.compile(r"\.pem$"), re.compile(r"\.log$"), re.compile(r"\.kubeconfig$"))
@@ -294,12 +334,16 @@ def main() -> int:
             ("docs", [sys.executable, "tools/check-docs.py"], target),
             ("contracts", [sys.executable, "tools/check-contracts.py"], target),
         ]
+        # The codegen Job's repositories carry verbatim copies of the process
+        # protocol: the exported copies are the exported contracts' source.
+        for repo in ("jobs/codegen/supervisor", "jobs/codegen/team"):
+            steps.append((f"codegen protocol copy {repo}", ["sh", "tools/sync-protocol.sh", "--check", str(target / "contracts")], target / repo))
         if not a.skip_build:
             for mod in re.findall(r"^\s*\./(\S+)", (target / "go.work").read_text(encoding="utf-8"), flags=re.M):
                 steps.append((f"go build {mod}", ["go", "build", "-buildvcs=false", "./..."], target / mod))
             # The service repositories also build alone: without the workspace, from their
             # own go.mod against the published contracts module (their independent delivery).
-            for repo in ("services/agent/api", "services/agent/control", "services/agent/workflow", "services/agent/mcp", "services/agent/knowledge/forwarder"):
+            for repo in ("services/agent/api", "services/agent/control", "services/agent/workflow", "services/agent/mcp", "services/agent/knowledge/forwarder", "jobs/codegen/supervisor"):
                 steps.append((f"go build {repo} (GOWORK=off)", ["go", "build", "-buildvcs=false", "./..."], target / repo, {"GOWORK": "off"}))
         for name, cmd, cwd, *extra in steps:
             p = subprocess.run(cmd, cwd=cwd, env=dict(env, **(extra[0] if extra else {})), capture_output=True, text=True)

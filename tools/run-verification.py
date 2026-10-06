@@ -14,6 +14,17 @@ Steps, in order:
                                                        sqlc reproduces Control's data-access code
   contracts   tools/check-contracts.py                 contracts/tools/check.py: buf lint, OpenAPI, JSON Schema
                                                        fixtures, API/RPC vectors
+  evals       tools/run-evaluation.py --check           the P22 registry (tests/evals/registry.json) maps every
+                                                       M1/CAP/SEC requirement to existing executable cases or
+                                                       explicit NOT_RUN entries naming the missing ENV inputs
+  deployment  tools/check-deployment-lock.py           the P23 deployment lock (deploy/gitops/lock.yaml): the eight
+              --self-test                              charts rendered with the qualification values carry its
+                                                       replica/HPA/PDB/spread/probe/grace/pool limits, the
+                                                       connection budgets fit, production fields stay REQUIRED;
+                                                       its negative probes must each be detected
+  handover    deploy/handover/rehearse.py self-test    the P24 rehearsal's decisions on synthetic inputs: each
+                                                       single violation of a preservation rule requires a
+                                                       transfer; legacy-name patterns and route classifiers
   export      tools/check-source-export.py             the Git export set (parent plus the contracts and API
                                                        repositories) holds every declared input and no
                                                        archive/secret/legacy-submodule content; a disposable
@@ -24,9 +35,11 @@ Steps, in order:
   validator   pnpm install --frozen-lockfile, then     the validator Job package (P10) type-checks, lints,
               check-types/lint/profiles:check/build/   verifies its profiles, compiles and certifies its fixed
               test in jobs/validator                   component (Vitest; real build, SSR and Chromium steps)
-  team        pnpm install --frozen-lockfile, then     the codegen team package (P12) type-checks, lints,
-              check-types, lint, build, tools:check,   builds, checks its reviewed tools document and tests
-              test in jobs/codegen/team                (Vitest; a countable sidecar double, the real
+  team        sync-protocol.sh --check in both         the codegen process protocol copies of
+              jobs/codegen repositories, then pnpm     jobs/codegen/{supervisor,team} are contracts/jobs/codegen;
+              install --frozen-lockfile, check-types,  the codegen team package (P12) type-checks, lints,
+              lint, build, tools:check, test in        builds, checks its reviewed tools document and tests
+              jobs/codegen/team                        (Vitest; a countable sidecar double, the real
                                                        validator chain when jobs/validator is built)
   model-proxy pnpm install --frozen-lockfile, then     the Model Proxy (P11) type-checks, lints, builds and
               check-types/lint/build/test in           proves its guards and call scenarios (Vitest: the real
@@ -43,6 +56,13 @@ Steps, in order:
               services/agent/background-worker         PostgreSQL, Valkey and NATS through Testcontainers)
   profiles    python packages/profile-schemas/         the shared configuration schemas' cross-language
               python/config_generation.py --fixtures   fixtures pass the Python consumer example (P14-06)
+  parser      unittest of jobs/parser in the built     the parser Job (P15): this checkout's sources and tests
+              anvilkit-parser:dev image, no network    with the image's locked dependencies and pinned weights
+                                                       (real Docling conversions, every guard); --static and a
+                                                       missing image byte-compile the sources only
+  inference   unittest of services/agent/inference     the Inference service (P15): the compute contract and,
+              in the built anvilkit-agent-inference    with the image's locked weights, real BGE-M3 and
+              image, no network                        reranker computations; --static byte-compiles only
   go          go build/vet/test per module in go.work  unit tests; Docker-backed tests (Testcontainers) run
                                                        unless ANVILKIT_SKIP_DOCKER_TESTS=1
   integration go test -tags integration ...           real PostgreSQL/Temporal/Kubernetes proofs; needs the
@@ -208,20 +228,29 @@ def step_model_proxy() -> tuple[str, str]:
 
 
 TEAM_PKG = ROOT / "jobs" / "codegen" / "team"
+SUPERVISOR_REPO = ROOT / "jobs" / "codegen" / "supervisor"
 
 
 def step_team() -> tuple[str, str]:
-    """The codegen team package (P12): its locked install (better-sqlite3's
-    prebuilt binary is the one lifecycle script its workspace file allows),
-    type check, lint, build (the coder and coordinator the tests and the
-    integration scenario spawn), the reviewed tools document checked against
-    the build, and the tests (a countable sidecar double; the validation test
-    runs the real validator chain from jobs/validator when it is built)."""
+    """The codegen team package (P12, repository anvilkit-job-codegen-team):
+    its locked install (better-sqlite3's prebuilt binary is the one lifecycle
+    script its workspace file allows), type check, lint, build (the coder and
+    coordinator the tests and the integration scenario spawn), the reviewed
+    tools document checked against the build, the tests (a countable sidecar
+    double; the coordinator over the process protocol; the validation test
+    runs the real validator chain from jobs/validator when it is built), and
+    the process protocol copies of both codegen repositories against
+    contracts/jobs/codegen (the supervisor's Go tests run in the go step)."""
     pnpm = shutil.which("pnpm")
     if not pnpm or not shutil.which("node"):
         return "UNEXECUTED", "pnpm/node are not on PATH (Node.js 24 LTS and the packageManager of jobs/codegen/team/package.json are required)"
     env = dict(os.environ, ANVILKIT_CODEGEN_TEAM_CONTRACTS_DIR=str(CONTRACTS))
     out = []
+    for repo in (SUPERVISOR_REPO, TEAM_PKG):
+        p = run(["sh", "tools/sync-protocol.sh", "--check", str(CONTRACTS)], repo, env)
+        out.append(f"{repo.relative_to(ROOT)}: protocol copy -> {'ok' if p.returncode == 0 else 'FAIL'}")
+        if p.returncode != 0:
+            return "FAIL", "\n".join(out + [p.stdout[-2000:], p.stderr[-2000:]])
     for name, cmd in (
         ("install", [pnpm, "install", "--frozen-lockfile"]),
         ("check-types", [pnpm, "run", "check-types"]),
@@ -264,10 +293,12 @@ def pnpm_package(rel: pathlib.Path, env: dict, scripts: tuple[str, ...] = ("chec
 
 
 def step_knowledge(static: bool) -> tuple[str, str]:
-    """The Knowledge owner (P14): type check, lint, build (the entries the
-    forwarder test and the integration scenario spawn) and tests (Vitest;
-    Docker-backed PostgreSQL through Testcontainers, so --static leaves the
-    tests out). The Go forwarder sidecar module is covered by the go step."""
+    """The Knowledge owner (P14-P17): type check, lint, build (the entries the
+    forwarder test and the integration scenarios spawn, since P17 also the
+    Store's vendor migration and memoryctl) and tests (Vitest; Docker-backed
+    PostgreSQL with the Store's vendor schema and, since P16, Qdrant through
+    Testcontainers, so --static leaves the tests out). The Go forwarder
+    sidecar module is covered by the go step."""
     if static:
         return pnpm_package(pathlib.Path("services/agent/knowledge"), dict(os.environ), ("check-types", "lint", "build"))
     if not shutil.which("docker"):
@@ -294,6 +325,46 @@ def step_profile_schemas() -> tuple[str, str]:
     p = run([PY, str(PROFILE_SCHEMAS / "python" / "config_generation.py"), "--fixtures", str(PROFILE_SCHEMAS / "fixtures.json")], PROFILE_SCHEMAS, dict(os.environ))
     detail = f"packages/profile-schemas: python fixtures -> {'ok' if p.returncode == 0 else 'FAIL'}\n{p.stdout[-1500:]}{p.stderr[-800:]}"
     return ("PASS" if p.returncode == 0 else "FAIL"), detail
+
+
+def python_image_step(name: str, image: str, package: pathlib.Path, mounts: list[tuple[pathlib.Path, str]], env: dict[str, str], static: bool) -> tuple[str, str]:
+    """A Python package whose dependencies and weights are locked into its
+    image: the checkout's sources and tests run inside that image with no
+    network. Without Docker or the image (or under --static) the sources are
+    byte-compiled only and the tests are reported as not run."""
+    compiled = run([PY, "-m", "compileall", "-q", str(package / "src"), str(package / "tests")], ROOT)
+    if compiled.returncode != 0:
+        return "FAIL", f"{name}: compileall failed\n{compiled.stdout[-1500:]}{compiled.stderr[-800:]}"
+    if static:
+        return "PASS", f"{name}: sources byte-compile (tests need the image; not run under --static)"
+    docker = shutil.which("docker")
+    if not docker or run([docker, "image", "inspect", image], ROOT).returncode != 0:
+        return "UNEXECUTED", f"{name}: the image {image} is not built (sources byte-compile; build it to run the tests)"
+    cmd = [docker, "run", "--rm", "--network", "none", "--read-only", "--tmpfs", "/tmp:rw,size=512m", "--cap-drop", "ALL",
+           "--security-opt", "no-new-privileges", "--entrypoint", "/opt/venv/bin/python", "-w", "/opt/anvilkit"]
+    for src, dst in mounts:
+        cmd += ["-v", f"{src}:{dst}:ro"]
+    for k, v in env.items():
+        cmd += ["-e", f"{k}={v}"]
+    p = run(cmd + [image, "-m", "unittest", "discover", "-s", "tests"], ROOT)
+    tail = (p.stdout + p.stderr)[-1500:]
+    return ("PASS" if p.returncode == 0 else "FAIL"), f"{name}: unittest in {image} -> {'ok' if p.returncode == 0 else 'FAIL'}\n{tail}"
+
+
+def step_parser(static: bool) -> tuple[str, str]:
+    pkg = ROOT / "jobs" / "parser"
+    return python_image_step("jobs/parser", "anvilkit-parser:dev", pkg,
+                             [(pkg / "src" / "anvilkit_parser", "/opt/anvilkit/src/anvilkit_parser"), (pkg / "tests", "/opt/anvilkit/tests"),
+                              (CONTRACTS / "jobs" / "job.schema.json", "/opt/anvilkit/job.schema.json")], {}, static)
+
+
+def step_inference(static: bool) -> tuple[str, str]:
+    pkg = ROOT / "services" / "agent" / "inference"
+    return python_image_step("services/agent/inference", "anvilkit-agent-inference:dev", pkg,
+                             [(pkg / "src" / "anvilkit_inference", "/opt/anvilkit/src/anvilkit_inference"), (pkg / "tests", "/opt/anvilkit/tests"),
+                              (PY_PKG / "anvilkit_generated_clients", "/opt/anvilkit/src/anvilkit_generated_clients"),
+                              (pkg / "models.lock", "/opt/models/models.lock")],
+                             {"ANVILKIT_INFERENCE_MODELS_DIR": "/opt/models"}, static)
 
 
 @contextlib.contextmanager
@@ -381,6 +452,9 @@ def main() -> int:
         ("docs", lambda: script([PY, "tools/check-docs.py"])),
         ("generate", step_generate),
         ("contracts", lambda: script([PY, "tools/check-contracts.py"])),
+        ("evals", lambda: script([PY, "tools/run-evaluation.py", "--check"])),
+        ("deployment", lambda: script([PY, "tools/check-deployment-lock.py", "--self-test"])),
+        ("handover", lambda: script([PY, "deploy/handover/rehearse.py", "self-test"])),
         ("export", lambda: script([PY, "tools/check-source-export.py"])),
         ("ts", step_ts),
         ("validator", step_validator),
@@ -390,6 +464,8 @@ def main() -> int:
         ("knowledge", lambda: step_knowledge(a.static)),
         ("background", lambda: step_background_worker(a.static)),
         ("profiles", step_profile_schemas),
+        ("parser", lambda: step_parser(a.static)),
+        ("inference", lambda: step_inference(a.static)),
         ("go", lambda: step_go(a.static)),
         ("integration", step_integration),
     ]
