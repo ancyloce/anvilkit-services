@@ -104,6 +104,7 @@ services:
       - ../../.local/dev/minio-inventory.env
       - ../../.local/dev/minio-model-proxy.env
       - ../../.local/dev/minio-knowledge.env
+      - ../../.local/dev/minio-removals.env
     entrypoint: ["/bin/sh", "/setup/minio-setup.sh"]
     volumes:
       - ./minio-setup.sh:/setup/minio-setup.sh:ro

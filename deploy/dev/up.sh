@@ -58,6 +58,14 @@ if [ ! -f "$LOCAL/minio-knowledge.env" ]; then
   printf 'ANVILKIT_KNOWLEDGE_OBJECTS_ACCESS_KEY_ID=anvilkit-knowledge-%s\nANVILKIT_KNOWLEDGE_OBJECTS_SECRET_ACCESS_KEY=%s\n' "$KK" "$KS" > "$LOCAL/minio-knowledge.env"
   chmod 600 "$LOCAL/minio-knowledge.env"
 fi
+if [ ! -f "$LOCAL/minio-removals.env" ]; then
+  # P23: Knowledge's removal inventory user: the anvilkit-memory-removals
+  # bucket only (list, read and create; never delete).
+  RK=$(head -c 12 /dev/urandom | od -An -tx1 | tr -d ' \n')
+  RS=$(head -c 24 /dev/urandom | base64 | tr -d '/+=' | head -c 32)
+  printf 'ANVILKIT_KNOWLEDGE_REMOVALS_ACCESS_KEY_ID=anvilkit-removals-%s\nANVILKIT_KNOWLEDGE_REMOVALS_SECRET_ACCESS_KEY=%s\n' "$RK" "$RS" > "$LOCAL/minio-removals.env"
+  chmod 600 "$LOCAL/minio-removals.env"
+fi
 if [ ! -f "$LOCAL/qdrant.env" ]; then
   # P16: Qdrant's API key (Knowledge is its only client).
   QK=$(head -c 24 /dev/urandom | base64 | tr -d '/+=' | head -c 32)
@@ -408,5 +416,11 @@ export ANVILKIT_KNOWLEDGE_QDRANT_URL="http://127.0.0.1:26333"
 export ANVILKIT_KNOWLEDGE_QDRANT_API_KEY="${QKEY}"
 # P17 (DEVELOPMENT_ONLY): the runtime Store role of the memory projection.
 export ANVILKIT_KNOWLEDGE_STORE_DATABASE_URL="\$ANVILKIT_DEV_KNOWLEDGE_STORE_DSN"
+# P23 (DEVELOPMENT_ONLY): Knowledge's removal inventory (its own bucket and
+# user on the foundation's MinIO, so not an independent failure domain here;
+# records are scoped by each database's removal scope, so test lanes on
+# other databases never read the development database's records).
+export ANVILKIT_KNOWLEDGE_REMOVALS_ENDPOINT="http://127.0.0.1:29000"
+export ANVILKIT_KNOWLEDGE_REMOVALS_CREDENTIALS_FILE="$LOCAL/minio-removals.env"
 ENV
 echo "dev foundation ready; source $LOCAL/env.sh"

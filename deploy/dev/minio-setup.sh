@@ -19,6 +19,11 @@
 #     copies and parser results (P15; create-only copies, presigned GET/PUT
 #     for the parser Jobs), reached with its own user and bucket-limited
 #     policy (.local/dev/minio-knowledge.env).
+#   - anvilkit-memory-removals: Knowledge's removal inventory (P23; immutable
+#     records of memory deletions and revocations created only when absent,
+#     listed after a database restore), reached with its own user whose
+#     policy lists, reads and creates in that bucket and never deletes
+#     (.local/dev/minio-removals.env).
 set -eu
 mc alias set dev http://minio:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null
 mc mb --ignore-existing dev/anvilkit-artifacts >/dev/null
@@ -68,4 +73,19 @@ if ! mc admin user info dev "$ANVILKIT_KNOWLEDGE_OBJECTS_ACCESS_KEY_ID" >/dev/nu
   mc admin user add dev "$ANVILKIT_KNOWLEDGE_OBJECTS_ACCESS_KEY_ID" "$ANVILKIT_KNOWLEDGE_OBJECTS_SECRET_ACCESS_KEY" >/dev/null
 fi
 mc admin policy attach dev anvilkit-knowledge --user "$ANVILKIT_KNOWLEDGE_OBJECTS_ACCESS_KEY_ID" >/dev/null 2>&1 || true
-echo "object stores ready: anvilkit-artifacts (versioned), anvilkit-inventory (own user), anvilkit-model-proxy (own user), anvilkit-knowledge (own user)"
+mc mb --ignore-existing dev/anvilkit-memory-removals >/dev/null
+cat > /tmp/removals-policy.json <<'POLICY'
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {"Effect": "Allow", "Action": ["s3:ListBucket", "s3:GetBucketLocation"], "Resource": ["arn:aws:s3:::anvilkit-memory-removals"]},
+    {"Effect": "Allow", "Action": ["s3:GetObject", "s3:PutObject"], "Resource": ["arn:aws:s3:::anvilkit-memory-removals/*"]}
+  ]
+}
+POLICY
+mc admin policy create dev anvilkit-memory-removals /tmp/removals-policy.json >/dev/null
+if ! mc admin user info dev "$ANVILKIT_KNOWLEDGE_REMOVALS_ACCESS_KEY_ID" >/dev/null 2>&1; then
+  mc admin user add dev "$ANVILKIT_KNOWLEDGE_REMOVALS_ACCESS_KEY_ID" "$ANVILKIT_KNOWLEDGE_REMOVALS_SECRET_ACCESS_KEY" >/dev/null
+fi
+mc admin policy attach dev anvilkit-memory-removals --user "$ANVILKIT_KNOWLEDGE_REMOVALS_ACCESS_KEY_ID" >/dev/null 2>&1 || true
+echo "object stores ready: anvilkit-artifacts (versioned), anvilkit-inventory (own user), anvilkit-model-proxy (own user), anvilkit-knowledge (own user), anvilkit-memory-removals (own user)"
