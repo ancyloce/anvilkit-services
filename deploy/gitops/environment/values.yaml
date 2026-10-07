@@ -1,0 +1,8 @@
+# Supplied per environment (deploy/gitops/environments/<environment>.yaml, resolved
+# against the release manifest by deploy/gitops/publish.py). No defaults for the
+# combination itself: an environment chart without applications renders nothing.
+environment: ""
+registry: ""
+argocdNamespace: anvilkit-platform
+project: anvilkit
+applications: []

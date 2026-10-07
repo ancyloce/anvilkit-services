@@ -1,0 +1,5 @@
+apiVersion: v2
+name: anvilkit-environment
+description: The pinned combination of one AnvilKit environment as ordered Argo CD Applications (P23-04)
+type: application
+version: 0.1.0

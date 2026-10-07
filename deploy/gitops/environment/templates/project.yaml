@@ -1,0 +1,21 @@
+{{- if not .Values.environment }}{{ fail "environment is required" }}{{ end }}
+# One project for the environment: sources only from the environment's registry,
+# destinations only in the cluster this Argo CD runs in. Cluster-scoped resources
+# are needed by the platform charts (CRDs, webhooks, ClusterRoles, policies).
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: {{ .Values.project }}
+  namespace: {{ .Values.argocdNamespace }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "-100"
+spec:
+  description: {{ printf "AnvilKit %s environment" .Values.environment | quote }}
+  sourceRepos:
+    - {{ printf "%s/*" .Values.registry | quote }}
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: "*"
+  clusterResourceWhitelist:
+    - group: "*"
+      kind: "*"

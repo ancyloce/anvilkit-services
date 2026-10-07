@@ -1,0 +1,216 @@
+# Deployment lock and capacity worksheet (P23-01; platform.md "Capacity
+# worksheet" and DD-10 §2/§3/§5). One entry for every application and every
+# platform component: exact replica, autoscaling, disruption, placement and
+# connection-pool limits per environment.
+#
+# Statuses: a concrete value is a declared limit that tools/check-deployment-lock.py
+# verifies against the rendered chart and the environment values; REQUIRED
+# names the ENV input that must supply it before the environment can qualify
+# (platform.md: NOT_VERIFIED and null are incomplete fields, never defaults).
+#
+# Environments:
+#   production     every capacity field is REQUIRED (ENV-01..05, ENV-09).
+#   qualification  DEVELOPMENT_ONLY: kind anvilkit-qualification, three
+#                  control-plane and three worker nodes on one host; its zone
+#                  labels are simulated failure domains, its resource values
+#                  are the charts' development requests, not measured peaks.
+schemaVersion: 1
+lockRevision: 1
+
+environments:
+  production:
+    status: REQUIRED
+    inputs: [ENV-01, ENV-02, ENV-03, ENV-04, ENV-05, ENV-09]
+  qualification:
+    status: DEVELOPMENT_ONLY
+    namespace: anvilkit-apps
+    values: deploy/qualification/values
+    nodes: {controlPlane: 3, workers: 3, zones: [qa-a, qa-b, qa-c]}
+
+# Placement every application uses in a qualifying environment: one Pod per
+# node and per zone before a second may share either (DoNotSchedule), at least
+# one Pod through every voluntary disruption.
+placement:
+  spread:
+    - {topologyKey: kubernetes.io/hostname, maxSkew: 1, whenUnsatisfiable: DoNotSchedule}
+    - {topologyKey: topology.kubernetes.io/zone, maxSkew: 1, whenUnsatisfiable: DoNotSchedule}
+  disruption: {minAvailable: 1}
+
+applications:
+  - name: anvilkit-agent-api
+    chart: services/agent/api/deploy/chart
+    replicas: {min: 2}
+    autoscaling: {qualification: {max: 3}, production: {max: REQUIRED, inputs: [ENV-05]}}
+    shutdown: {config: http.shutdown_timeout}
+    pools: []
+  - name: anvilkit-agent-control
+    chart: services/agent/control/deploy/chart
+    component: control
+    replicas: {min: 2}
+    autoscaling: {qualification: {max: 3}, production: {max: REQUIRED, inputs: [ENV-05]}}
+    shutdown: {config: grpc.shutdown_timeout}
+    pools:
+      - {cluster: business, database: anvilkit_control, config: database.max_conns, perReplica: 8, generations: 1}
+  - name: anvilkit-agent-workflow
+    chart: services/agent/workflow/deploy/chart
+    replicas: {min: 2}
+    autoscaling: {qualification: {max: 3}, production: {max: REQUIRED, inputs: [ENV-05]}}
+    shutdown: {config: shutdown_timeout}
+    pools: []
+  - name: anvilkit-agent-model-proxy
+    chart: services/agent/model-proxy/deploy/chart
+    replicas: {min: 2}
+    autoscaling: {qualification: {max: 3}, production: {max: REQUIRED, inputs: [ENV-05, ENV-06]}}
+    shutdown: {config: http.shutdown_timeout}
+    pools: []
+  - name: anvilkit-agent-knowledge
+    chart: services/agent/knowledge/deploy/chart
+    component: knowledge
+    replicas: {min: 2}
+    autoscaling: {qualification: {max: 3}, production: {max: REQUIRED, inputs: [ENV-05]}}
+    shutdown: {config: grpc.shutdown_timeout, also: [reload.drain_limit]}
+    # A configuration generation builds new pools before the old generation
+    # drains (DD-09 §4): both are open for up to reload.drain_limit.
+    pools:
+      - {cluster: business, database: anvilkit_knowledge, config: database.max_conn, perReplica: 8, generations: 2}
+      - {cluster: business, database: anvilkit_knowledge, config: store.max_conn, perReplica: 4, generations: 2}
+      - {cluster: business, database: anvilkit_knowledge, container: forwarder, fixed: {source: services/agent/knowledge/forwarder/internal/forwarder/forwarder.go, pattern: "poolCfg.MaxConns = (\\d+)"}, perReplica: 4, generations: 1}
+      - {cluster: business, database: anvilkit_knowledge, container: relay, fixed: {source: services/agent/background-worker/src/relay/relay.ts, pattern: "databaseUrl, max: (\\d+)"}, perReplica: 2, generations: 1}
+  - name: anvilkit-agent-mcp
+    chart: services/agent/mcp/deploy/chart
+    component: mcp
+    replicas: {min: 2}
+    autoscaling: {qualification: {max: 3}, production: {max: REQUIRED, inputs: [ENV-05]}}
+    shutdown: {config: grpc.shutdown_timeout, also: [reload.drain_limit]}
+    # The in-process outbox forwarder shares the generation's pool.
+    pools:
+      - {cluster: business, database: anvilkit_mcp, config: database.max_conn, perReplica: 8, generations: 2}
+      - {cluster: business, database: anvilkit_mcp, container: relay, fixed: {source: services/agent/background-worker/src/relay/relay.ts, pattern: "databaseUrl, max: (\\d+)"}, perReplica: 2, generations: 1}
+  - name: anvilkit-agent-background-worker
+    chart: services/agent/background-worker/deploy/chart
+    replicas: {min: 2}
+    autoscaling: {qualification: {max: 3}, production: {max: REQUIRED, inputs: [ENV-05]}}
+    shutdown: {config: worker.shutdown_timeout}
+    pools: []
+  - name: anvilkit-agent-inference
+    chart: services/agent/inference/deploy/chart
+    replicas: {min: 2}
+    # Two model residencies (DD-10 §2); the maximum is bounded by ENV-04's
+    # CPU/GPU profile, not by the database.
+    autoscaling: {qualification: {max: 3}, production: {max: REQUIRED, inputs: [ENV-04, ENV-05]}}
+    shutdown: {config: shutdown_timeout_s, unit: seconds}
+    pools: []
+
+# Connection budgets (DD-10 §5): per-replica pools x open generations x the
+# autoscaling maximum, plus the reserves, within the cluster's max_connections.
+connectionBudgets:
+  - cluster: business
+    product: CloudNativePG business cluster (anvilkit_control, anvilkit_knowledge, anvilkit_mcp)
+    maxConnections: {qualification: 300, production: REQUIRED, inputs: [ENV-01, ENV-05]}
+    reserve:
+      superuser: 3          # superuser_reserved_connections
+      replication: 4        # two standbys' walreceivers plus the instance manager
+      migration: 3          # one migration Job per domain
+      operations: 10        # psql, backups, the recovery tooling
+      vendor: 20            # ContextForge's own database role (DB_POOL_SIZE x replicas)
+  - cluster: temporal
+    product: CloudNativePG Temporal cluster (temporal, temporal_visibility)
+    maxConnections: {qualification: 200, production: REQUIRED, inputs: [ENV-01, ENV-05]}
+    # Temporal Server's per-service persistence pools; declared in the
+    # platform values of the Temporal chart, not by an AnvilKit service.
+    reserve: {superuser: 3, replication: 4, operations: 10, temporal: 160}
+
+# DD-10 §3 primary-product HA targets. qualification records what the
+# qualification cluster runs (or NOT_RUN with the reason); production stays
+# REQUIRED until its inputs exist.
+platform:
+  - name: kubernetes-control-plane
+    product: RKE2 v1.36.4+rke2r1 / etcd
+    target: three control-plane voters, API VIP, snapshot and server token
+    qualification: {status: DEVELOPMENT_ONLY, topology: "kind: three control-plane nodes (stacked etcd) behind kind's load balancer, not RKE2/kube-vip"}
+    production: {status: REQUIRED, inputs: [ENV-01, ENV-02, ENV-03]}
+  - name: business-postgresql
+    product: CloudNativePG 1.30 / PostgreSQL 17.11
+    target: three instances, one primary and two standbys, synchronous ANY 1 that never blocks writes
+    qualification: {status: DEVELOPMENT_ONLY, topology: "three instances, synchronous ANY 1 (dataDurability preferred)"}
+    production: {status: REQUIRED, inputs: [ENV-01, ENV-02, ENV-05, ENV-09]}
+  - name: temporal-postgresql
+    product: CloudNativePG 1.30 / PostgreSQL 17.11
+    target: separate three-node cluster for persistence and visibility
+    qualification: {status: DEVELOPMENT_ONLY, topology: "separate three-instance cluster"}
+    production: {status: REQUIRED, inputs: [ENV-01, ENV-02, ENV-05, ENV-09]}
+  - name: temporal-server
+    product: Temporal Server 1.31.2
+    target: frontend, matching and worker at least two; history three
+    qualification: {status: DEVELOPMENT_ONLY, topology: "frontend 2, matching 2, worker 2, history 3"}
+    production: {status: REQUIRED, inputs: [ENV-01, ENV-05]}
+  - name: qdrant
+    product: Qdrant 1.19.0
+    target: three peers, collection RF=3 / WCF=2
+    qualification: {status: DEVELOPMENT_ONLY, topology: "three peers; Knowledge collections RF=3, WCF=2, strong ordering"}
+    production: {status: REQUIRED, inputs: [ENV-01, ENV-02, ENV-05]}
+  - name: queue-valkey
+    product: Valkey + CloudPirates Sentinel chart
+    target: one primary, two replicas, three Sentinels (quorum 2); AOF, noeviction, TLS/ACL
+    qualification: {status: DEVELOPMENT_ONLY, topology: "one primary, two replicas, three Sentinels (quorum 2), AOF, noeviction; no TLS; chart 0.25.11 patched so the Sentinel no longer logs its password-bearing configuration"}
+    production: {status: REQUIRED, inputs: [ENV-01, ENV-02, ENV-03]}
+  - name: cache-valkey
+    product: Valkey
+    target: separate instance, eviction isolated from the queue
+    qualification: {status: NOT_RUN, reason: "no AnvilKit service consumes the cache instance on the qualification path"}
+    production: {status: REQUIRED, inputs: [ENV-01, ENV-05]}
+  - name: nats-jetstream
+    product: NATS JetStream 2.12
+    target: three servers, stream replicas 3
+    qualification: {status: DEVELOPMENT_ONLY, topology: "three servers, JetStream stream replicas 3"}
+    production: {status: REQUIRED, inputs: [ENV-01, ENV-02, ENV-05]}
+  - name: apollo-mysql
+    product: Apollo + MySQL InnoDB Cluster
+    target: Config/Admin/Portal two each; three MySQL members, Router two
+    qualification: {status: NOT_RUN, reason: "every service runs apollo.mode disabled; no Apollo or MySQL is deployed"}
+    production: {status: REQUIRED, inputs: [ENV-01, ENV-02, ENV-09]}
+  - name: contextforge
+    product: ContextForge v1.0.11
+    target: two replicas, qualified shared vendor database and cache
+    qualification: {status: DEVELOPMENT_ONLY, topology: "two replicas on its own database role of the business cluster"}
+    production: {status: REQUIRED, inputs: [ENV-01, ENV-03]}
+  - name: openbao
+    product: OpenBao Raft
+    target: three Raft voters, independent seal/unseal/recovery material, CSI, rotation
+    qualification: {status: DEVELOPMENT_ONLY, topology: "three Raft voters, Shamir seal; unseal material held outside the cluster under .local/qualification"}
+    production: {status: REQUIRED, inputs: [ENV-02, ENV-10]}
+  - name: ceph
+    product: Rook-Ceph RBD + RGW
+    target: three MON, two MGR, three OSD hosts, two RGW; replicated pools size 3
+    qualification: {status: NOT_RUN, reason: "no raw devices on the host; the object store is a DEVELOPMENT_ONLY S3 stand-in and RBD is kind's local-path storage"}
+    production: {status: REQUIRED, inputs: [ENV-01, ENV-02, ENV-05]}
+  - name: object-store
+    product: S3 API (RGW in production)
+    target: artifacts, receipts, the model-proxy store; the inventory in an independent failure domain
+    qualification: {status: DEVELOPMENT_ONLY, topology: "in-cluster MinIO for artifacts; the inventory and backups in a separate DR MinIO container outside the cluster (same host)"}
+    production: {status: REQUIRED, inputs: [ENV-02]}
+  - name: observability
+    product: OpenTelemetry Collector Contrib, kube-prometheus-stack, Loki, Tempo 2.10.8
+    target: redacted collection; metrics, logs and traces backends
+    qualification: {status: DEVELOPMENT_ONLY, topology: "OpenTelemetry Collector Contrib 0.161.0 (chart 0.174.1) as a DaemonSet on the worker pool, exporting to node files for the redaction probe; no Prometheus, Loki or Tempo backend"}
+    production: {status: REQUIRED, inputs: [ENV-01, ENV-05, ENV-10]}
+  - name: gitops
+    product: Argo CD 3.5.3 + Helm 4.3
+    target: one controller owns each resource; ordered waves
+    qualification: {status: DEVELOPMENT_ONLY, topology: "one Argo CD instance in anvilkit-platform"}
+    production: {status: REQUIRED, inputs: [ENV-01, ENV-03]}
+  - name: registry
+    product: Harbor 2.15.2
+    target: signed images and charts, scanning, provenance
+    qualification: {status: NOT_RUN, reason: "the CNCF Distribution registry of the development foundation stands in (E02's alternative); no Harbor"}
+    production: {status: REQUIRED, inputs: [ENV-01, ENV-03, ENV-10]}
+  - name: admission
+    product: Kyverno 1.19.1
+    target: exact image digest/signature, SA, RuntimeClass, volumes, capabilities
+    qualification: {status: DEVELOPMENT_ONLY, topology: "Kyverno 1.19.1 with the parent's policies and the signed-image policy"}
+    production: {status: REQUIRED, inputs: [ENV-01]}
+  - name: certificates
+    product: cert-manager 1.21.2
+    target: workload mTLS issuance and rotation
+    qualification: {status: DEVELOPMENT_ONLY, topology: "cert-manager for the CNPG backup plugin only; no workload mTLS (NR-IDENTITY)"}
+    production: {status: REQUIRED, inputs: [ENV-03, ENV-07]}

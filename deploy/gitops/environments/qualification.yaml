@@ -1,0 +1,439 @@
+# The qualification environment's pinned combination (P23-04): every component,
+# its sync wave, chart and values. deploy/gitops/publish.py resolves it against a
+# release manifest (tools/release-artifacts.py) into the values of the
+# anvilkit-environment chart: upstream charts are mirrored into the environment's
+# registry at these exact versions, the parent's platform charts and the
+# environment chart are published with a per-run version, the service charts and
+# images come from the release manifest by version and digest. Nothing here is a
+# production value: production needs ENV-01..10 (deploy/gitops/lock.yaml).
+#
+# Fields per application:
+#   wave, layer, namespace     ordering (platform < stateful < migrations < apps < probes)
+#   chart.upstream/version     a third-party chart mirrored by version (path platform)
+#   chart.source               a parent-owned chart (deploy/qualification/platform/<name>)
+#   chart.release              a service chart of the release manifest
+#   valuesFile                 a parent environment values file packaged with the chart
+#   values                     inline values
+#   imageDigests               values path -> release image whose digest it takes
+#   imageRefs                  values path -> release image whose full reference it takes
+#   releaseFiles               values path -> a file of the release (its contents)
+#   environmentRevision        values path -> the environment chart version being published
+environment: qualification
+registry: anvilkit-dev-registry:5000
+argocdNamespace: anvilkit-platform
+project: anvilkit
+applications:
+  # --- platform dependencies -------------------------------------------------
+  - name: cert-manager
+    wave: -50
+    layer: platform
+    namespace: cert-manager
+    chart: {upstream: oci://quay.io/jetstack/charts/cert-manager, name: cert-manager, version: v1.21.2}
+    values:
+      crds: {enabled: true}
+  - name: metrics-server
+    wave: -50
+    layer: platform
+    namespace: kube-system
+    chart: {upstream: https://kubernetes-sigs.github.io/metrics-server, name: metrics-server, version: 3.14.0}
+    values:
+      args: [--kubelet-insecure-tls]
+  - name: kyverno
+    wave: -50
+    layer: platform
+    namespace: kyverno
+    chart: {upstream: https://kyverno.github.io/kyverno, name: kyverno, version: 3.9.1}
+    # The chart renders its CRDs with empty annotations/labels maps, which a
+    # server-side apply drops: without this the CRDs read OutOfSync forever.
+    ignoreDifferences:
+      - group: apiextensions.k8s.io
+        kind: CustomResourceDefinition
+        jsonPointers: [/metadata/annotations, /metadata/labels]
+    syncOptions: [ServerSideApply=true, RespectIgnoreDifferences=true]
+    values:
+      admissionController: {replicas: 1}
+      backgroundController: {replicas: 1}
+      cleanupController: {replicas: 1}
+      reportsController: {replicas: 1}
+  - name: cloudnative-pg
+    wave: -50
+    layer: platform
+    namespace: cnpg-system
+    chart: {upstream: https://cloudnative-pg.github.io/charts, name: cloudnative-pg, version: 0.29.1}
+    syncOptions: [ServerSideApply=true]
+  - name: plugin-barman-cloud
+    wave: -45
+    layer: platform
+    namespace: cnpg-system
+    chart: {upstream: https://cloudnative-pg.github.io/charts, name: plugin-barman-cloud, version: 0.8.1}
+  - name: anvilkit-admission
+    wave: -45
+    layer: platform
+    namespace: kyverno
+    chart: {source: deploy/qualification/platform/admission, name: anvilkit-admission}
+    releaseFiles:
+      publicKey: cosign.pub
+  # The redacted telemetry pipeline (P23-06): one Collector per worker node. It
+  # reads the anvilkit-* container logs, scrapes the services' metrics ports and
+  # receives their spans over OTLP; spans keep the allowlisted attributes only
+  # (security.md), log bodies lose secret shapes, and every signal is written to
+  # /var/lib/anvilkit-telemetry on the node for check-telemetry.py. No Prometheus,
+  # Loki or Tempo backend: those are ENV-01/05 production inputs.
+  - name: anvilkit-telemetry
+    wave: -45
+    layer: platform
+    namespace: anvilkit-observability
+    chart: {upstream: https://open-telemetry.github.io/opentelemetry-helm-charts, name: opentelemetry-collector, version: 0.174.1}
+    values:
+      mode: daemonset
+      fullnameOverride: anvilkit-otel-collector
+      # The services' OTLP endpoint; in daemonset mode the chart creates it only when
+      # asked, with internalTrafficPolicy Local (each Pod reaches its node's Collector).
+      service: {enabled: true}
+      image:
+        repository: otel/opentelemetry-collector-contrib
+        tag: "0.161.0"
+        digest: sha256:fd328de2552466ad78385e1b1289c3f2402b1c45f265b252aab1955b42845ac1
+      command: {name: otelcol-contrib}
+      nodeSelector: {anvilkit.io/pool: components}
+      # Root reads the kubelet's 0640 pod logs and writes the node directory; no
+      # capability, read-only root file system.
+      securityContext:
+        runAsUser: 0
+        runAsGroup: 0
+        readOnlyRootFilesystem: true
+        allowPrivilegeEscalation: false
+        capabilities: {drop: [ALL]}
+      resources:
+        requests: {cpu: 50m, memory: 128Mi}
+        limits: {memory: 384Mi}
+      clusterRole:
+        create: true
+        rules:
+          - {apiGroups: [""], resources: [pods], verbs: [get, list, watch]}
+      ports:
+        jaeger-compact: {enabled: false}
+        jaeger-thrift: {enabled: false}
+        jaeger-grpc: {enabled: false}
+        zipkin: {enabled: false}
+      extraVolumes:
+        - {name: podlogs, hostPath: {path: /var/log/pods, type: Directory}}
+        - {name: telemetry, hostPath: {path: /var/lib/anvilkit-telemetry, type: DirectoryOrCreate}}
+      extraVolumeMounts:
+        - {name: podlogs, mountPath: /var/log/pods, readOnly: true}
+        - {name: telemetry, mountPath: /var/lib/anvilkit-telemetry}
+      alternateConfig:
+        extensions:
+          health_check: {endpoint: "${env:MY_POD_IP}:13133"}
+        receivers:
+          otlp:
+            protocols:
+              grpc: {endpoint: "${env:MY_POD_IP}:4317"}
+              http: {endpoint: "${env:MY_POD_IP}:4318"}
+          filelog:
+            include:
+              - /var/log/pods/anvilkit-apps_*/*/*.log
+              - /var/log/pods/anvilkit-components_*/*/*.log
+              - /var/log/pods/anvilkit-data_*/*/*.log
+              - /var/log/pods/anvilkit-platform_*/*/*.log
+            start_at: beginning
+            include_file_path: true  # the container parser takes the pod, namespace and container from it
+            operators:
+              - {type: container, id: container-parser}
+          prometheus:
+            config:
+              scrape_configs:
+                - job_name: anvilkit
+                  scrape_interval: 15s
+                  kubernetes_sd_configs:
+                    - role: pod
+                      namespaces: {names: [anvilkit-apps]}
+                      selectors: [{role: pod, field: "spec.nodeName=${env:OTEL_K8S_NODE_NAME}"}]
+                  relabel_configs:
+                    - {source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape], action: keep, regex: "true"}
+                    - {source_labels: [__meta_kubernetes_pod_container_port_name], action: keep, regex: "metrics|health"}
+                    - {source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name], target_label: job}
+                    - {source_labels: [__meta_kubernetes_pod_name], target_label: pod}
+        processors:
+          memory_limiter: {check_interval: 1s, limit_percentage: 80, spike_limit_percentage: 25}
+          batch: {}
+          # Spans keep the attributes the services promise and nothing else; a value
+          # with a secret shape is masked even under an allowed key.
+          redaction:
+            allow_all_keys: false
+            allowed_keys:
+              - service.name
+              - http.request.method
+              - http.route
+              - http.response.status_code
+              - rpc.system
+              - rpc.system.name
+              - rpc.service
+              - rpc.method
+              - rpc.grpc.status_code
+              - rpc.response.status_code
+              - messaging.system
+              - messaging.destination.name
+              - anvilkit.delivery.outcome
+              - temporalWorkflowID
+              - temporalRunID
+              - temporalActivityID
+              - temporalUpdateID
+            blocked_values:
+              - "(?i)bearer\\s+[A-Za-z0-9._~+/-]{20,}"
+              - "[a-z][a-z0-9+.-]*://[^\\s:/@]+:[^\\s@/]+@"
+              - "(?i)x-amz-signature=[0-9a-f]{16,}"
+              - "\\bAKIA[0-9A-Z]{16}\\b"
+              - "\\bsk-[A-Za-z0-9]{20,}"
+            summary: debug
+          # Log bodies are what the containers wrote: the services never log a secret
+          # (check-telemetry.py reads the raw logs too); this masks the shapes anyway.
+          transform/logs:
+            error_mode: ignore
+            log_statements:
+              - context: log
+                statements:
+                  - 'replace_pattern(body, "(?i)bearer\\s+[A-Za-z0-9._~+/-]{20,}", "Bearer [REDACTED]")'
+                  - 'replace_pattern(body, "([a-z][a-z0-9+.-]*://)[^\\s:/@\"'']+:[^\\s@/\"'']+@", "$$1[REDACTED]@")'
+                  - 'replace_pattern(body, "(?i)(x-amz-signature=)[0-9a-f]{16,}", "$$1[REDACTED]")'
+                  - 'replace_pattern(body, "-----BEGIN [A-Z ]*PRIVATE KEY-----[^-]*-----END [A-Z ]*PRIVATE KEY-----", "[REDACTED PRIVATE KEY]")'
+                  - 'replace_pattern(body, "\\bAKIA[0-9A-Z]{16}\\b", "[REDACTED]")'
+                  - 'replace_pattern(body, "\\bsk-[A-Za-z0-9]{20,}", "[REDACTED]")'
+        exporters:
+          file/traces: {path: /var/lib/anvilkit-telemetry/traces.jsonl, format: json, rotation: {max_megabytes: 64, max_backups: 2}}
+          file/metrics: {path: /var/lib/anvilkit-telemetry/metrics.jsonl, format: json, rotation: {max_megabytes: 64, max_backups: 2}}
+          file/logs: {path: /var/lib/anvilkit-telemetry/logs.jsonl, format: json, rotation: {max_megabytes: 64, max_backups: 2}}
+        service:
+          extensions: [health_check]
+          telemetry:
+            metrics:
+              readers:
+                - pull: {exporter: {prometheus: {host: "${env:MY_POD_IP}", port: 8888}}}
+          pipelines:
+            traces: {receivers: [otlp], processors: [memory_limiter, redaction, batch], exporters: [file/traces]}
+            metrics: {receivers: [prometheus], processors: [memory_limiter, batch], exporters: [file/metrics]}
+            logs: {receivers: [filelog], processors: [memory_limiter, transform/logs, batch], exporters: [file/logs]}
+  # --- stateful services -----------------------------------------------------
+  - name: anvilkit-data
+    wave: -30
+    layer: stateful
+    namespace: anvilkit-data
+    chart: {source: deploy/qualification/platform/data, name: anvilkit-data}
+  - name: anvilkit-objects
+    wave: -30
+    layer: stateful
+    namespace: anvilkit-data
+    chart: {source: deploy/qualification/platform/objects, name: anvilkit-objects}
+  - name: anvilkit-nats
+    wave: -30
+    layer: stateful
+    namespace: anvilkit-data
+    chart: {upstream: https://nats-io.github.io/k8s/helm/charts, name: nats, version: 2.12.4}
+    values:
+      config:
+        cluster: {enabled: true, replicas: 3}
+        jetstream:
+          enabled: true
+          fileStore: {pvc: {size: 1Gi}}
+      container:
+        image: {tag: "2.12.4-alpine@sha256:31c6ed3b2da61645aaa3ad9217b5a52b34b6ebd555ecb71259cd7723c59ae1ea"}
+      natsBox: {enabled: false}
+      podTemplate:
+        topologySpreadConstraints:
+          kubernetes.io/hostname: {maxSkew: 1, whenUnsatisfiable: DoNotSchedule}
+  - name: anvilkit-valkey-queue
+    wave: -30
+    layer: stateful
+    namespace: anvilkit-data
+    # The upstream chart patched to stop printing the Sentinel configuration (it holds the
+    # password): deploy/qualification/platform/valkey/ANVILKIT-PATCH.md.
+    chart: {source: deploy/qualification/platform/valkey, name: valkey}
+    values:
+      architecture: replication
+      replicaCount: 3
+      image: {tag: "9.0.2-alpine@sha256:68677f85c863830af7836ff07c4a13b7f085ebeff62f4dedb71499ca27d229f2", imagePullPolicy: IfNotPresent}
+      auth: {enabled: true, existingSecret: anvilkit-valkey-queue, existingSecretPasswordKey: password}
+      config:
+        maxMemoryPolicy: noeviction
+        save: ""
+        extraConfig: ["appendonly yes", "appendfsync everysec"]
+      persistence: {size: 1Gi}
+      sentinel:
+        enabled: true
+        quorum: 2
+        image: {tag: "9.0.2-alpine@sha256:68677f85c863830af7836ff07c4a13b7f085ebeff62f4dedb71499ca27d229f2", pullPolicy: IfNotPresent}
+        masterProxy: {enabled: true}
+  - name: anvilkit-qdrant
+    wave: -30
+    layer: stateful
+    namespace: anvilkit-data
+    chart: {upstream: https://qdrant.github.io/qdrant-helm, name: qdrant, version: 1.19.0}
+    values:
+      replicaCount: 3
+      # The chart compares the tag as a semantic version and has no digest
+      # field: Qdrant is pinned by tag only here (a recorded limitation).
+      image: {tag: "v1.19.0"}
+      # Knowledge authenticates with this key (Secrets from bootstrap.py, never in Git).
+      # The chart's apiKey.valueFrom reads the Secret with Helm lookup, which Argo CD's
+      # rendering cannot do; Qdrant takes the key from its environment instead.
+      env:
+        - {name: QDRANT__SERVICE__API_KEY, valueFrom: {secretKeyRef: {name: anvilkit-qdrant-apikey, key: apiKey}}}
+      persistence: {size: 2Gi}
+      snapshotPersistence: {enabled: true, size: 2Gi}
+      config:
+        cluster: {enabled: true}
+  - name: openbao
+    wave: -30
+    layer: stateful
+    namespace: anvilkit-platform
+    chart: {upstream: https://openbao.github.io/openbao-helm, name: openbao, version: 0.29.5}
+    values:
+      injector: {enabled: false}
+      csi: {enabled: false}
+      ui: {enabled: false}
+      server:
+        dataStorage: {size: 1Gi}
+        ha:
+          enabled: true
+          replicas: 3
+          raft:
+            enabled: true
+            setNodeId: true
+            config: |
+              ui = false
+              listener "tcp" {
+                tls_disable = 1
+                address = "[::]:8200"
+                cluster_address = "[::]:8201"
+              }
+              storage "raft" {
+                path = "/openbao/data"
+                retry_join { leader_api_addr = "http://openbao-0.openbao-internal:8200" }
+                retry_join { leader_api_addr = "http://openbao-1.openbao-internal:8200" }
+                retry_join { leader_api_addr = "http://openbao-2.openbao-internal:8200" }
+              }
+              service_registration "kubernetes" {}
+  # --- platform services ------------------------------------------------------
+  - name: anvilkit-temporal
+    wave: -20
+    layer: stateful
+    namespace: anvilkit-platform
+    chart: {upstream: https://go.temporal.io/helm-charts, name: temporal, version: 1.6.0}
+    values:
+      server:
+        frontend: {replicaCount: 2}
+        history: {replicaCount: 3}
+        matching: {replicaCount: 2}
+        worker: {replicaCount: 2}
+        config:
+          namespaces:
+            create: true
+            namespace: [{name: anvilkit, retention: 3d}]
+          persistence:
+            numHistoryShards: 128
+            datastores:
+              default:
+                sql:
+                  pluginName: postgres12
+                  driverName: postgres12
+                  databaseName: temporal
+                  connectAddr: anvilkit-temporal-rw.anvilkit-data.svc.cluster.local:5432
+                  connectProtocol: tcp
+                  user: temporal
+                  existingSecret: anvilkit-temporal-db
+                  secretKey: password
+                  createDatabase: false
+                  manageSchema: true
+                  maxConns: 20
+                  maxIdleConns: 5
+              visibility:
+                sql:
+                  pluginName: postgres12
+                  driverName: postgres12
+                  databaseName: temporal_visibility
+                  connectAddr: anvilkit-temporal-rw.anvilkit-data.svc.cluster.local:5432
+                  connectProtocol: tcp
+                  user: temporal
+                  existingSecret: anvilkit-temporal-db
+                  secretKey: password
+                  createDatabase: false
+                  manageSchema: true
+                  maxConns: 10
+                  maxIdleConns: 2
+      web: {enabled: false}
+  - name: anvilkit-streams
+    wave: -20
+    layer: stateful
+    namespace: anvilkit-data
+    chart: {source: deploy/qualification/platform/streams, name: anvilkit-streams}
+  # --- schema migrations -------------------------------------------------------
+  - name: anvilkit-migrations
+    wave: -10
+    layer: migrations
+    namespace: anvilkit-apps
+    chart: {source: deploy/qualification/platform/migrations, name: anvilkit-migrations}
+    imageRefs:
+      migrationImage: anvilkit-migration
+      knowledgeImage: anvilkit-agent-knowledge
+  # --- applications ------------------------------------------------------------
+  - name: anvilkit-agent-control
+    wave: 0
+    layer: apps
+    namespace: anvilkit-apps
+    chart: {release: anvilkit-agent-control}
+    valuesFile: deploy/qualification/values/anvilkit-agent-control.yaml
+    imageDigests: {image.digest: anvilkit-agent-control}
+  - name: anvilkit-agent-api
+    wave: 10
+    layer: apps
+    namespace: anvilkit-apps
+    chart: {release: anvilkit-agent-api}
+    valuesFile: deploy/qualification/values/anvilkit-agent-api.yaml
+    imageDigests: {image.digest: anvilkit-agent-api}
+  - name: anvilkit-agent-workflow
+    wave: 10
+    layer: apps
+    namespace: anvilkit-apps
+    chart: {release: anvilkit-agent-workflow}
+    valuesFile: deploy/qualification/values/anvilkit-agent-workflow.yaml
+    imageDigests: {image.digest: anvilkit-agent-workflow}
+  - name: anvilkit-agent-model-proxy
+    wave: 10
+    layer: apps
+    namespace: anvilkit-apps
+    chart: {release: anvilkit-agent-model-proxy}
+    valuesFile: deploy/qualification/values/anvilkit-agent-model-proxy.yaml
+    imageDigests: {image.digest: anvilkit-agent-model-proxy}
+  - name: anvilkit-agent-knowledge
+    wave: 10
+    layer: apps
+    namespace: anvilkit-apps
+    chart: {release: anvilkit-agent-knowledge}
+    valuesFile: deploy/qualification/values/anvilkit-agent-knowledge.yaml
+    imageDigests:
+      image.digest: anvilkit-agent-knowledge
+      forwarder.image.digest: anvilkit-knowledge-forwarder
+      relay.image.digest: anvilkit-agent-background-worker
+  - name: anvilkit-agent-mcp
+    wave: 10
+    layer: apps
+    namespace: anvilkit-apps
+    chart: {release: anvilkit-agent-mcp}
+    valuesFile: deploy/qualification/values/anvilkit-agent-mcp.yaml
+    imageDigests:
+      image.digest: anvilkit-agent-mcp
+      relay.image.digest: anvilkit-agent-background-worker
+  - name: anvilkit-agent-background-worker
+    wave: 20
+    layer: apps
+    namespace: anvilkit-apps
+    chart: {release: anvilkit-agent-background-worker}
+    valuesFile: deploy/qualification/values/anvilkit-agent-background-worker.yaml
+    imageDigests: {image.digest: anvilkit-agent-background-worker}
+  # --- probes ------------------------------------------------------------------
+  - name: anvilkit-probes
+    wave: 30
+    layer: probes
+    namespace: anvilkit-platform
+    chart: {source: deploy/qualification/platform/probes, name: anvilkit-probes}
+    environmentRevision: environmentRevision

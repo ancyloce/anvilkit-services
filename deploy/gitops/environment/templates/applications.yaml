@@ -1,0 +1,70 @@
+{{- /*
+One Application per component, ordered by sync wave: platform dependencies,
+stateful services, schema migrations, applications, probes. The root
+Application waits for each wave's Applications to be Healthy (the Argo CD
+health check of argoproj.io/Application, configured with Argo CD), so a failed
+or unhealthy wave stops every later one. Every source is a versioned chart in
+the environment's registry; service values come from the files packaged with
+this chart and every service image is pinned by digest.
+*/ -}}
+{{- range .Values.applications }}
+{{- $values := dict }}
+{{- if .valuesFile }}
+{{- $values = $.Files.Get .valuesFile | fromYaml }}
+{{- if not $values }}{{ fail (printf "%s: values file %s missing from the chart" .name .valuesFile) }}{{ end }}
+{{- end }}
+{{- $values = mustMergeOverwrite $values (deepCopy (.values | default dict)) }}
+{{- if .imageDigest }}
+{{- $image := get $values "image" | default dict }}
+{{- $_ := set $image "digest" .imageDigest }}
+{{- $_ = set $values "image" $image }}
+{{- end }}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: {{ .name }}
+  namespace: {{ $.Values.argocdNamespace }}
+  labels:
+    app.kubernetes.io/part-of: anvilkit
+    anvilkit.io/environment: {{ $.Values.environment }}
+    anvilkit.io/layer: {{ .layer }}
+  annotations:
+    argocd.argoproj.io/sync-wave: {{ .wave | quote }}
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: {{ $.Values.project }}
+  source:
+    repoURL: {{ printf "%s/%s" $.Values.registry .chart.path }}
+    chart: {{ .chart.name }}
+    targetRevision: {{ .chart.version | quote }}
+    helm:
+      releaseName: {{ .releaseName | default .name }}
+      {{- with $values }}
+      valuesObject:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: {{ .namespace }}
+  {{- with .ignoreDifferences }}
+  ignoreDifferences:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      {{- range .syncOptions }}
+      - {{ . }}
+      {{- end }}
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m
+{{- end }}
