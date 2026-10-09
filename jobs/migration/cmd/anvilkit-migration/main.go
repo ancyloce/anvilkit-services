@@ -4,7 +4,13 @@
 // applies one owned domain's schema with the domain's migrator role and
 // exits. It never reads legacy tables or runtime config.
 //
-//	anvilkit-migration -domain knowledge -dsn "$ANVILKIT_MIGRATION_DSN" [-to N] [-status]
+//	anvilkit-migration -domain knowledge (-dsn "$ANVILKIT_MIGRATION_DSN" | -dsn-file "$ANVILKIT_MIGRATION_DSN_FILE") [-development] [-to N] [-status]
+//
+// The DSN comes from exactly one source: the value, or a mounted secret
+// file (the OpenBao CSI volume, P0.6) read once. Outside development it
+// must name sslmode=verify-full; -development (or
+// ANVILKIT_MIGRATION_DEVELOPMENT=true) admits the plaintext DSN of the
+// development foundation (DEVELOPMENT_ONLY).
 package main
 
 import (
@@ -19,20 +25,27 @@ import (
 
 func main() {
 	var (
-		domain = flag.String("domain", "", "owned domain: knowledge or mcp")
-		dsn    = flag.String("dsn", os.Getenv("ANVILKIT_MIGRATION_DSN"), "migrator-role DSN (default $ANVILKIT_MIGRATION_DSN)")
-		to     = flag.Int64("to", -1, "roll back to this version instead of applying pending migrations")
-		status = flag.Bool("status", false, "print the applied version and exit")
+		domain      = flag.String("domain", "", "owned domain: knowledge or mcp")
+		dsn         = flag.String("dsn", os.Getenv("ANVILKIT_MIGRATION_DSN"), "migrator-role DSN (default $ANVILKIT_MIGRATION_DSN)")
+		dsnFile     = flag.String("dsn-file", os.Getenv("ANVILKIT_MIGRATION_DSN_FILE"), "mounted secret file holding the migrator-role DSN (default $ANVILKIT_MIGRATION_DSN_FILE)")
+		development = flag.Bool("development", os.Getenv("ANVILKIT_MIGRATION_DEVELOPMENT") == "true", "DEVELOPMENT_ONLY: admit a DSN without sslmode=verify-full (default $ANVILKIT_MIGRATION_DEVELOPMENT == true)")
+		to          = flag.Int64("to", -1, "roll back to this version instead of applying pending migrations")
+		status      = flag.Bool("status", false, "print the applied version and exit")
 	)
 	flag.Parse()
-	if *domain == "" || *dsn == "" {
-		fmt.Fprintln(os.Stderr, "anvilkit-migration: -domain and -dsn are required")
+	if *domain == "" {
+		fmt.Fprintln(os.Stderr, "anvilkit-migration: -domain is required")
+		os.Exit(2)
+	}
+	resolved, err := migrationDSN(*dsn, *dsnFile, *development)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "anvilkit-migration:", err)
 		os.Exit(2)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
-	db, err := migrate.Open(*dsn)
+	db, err := migrate.Open(resolved)
 	if err != nil {
 		fail(err)
 	}
