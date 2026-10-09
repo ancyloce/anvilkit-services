@@ -7,7 +7,9 @@
 # layout, the candidate-code label and the RuntimeClass, and anything
 # else, including a reviewed image with another command, an extra
 # environment variable, a lifecycle hook, a probe, a volume that is not an
-# emptyDir, a mount with a subPath or propagation, a token, a capability,
+# emptyDir (the access sidecar's own identity Secret, read-only in the
+# sidecar alone, is the one exception of the harness layout; P0.1), a mount
+# with a subPath or propagation, a token, a capability,
 # or a container the layout does not have, is denied. Kyverno 1.19
 # ValidatingPolicy (CEL). The Pod policy matches pods only so that Kyverno
 # autogen (podControllers: jobs) evaluates the same rules against a Job's
@@ -45,9 +47,9 @@ spec:
     - name: fixtureDigests
       expression: "['sha256:9db7b59979c38555a39def84a31fb98b5296952f9e3afd4f6f11f05b07adfab0']"
     - name: supervisorDigests
-      expression: "['sha256:262b46398818c5164c1eb7defa977cd5d9ae94092a819d28c8bf86f3878b4864', 'sha256:cc52643d0ec4bc8692394dbb1bc01aeaf7bcbe2cbe76a7484619c25eaaf8546d']"
+      expression: "['sha256:262b46398818c5164c1eb7defa977cd5d9ae94092a819d28c8bf86f3878b4864', 'sha256:274076d0354f6ef691936578914bc748cd71a4ad1ccb1365ef3fc26ce5d51178']"
     - name: sidecarDigests
-      expression: "['sha256:0d12442eb1f75dab2036ee679979e3bcfc86ad801e6775e88d10a3fabdb7367a']"
+      expression: "['sha256:4ba60660d7555b7140d55e9da1d03d0354b5aced7edaa406a1f139cba3e464fb']"
     - name: supervisorEnv
       expression: "['ANVILKIT_LAUNCH_ID', 'ANVILKIT_ATTEMPT_ID', 'ANVILKIT_LAUNCH_ENVELOPE']"
     - name: sidecarEnv
@@ -62,13 +64,24 @@ spec:
         ['/bin/sh', '-c', r'''set -e; d=$(printf "anvilkit-local-check-v1\n" | sha256sum | cut -d" " -f1); printf '{"schemaVersion":1,"launchId":"%s","attemptId":"%s","jobKind":"validator","profileId":"local-check-v1","verdict":"certified","outputs":[{"class":"result","digest":"sha256:%s","sizeBytes":"24"}],"completedAt":"%s"}' "$ANVILKIT_LAUNCH_ID" "$ANVILKIT_ATTEMPT_ID" "$d" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > /dev/termination-log''']
     - name: supervisorCommand
       expression: "['/usr/local/bin/anvilkit-codegen-supervisor']"
-    # The reviewed entrypoint of the fixed validator image (P10d,
-    # validator-fixed-dev-v1): the same harness layout with the validator's
-    # trusted process as the supervisor container.
+    # The reviewed entrypoint of the validator image (P10d; P0.8 the profiles
+    # validator-fixture-v1, validator-source-v1, validator-source-dev-v1): the
+    # same harness layout with the validator's trusted process as the
+    # supervisor container.
+    - name: validatorProfiles
+      expression: "['validator-fixture-v1', 'validator-source-v1', 'validator-source-dev-v1']"
+    # P0.8: the development-state candidate profiles this environment admits
+    # without the gVisor RuntimeClass (DEVELOPMENT_ONLY; empty elsewhere).
+    - name: developmentProfiles
+      expression: {{ .Values.developmentProfiles | default list | toJson | quote }}
     - name: validatorCommand
       expression: "['/usr/local/bin/node', '/anvilkit/validator/dist/job.js']"
     - name: validatorDigest
-      expression: "'sha256:cc52643d0ec4bc8692394dbb1bc01aeaf7bcbe2cbe76a7484619c25eaaf8546d'"
+      expression: "'sha256:274076d0354f6ef691936578914bc748cd71a4ad1ccb1365ef3fc26ce5d51178'"
+    # The access sidecar's workload certificate (P0.1): the one Secret volume
+    # a harness Pod carries, mounted read-only into the sidecar alone.
+    - name: sidecarIdentitySecret
+      expression: "'anvilkit-job-access-sidecar-identity'"
     - name: inits
       expression: "has(object.spec.initContainers) ? object.spec.initContainers : []"
     - name: containers
@@ -105,12 +118,15 @@ spec:
         && has(object.metadata.annotations) && 'anvilkit.io/create-request' in object.metadata.annotations
     - message: "a Job Pod is the fixture layout (one container 'fixture', no init container) or the harness layout (the 'supervisor' container and the 'access-sidecar' native sidecar as its only init container), nothing else"
       expression: "variables.isFixture || variables.isHarness"
-    - message: "the profile id binds the layout, the candidate-code label and the RuntimeClass: local-check-v1 is the fixture layout without candidate code or RuntimeClass, harness-wiring-dev-v1 and validator-fixed-dev-v1 the harness layout without candidate code or RuntimeClass, codegen-fixed-v1 the harness layout with candidate code under the gvisor RuntimeClass; no other profile is admitted"
+    - message: "the profile id binds the layout, the candidate-code label and the RuntimeClass: local-check-v1 is the fixture layout without candidate code or RuntimeClass, harness-wiring-dev-v1 and validator-fixture-v1 the harness layout without candidate code or RuntimeClass, codegen-fixed-v1 and validator-source-v1 the harness layout with candidate code under the gvisor RuntimeClass, validator-source-dev-v1 with candidate code and no RuntimeClass where the environment lists it as a development profile; no other profile is admitted"
       expression: >-
         (variables.profileID == 'local-check-v1' && variables.isFixture && !variables.candidateCode && variables.runtimeClass == '')
         || (variables.profileID == 'harness-wiring-dev-v1' && variables.isHarness && !variables.candidateCode && variables.runtimeClass == '')
-        || (variables.profileID == 'validator-fixed-dev-v1' && variables.isHarness && !variables.candidateCode && variables.runtimeClass == '')
+        || (variables.profileID == 'validator-fixture-v1' && variables.isHarness && !variables.candidateCode && variables.runtimeClass == '')
         || (variables.profileID == 'codegen-fixed-v1' && variables.isHarness && variables.candidateCode && variables.runtimeClass == 'gvisor')
+        || (variables.profileID == 'validator-source-v1' && variables.isHarness && variables.candidateCode && variables.runtimeClass == 'gvisor')
+        || (variables.profileID == 'validator-source-dev-v1' && variables.profileID in variables.developmentProfiles
+            && variables.isHarness && variables.candidateCode && variables.runtimeClass == '')
     - message: "the access sidecar is a native sidecar (restartPolicy Always) and no other container restarts"
       expression: >-
         variables.inits.all(c, c.name == 'access-sidecar' && has(c.restartPolicy) && c.restartPolicy == 'Always')
@@ -126,8 +142,11 @@ spec:
         && (!has(object.spec.shareProcessNamespace) || !object.spec.shareProcessNamespace)
         && (!has(object.spec.hostAliases) || size(object.spec.hostAliases) == 0)
         && (!has(object.spec.enableServiceLinks) ? false : !object.spec.enableServiceLinks)
-    - message: "only emptyDir volumes: no hostPath, CSI, Secret, ConfigMap, projected token or PVC enters a Job Pod"
-      expression: "!has(object.spec.volumes) || object.spec.volumes.all(v, has(v.emptyDir))"
+    - message: "only emptyDir volumes, plus the access sidecar's identity Secret in the harness layout: no hostPath, CSI, other Secret, ConfigMap, projected token or PVC enters a Job Pod"
+      expression: >-
+        !has(object.spec.volumes) || object.spec.volumes.all(v, has(v.emptyDir)
+          || (variables.isHarness && v.name == 'identity' && has(v.secret) && has(v.secret.secretName) && v.secret.secretName == variables.sidecarIdentitySecret
+              && (!has(v.secret.optional) || !v.secret.optional) && !has(v.secret.items)))
     - message: "every container image is pinned by a qualified digest"
       expression: >-
         variables.containers.all(c,
@@ -164,10 +183,10 @@ spec:
           && (!has(c.env) || c.env.all(e, e.name in variables.fixtureEnv && !has(e.valueFrom))))
     - message: "a fixture Pod runs no candidate code and has no volume"
       expression: "!variables.isFixture || (!variables.candidateCode && (!has(object.spec.volumes) || size(object.spec.volumes) == 0))"
-    - message: "the harness Pod has exactly the workspace, verdict and sockets emptyDirs, supplementary groups 0 and 10001, and the components node pool"
+    - message: "the harness Pod has exactly the workspace, verdict and sockets emptyDirs and the sidecar identity Secret, supplementary groups 0 and 10001, and the components node pool"
       expression: >-
         !variables.isHarness || (
-          has(object.spec.volumes) && object.spec.volumes.map(v, v.name) == ['workspace', 'verdict', 'sockets']
+          has(object.spec.volumes) && object.spec.volumes.map(v, v.name) == ['workspace', 'verdict', 'sockets', 'identity']
           && has(object.spec.securityContext) && has(object.spec.securityContext.supplementalGroups) && object.spec.securityContext.supplementalGroups == [0, 10001]
           && has(object.spec.nodeSelector) && 'anvilkit.io/pool' in object.spec.nodeSelector && object.spec.nodeSelector['anvilkit.io/pool'] == 'components')
     - message: "harness requests and limits match the reviewed profile and native sidecar exactly"
@@ -176,12 +195,12 @@ spec:
           has(c.resources) && has(c.resources.requests) && has(c.resources.limits)
           && c.resources.requests == (c.name == 'access-sidecar'
             ? {'cpu': '100m', 'memory': '64Mi'}
-            : variables.profileID == 'validator-fixed-dev-v1'
+            : variables.profileID in variables.validatorProfiles
               ? {'cpu': '1', 'memory': '1Gi'} : {'cpu': '500m', 'memory': '256Mi'})
           && c.resources.limits == c.resources.requests)
     - message: "harness emptyDir size limits and media match the reviewed template"
       expression: >-
-        !variables.isHarness || object.spec.volumes.all(v,
+        !variables.isHarness || object.spec.volumes.all(v, v.name == 'identity' ||
           has(v.emptyDir) && has(v.emptyDir.sizeLimit)
           && v.emptyDir.sizeLimit == (v.name == 'workspace' ? '1Gi' : v.name == 'verdict' ? '256Mi' : '1Mi')
           && (v.name == 'sockets' ? (has(v.emptyDir.medium) && v.emptyDir.medium == 'Memory')
@@ -190,7 +209,7 @@ spec:
       expression: >-
         !variables.isHarness || variables.containers.exists(c, c.name == 'supervisor'
           && has(c.command)
-          && (variables.profileID == 'validator-fixed-dev-v1'
+          && (variables.profileID in variables.validatorProfiles
               ? (c.command == variables.validatorCommand && c.image.endsWith('@' + variables.validatorDigest))
               : c.command == variables.supervisorCommand)
           && has(c.securityContext.runAsUser) && c.securityContext.runAsUser == 0
@@ -199,7 +218,7 @@ spec:
           && c.securityContext.seccompProfile.type == 'Localhost' && has(c.securityContext.seccompProfile.localhostProfile) && c.securityContext.seccompProfile.localhostProfile == 'anvilkit/candidate.json'
           && has(c.env) && c.env.all(e, e.name in variables.supervisorEnv && !has(e.valueFrom)) && c.env.map(e, e.name) == variables.supervisorEnv
           && has(c.volumeMounts) && c.volumeMounts.map(m, m.name + ':' + m.mountPath + ':' + string(has(m.readOnly) && m.readOnly)) == ['workspace:/workspace:false', 'verdict:/anvilkit/verdict:false', 'sockets:/run/anvilkit:true'])
-    - message: "the access sidecar runs as UID 10002 without capabilities, RuntimeDefault seccomp, the sidecar environment only with the Pod UID from the downward API, and the sockets mount alone"
+    - message: "the access sidecar runs as UID 10002 without capabilities, RuntimeDefault seccomp, the sidecar environment only with the Pod UID from the downward API, and the sockets mount plus its read-only identity mount alone"
       expression: >-
         !variables.isHarness || variables.inits.exists(c, c.name == 'access-sidecar'
           && !has(c.command)
@@ -212,9 +231,9 @@ spec:
           && c.env.all(e, e.name == 'ANVILKIT_SIDECAR_POD_UID'
               ? (has(e.valueFrom) && has(e.valueFrom.fieldRef) && e.valueFrom.fieldRef.fieldPath == 'metadata.uid')
               : !has(e.valueFrom))
-          && has(c.volumeMounts) && c.volumeMounts.map(m, m.name + ':' + m.mountPath + ':' + string(has(m.readOnly) && m.readOnly)) == ['sockets:/run/anvilkit:false'])
-    - message: "a Pod that runs candidate code needs the gVisor RuntimeClass (an unqualified candidate profile is denied)"
-      expression: "!variables.candidateCode || variables.runtimeClass == 'gvisor'"
+          && has(c.volumeMounts) && c.volumeMounts.map(m, m.name + ':' + m.mountPath + ':' + string(has(m.readOnly) && m.readOnly)) == ['sockets:/run/anvilkit:false', 'identity:/etc/anvilkit/identity:true'])
+    - message: "a Pod that runs candidate code needs the gVisor RuntimeClass (an unqualified candidate profile is denied; only a development profile this environment lists runs without it)"
+      expression: "!variables.candidateCode || variables.runtimeClass == 'gvisor' || variables.profileID in variables.developmentProfiles"
     - message: "a harness Pod without candidate code is the development wiring fixture: it must not name a RuntimeClass it does not qualify"
       expression: "!(variables.isHarness && !variables.candidateCode) || variables.runtimeClass == ''"
 ---

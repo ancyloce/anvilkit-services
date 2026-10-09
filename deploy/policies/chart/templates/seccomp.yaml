@@ -1,0 +1,69 @@
+{{- if .Values.seccomp.install }}
+{{- $profile := .Files.Get "files/anvilkit-candidate.json" }}
+{{- if not $profile }}{{ fail "files/anvilkit-candidate.json is missing" }}{{ end }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: anvilkit-seccomp-candidate
+  namespace: {{ .Values.seccomp.namespace }}
+  labels: {app.kubernetes.io/name: anvilkit-seccomp-installer}
+data:
+  candidate.json: |
+{{ $profile | indent 4 }}
+---
+# Places the candidate profile on every node and stays running: a ready pod
+# on a node is the evidence the profile is there (a changed profile rolls the
+# DaemonSet through its checksum annotation).
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: anvilkit-seccomp-installer
+  namespace: {{ .Values.seccomp.namespace }}
+  labels: {app.kubernetes.io/name: anvilkit-seccomp-installer}
+spec:
+  selector:
+    matchLabels: {app.kubernetes.io/name: anvilkit-seccomp-installer}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: anvilkit-seccomp-installer}
+      annotations:
+        anvilkit.io/profile-sha256: {{ sha256sum $profile }}
+    spec:
+      automountServiceAccountToken: false
+      {{- with .Values.seccomp.nodeSelector }}
+      nodeSelector: {{ toJson . }}
+      {{- end }}
+      {{- with .Values.seccomp.tolerations }}
+      tolerations: {{ toJson . }}
+      {{- end }}
+      initContainers:
+        - name: install
+          image: {{ .Values.seccomp.image }}
+          imagePullPolicy: IfNotPresent
+          command: ["sh", "-c", "mkdir -p /host/seccomp/anvilkit && cp /profile/candidate.json /host/seccomp/anvilkit/candidate.json.new && chmod 0644 /host/seccomp/anvilkit/candidate.json.new && mv /host/seccomp/anvilkit/candidate.json.new /host/seccomp/anvilkit/candidate.json"]
+          securityContext: {runAsUser: 0, allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL], add: [DAC_OVERRIDE, CHOWN, FOWNER]}}
+          volumeMounts:
+            - {name: profile, mountPath: /profile, readOnly: true}
+            - {name: seccomp, mountPath: /host/seccomp}
+      containers:
+        - name: installed
+          image: {{ .Values.seccomp.image }}
+          imagePullPolicy: IfNotPresent
+          command: ["sh", "-c", "cmp -s /profile/candidate.json /host/seccomp/anvilkit/candidate.json && exec sleep 2147483647"]
+          readinessProbe:
+            exec: {command: ["cmp", "-s", "/profile/candidate.json", "/host/seccomp/anvilkit/candidate.json"]}
+            periodSeconds: 60
+          resources:
+            requests: {cpu: 5m, memory: 8Mi}
+            limits: {cpu: 20m, memory: 16Mi}
+          securityContext: {runAsUser: 65534, allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+          volumeMounts:
+            - {name: profile, mountPath: /profile, readOnly: true}
+            - {name: seccomp, mountPath: /host/seccomp, readOnly: true}
+      volumes:
+        - name: profile
+          configMap: {name: anvilkit-seccomp-candidate}
+        - name: seccomp
+          hostPath: {path: {{ printf "%s/seccomp" .Values.seccomp.kubeletRoot }}, type: DirectoryOrCreate}
+{{- end }}

@@ -1,0 +1,18 @@
+# Pod-level network isolation of the parser namespace (DD-07 §2, DD-10 §2):
+# default deny in both directions for every Pod of anvilkit-parsing. The
+# environment adds one egress policy that admits the object store the
+# trusted stager reaches through its presigned URLs, by address and port
+# (deploy/dev/up.sh generates it from the machine's addresses); no DNS, no
+# other destination. A Pod NetworkPolicy does not separate the containers
+# of one Pod: the parser container is kept off the network by its syscall
+# profile (deploy/policies/seccomp) and, on the target runtime, by gVisor;
+# the kind foundation's CNI (kindnet) does not enforce NetworkPolicy, so
+# this file alone proves nothing there.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: anvilkit-parsing-default-deny
+  namespace: anvilkit-parsing
+spec:
+  podSelector: {}
+  policyTypes: ["Ingress", "Egress"]

@@ -1,5 +1,6 @@
 #!/bin/sh
-# Reproduces anvilkit-candidate.json: containerd's default seccomp profile
+# Reproduces the job-admission chart's files/anvilkit-candidate.json (installed on
+# every node by its DaemonSet or by node provisioning): containerd's default seccomp profile
 # (the RuntimeDefault a container receives) for a process whose bounding set
 # is exactly the supervisor's SETUID, SETGID and SETPCAP, with its socket
 # rules replaced by one rule that admits AF_UNIX only. Every other socket
@@ -10,7 +11,7 @@
 # (the release of the kind node image and the RKE2 line's containerd 2.x)
 # and runtime-spec v1.3.0, resolved through the public module proxy.
 #
-#   sh deploy/policies/seccomp/generate.sh > deploy/policies/seccomp/anvilkit-candidate.json
+#   sh deploy/policies/seccomp/generate.sh > deploy/policies/chart/files/anvilkit-candidate.json
 set -eu
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT

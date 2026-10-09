@@ -1,0 +1,206 @@
+# Admission policy of the parser namespace (DD-07 §2, DD-10 §4, SEC-09/
+# SEC-10): every Pod and Job in anvilkit-parsing must be the fixed parser
+# template the Knowledge launcher renders from a reviewed parser profile
+# (services/agent/knowledge src/domain/parse.ts): the trusted stager
+# 'stage-in' and the parser 'parse' as init containers, the stager
+# 'stage-out' as the only container, the reviewed image digest, the exact
+# commands and environment names, UID 10002 for the stagers and 10001 for
+# the parser, the parser under the AF_UNIX-only syscall profile with no
+# stage URLs mounted, emptyDir volumes plus the launch's own stage Secret,
+# no token, no host namespace, no capability, no ephemeral container. The
+# profile id binds the RuntimeClass: parser-docling-dev-v1 runs without one
+# (DEVELOPMENT_ONLY), parser-docling-v1 only under gvisor. P0.7 (PAR-01,
+# PAR-02): the parser shares no writable volume with a stager (only the
+# result it writes into stage-out, which stage-out mounts read-only, and the
+# verified input it reads from stage-in); every container declares its
+# resources; every emptyDir is bounded and on disk; the Pod selects its node
+# pool, runs under no named ServiceAccount, keeps every stager under the
+# runtime's default syscall profile, and the Job's deadline has a ceiling. Kyverno 1.19
+# ValidatingPolicy (CEL); the Pod policy matches pods and autogen applies
+# it to the Job template at Job admission. The registry allowlist is the
+# environment's policy (anvilkit-parsing-registries.dev.yaml).
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: anvilkit-parsing-pods
+spec:
+  validationActions: [Deny]
+  failurePolicy: Fail
+  evaluation:
+    admission:
+      enabled: true
+    background:
+      enabled: false
+  autogen:
+    podControllers:
+      controllers: [jobs]
+  matchConstraints:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: anvilkit-parsing
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["pods"]
+  variables:
+    # Qualified parser image digests: contracts/jobs/profiles.json.
+    - name: parserDigests
+      expression: "['sha256:bacdc6abe47d68906cd8469035da4f5d7fa9b2df8849610643bf902151028a19']"
+    - name: env
+      expression: "['ANVILKIT_PARSE_ENVELOPE', 'ANVILKIT_PARSER_LIMITS']"
+    - name: inits
+      expression: "has(object.spec.initContainers) ? object.spec.initContainers : []"
+    - name: all
+      expression: "variables.inits + object.spec.containers"
+    - name: labels
+      expression: "has(object.metadata.labels) ? object.metadata.labels : {}"
+    - name: launchKey
+      expression: "'anvilkit.io/launch-key' in variables.labels ? variables.labels['anvilkit.io/launch-key'] : ''"
+    - name: profileID
+      expression: "'anvilkit.io/profile-id' in variables.labels ? variables.labels['anvilkit.io/profile-id'] : ''"
+    - name: runtimeClass
+      expression: "has(object.spec.runtimeClassName) ? object.spec.runtimeClassName : ''"
+    - name: volumes
+      expression: "has(object.spec.volumes) ? object.spec.volumes : []"
+    - name: parseMounts
+      expression: "size(variables.inits) > 1 && has(variables.inits[1].volumeMounts) ? variables.inits[1].volumeMounts : []"
+    - name: stagers
+      expression: "(size(variables.inits) > 0 ? [variables.inits[0]] : []) + object.spec.containers"
+  validations:
+    - message: "new parser Pods must not select a node directly or name another scheduler"
+      expression: >-
+        (request.operation == 'UPDATE' || !has(object.spec.nodeName) || object.spec.nodeName == '')
+        && (!has(object.spec.schedulerName) || object.spec.schedulerName == '' || object.spec.schedulerName == 'default-scheduler')
+    - message: "no ephemeral container may be added to a parser Pod"
+      expression: "!has(object.spec.ephemeralContainers) || size(object.spec.ephemeralContainers) == 0"
+    - message: "a parser Pod carries the Knowledge launcher's labels (managed-by, job-kind parser, launch-key, profile-id)"
+      expression: >-
+        'app.kubernetes.io/managed-by' in variables.labels && variables.labels['app.kubernetes.io/managed-by'] == 'anvilkit-agent-knowledge'
+        && 'anvilkit.io/job-kind' in variables.labels && variables.labels['anvilkit.io/job-kind'] == 'parser'
+        && variables.launchKey.startsWith('parse-')
+    - message: "the parser layout: init containers stage-in and parse, the single container stage-out"
+      expression: "variables.inits.map(c, c.name) == ['stage-in', 'parse'] && object.spec.containers.map(c, c.name) == ['stage-out']"
+    - message: "the profile id binds the RuntimeClass: parser-docling-dev-v1 without one, parser-docling-v1 under gvisor; no other profile is admitted"
+      expression: >-
+        (variables.profileID == 'parser-docling-dev-v1' && variables.runtimeClass == '')
+        || (variables.profileID == 'parser-docling-v1' && variables.runtimeClass == 'gvisor')
+    - message: "every container runs a reviewed parser image by digest"
+      expression: "variables.all.all(c, c.image.contains('@') && c.image.split('@')[1] in variables.parserDigests)"
+    - message: "the reviewed commands: anvilkit-stage in, anvilkit-parse, anvilkit-stage out; no args, no working directory, no probe or hook"
+      expression: >-
+        variables.inits[0].command == ['/usr/local/bin/anvilkit-stage', 'in']
+        && variables.inits[1].command == ['/usr/local/bin/anvilkit-parse']
+        && object.spec.containers[0].command == ['/usr/local/bin/anvilkit-stage', 'out']
+        && variables.all.all(c, !has(c.args) && !has(c.workingDir) && !has(c.lifecycle) && !has(c.livenessProbe)
+          && !has(c.readinessProbe) && !has(c.startupProbe) && !has(c.envFrom) && !has(c.ports) && !has(c.restartPolicy))
+    - message: "only the envelope and the limits enter the environment, as literal values"
+      expression: >-
+        variables.all.all(c, has(c.env) && c.env.map(e, e.name) == variables.env && c.env.all(e, has(e.value) && !has(e.valueFrom)))
+    - message: "restartPolicy Never, no ServiceAccount token, no service links, no host namespace, no shared process namespace, pod seccomp RuntimeDefault"
+      expression: >-
+        object.spec.restartPolicy == 'Never'
+        && has(object.spec.automountServiceAccountToken) && object.spec.automountServiceAccountToken == false
+        && has(object.spec.enableServiceLinks) && object.spec.enableServiceLinks == false
+        && !(has(object.spec.hostNetwork) && object.spec.hostNetwork) && !(has(object.spec.hostPID) && object.spec.hostPID)
+        && !(has(object.spec.hostIPC) && object.spec.hostIPC) && !(has(object.spec.shareProcessNamespace) && object.spec.shareProcessNamespace)
+        && has(object.spec.securityContext.seccompProfile) && object.spec.securityContext.seccompProfile.type == 'RuntimeDefault'
+    - message: "every container is non-root without privilege escalation, with a read-only root and no capability"
+      expression: >-
+        variables.all.all(c, has(c.securityContext)
+          && c.securityContext.runAsNonRoot == true
+          && c.securityContext.allowPrivilegeEscalation == false
+          && c.securityContext.readOnlyRootFilesystem == true
+          && c.securityContext.capabilities.drop == ['ALL']
+          && !has(c.securityContext.capabilities.add)
+          && !(has(c.securityContext.privileged) && c.securityContext.privileged))
+    - message: "the stagers run as UID 10002, the parser as UID 10001 under the AF_UNIX-only syscall profile"
+      expression: >-
+        variables.inits[0].securityContext.runAsUser == 10002 && object.spec.containers[0].securityContext.runAsUser == 10002
+        && variables.inits[1].securityContext.runAsUser == 10001
+        && has(variables.inits[1].securityContext.seccompProfile)
+        && variables.inits[1].securityContext.seccompProfile.type == 'Localhost'
+        && variables.inits[1].securityContext.seccompProfile.localhostProfile == 'anvilkit/candidate.json'
+    - message: "volumes are emptyDirs and the launch's own stage Secret, which only the stagers mount; no subPath or propagation"
+      expression: >-
+        variables.volumes.all(v, has(v.emptyDir) || (has(v.secret) && v.secret.secretName == variables.launchKey + '-stage'))
+        && variables.volumes.filter(v, has(v.secret)).size() == 1
+        && variables.all.all(c, !has(c.volumeMounts) || c.volumeMounts.all(m, !has(m.subPath) && !has(m.subPathExpr) && !has(m.mountPropagation)))
+        && variables.inits[1].volumeMounts.all(m, m.name != 'stage-urls')
+        && variables.inits[1].volumeMounts.exists(m, m.name == 'stage-in' && has(m.readOnly) && m.readOnly)
+    - message: "the parser shares no writable volume with a stager: of the volumes both mount, only stage-in (read-only for the parser) and stage-out (read-only for the stager) are admitted"
+      expression: >-
+        variables.stagers.all(c, !has(c.volumeMounts) || c.volumeMounts.all(m,
+          !variables.parseMounts.exists(p, p.name == m.name)
+          || (m.name == 'stage-out' && has(m.readOnly) && m.readOnly)
+          || (m.name == 'stage-in' && variables.parseMounts.exists(p, p.name == 'stage-in' && has(p.readOnly) && p.readOnly))))
+    - message: "every container declares CPU and memory requests and limits"
+      expression: >-
+        variables.all.all(c, has(c.resources) && has(c.resources.requests) && has(c.resources.limits)
+          && 'cpu' in c.resources.requests && 'memory' in c.resources.requests && 'cpu' in c.resources.limits && 'memory' in c.resources.limits)
+    - message: "every emptyDir is bounded (sizeLimit) and on the node's disk (no memory medium)"
+      expression: "variables.volumes.all(v, !has(v.emptyDir) || (has(v.emptyDir.sizeLimit) && (!has(v.emptyDir.medium) || v.emptyDir.medium == '')))"
+    - message: "the Pod selects its node pool and names no ServiceAccount"
+      expression: >-
+        has(object.spec.nodeSelector) && 'anvilkit.io/pool' in object.spec.nodeSelector && object.spec.nodeSelector['anvilkit.io/pool'] != ''
+        && (!has(object.spec.serviceAccountName) || object.spec.serviceAccountName == '' || object.spec.serviceAccountName == 'default')
+    - message: "the stagers keep the runtime's default syscall profile (no container profile other than RuntimeDefault)"
+      expression: >-
+        variables.stagers.all(c, !has(c.securityContext.seccompProfile) || c.securityContext.seccompProfile.type == 'RuntimeDefault')
+---
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: anvilkit-parsing-ephemeral
+spec:
+  validationActions: [Deny]
+  failurePolicy: Fail
+  evaluation:
+    admission:
+      enabled: true
+    background:
+      enabled: false
+  matchConstraints:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: anvilkit-parsing
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["UPDATE"]
+        resources: ["pods/ephemeralcontainers"]
+  validations:
+    - message: "no ephemeral container may be added to a parser Pod"
+      expression: "false"
+---
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: anvilkit-parsing-jobs
+spec:
+  validationActions: [Deny]
+  failurePolicy: Fail
+  evaluation:
+    admission:
+      enabled: true
+    background:
+      enabled: false
+  matchConstraints:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: anvilkit-parsing
+    resourceRules:
+      - apiGroups: ["batch"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["jobs"]
+  validations:
+    - message: "a parser Job runs one Pod once under an absolute deadline of at most one hour"
+      expression: >-
+        object.spec.backoffLimit == 0 && object.spec.completions == 1 && object.spec.parallelism == 1
+        && has(object.spec.activeDeadlineSeconds) && object.spec.activeDeadlineSeconds > 0 && object.spec.activeDeadlineSeconds <= 3600
+        && !has(object.spec.podFailurePolicy) && !(has(object.spec.manualSelector) && object.spec.manualSelector)
+    - message: "the Job name is its launch key"
+      expression: >-
+        has(object.metadata.labels) && 'anvilkit.io/launch-key' in object.metadata.labels
+        && object.metadata.name == object.metadata.labels['anvilkit.io/launch-key']

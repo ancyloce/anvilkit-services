@@ -1,0 +1,40 @@
+{{- /* The environment's registry allowlist (P0.5): one policy per Job namespace. */ -}}
+{{- range $ns, $prefixes := dict "anvilkit-components" .Values.registries.components "anvilkit-parsing" .Values.registries.parsing }}
+{{- if not $prefixes }}{{ fail (printf "registries for %s are required: the environment names its registry" $ns) }}{{ end }}
+---
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: {{ $ns }}-registries
+  labels: {app.kubernetes.io/name: anvilkit-job-admission}
+spec:
+  validationActions: [Deny]
+  failurePolicy: Fail
+  evaluation:
+    admission:
+      enabled: true
+    background:
+      enabled: false
+  # Pods only, so that autogen evaluates the same rule against a Job's
+  # template at Job admission; ephemeral containers are denied outright by
+  # anvilkit-components-ephemeral (components-jobs.yaml).
+  autogen:
+    podControllers:
+      controllers: [jobs]
+  matchConstraints:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: {{ $ns }}
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["pods"]
+  validations:
+    - message: {{ printf "images of %s come from this environment's registry: %s" $ns (join ", " $prefixes) | quote }}
+      expression: >-
+        (object.spec.containers
+          + (has(object.spec.initContainers) ? object.spec.initContainers : [])
+          + (has(object.spec.ephemeralContainers) ? object.spec.ephemeralContainers : [])
+        ).all(c, {{ range $i, $p := $prefixes }}{{ if $i }} || {{ end }}c.image.startsWith({{ squote $p }}){{ end }})
+{{- end }}

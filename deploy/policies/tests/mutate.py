@@ -47,14 +47,26 @@ def cases(resources: pathlib.Path):
     job = load(resources / "harness-wiring-dev-v1-job.yaml")
     fixture_job = load(resources / "local-check-v1-job.yaml")
     candidate_job = load(resources / "codegen-fixed-v1-job.yaml")
-    validator = load(resources / "validator-fixed-dev-v1-pod.yaml")
-    validator_job = load(resources / "validator-fixed-dev-v1-job.yaml")
+    validator = load(resources / "validator-fixture-v1-pod.yaml")
+    validator_job = load(resources / "validator-fixture-v1-job.yaml")
+    # P0.8: the bound-source validators (candidate code): under gVisor, and the
+    # development-state one on the foundation's runtime.
+    source = load(resources / "validator-source-v1-pod.yaml")
+    source_job = load(resources / "validator-source-v1-job.yaml")
+    source_dev = load(resources / "validator-source-dev-v1-pod.yaml")
+    source_dev_job = load(resources / "validator-source-dev-v1-job.yaml")
+    # P0.7: the parser Job as Knowledge's launcher renders it (test/parse.test.ts).
+    parser = load(resources / "parser-docling-dev-v1-pod.yaml")
+    parser_job = load(resources / "parser-docling-dev-v1-job.yaml")
     out = {}
 
     def add(case, base, mutate, expect="fail"):
         obj = copy.deepcopy(base)
         mutate(obj)
-        obj["metadata"]["name"] = case
+        # A parser Job is named after its launch key (the policy binds them): its
+        # cases keep the fixture's name; the file is the case id either way.
+        if obj["metadata"].get("namespace") != "anvilkit-parsing":
+            obj["metadata"]["name"] = case
         out[case] = (obj, expect)
 
     # Positives: exactly what the launcher renders.
@@ -73,10 +85,22 @@ def cases(resources: pathlib.Path):
     add("validator-with-codegen-image", validator, lambda o: container(o, "supervisor").__setitem__("image", container(harness, "supervisor")["image"]))
     add("validator-command-extended", validator, lambda o: container(o, "supervisor")["command"].append("--unsafe"))
     add("validator-claims-harness-profile", validator, lambda o: o["metadata"]["labels"].__setitem__("anvilkit.io/profile-id", "harness-wiring-dev-v1"))
-    add("harness-claims-validator-profile", harness, lambda o: o["metadata"]["labels"].__setitem__("anvilkit.io/profile-id", "validator-fixed-dev-v1"))
+    add("harness-claims-validator-profile", harness, lambda o: o["metadata"]["labels"].__setitem__("anvilkit.io/profile-id", "validator-fixture-v1"))
     add("validator-as-candidate-code", validator, lambda o: o["metadata"]["labels"].__setitem__("anvilkit.io/candidate-code", "true"))
     add("validator-with-runtime-class", validator, lambda o: o["spec"].__setitem__("runtimeClassName", "gvisor"))
     add("validator-job-with-codegen-command", validator_job, lambda o: container(o["spec"]["template"], "supervisor").__setitem__("command", ["/usr/local/bin/anvilkit-codegen-supervisor"]))
+    # P0.8 (AC2): bound source is candidate code; validator-source-v1 runs only
+    # under gVisor, validator-source-dev-v1 only where the environment lists it
+    # as a development profile, and no profile runs candidate code relabeled.
+    add("valid-validator-source-pod", source, lambda o: None, "pass")
+    add("valid-validator-source-dev-pod", source_dev, lambda o: None, "pass")
+    add("valid-validator-source-dev-job", source_dev_job, lambda o: None, "pass")
+    add("validator-source-without-runtimeclass", source, lambda o: o["spec"].pop("runtimeClassName"))
+    add("job-validator-source-without-runtimeclass", source_job, lambda o: o["spec"]["template"]["spec"].pop("runtimeClassName"))
+    add("validator-source-runc-runtimeclass", source, lambda o: o["spec"].__setitem__("runtimeClassName", "runc"))
+    add("validator-source-relabeled-fixture", source, lambda o: (o["metadata"]["labels"].__setitem__("anvilkit.io/profile-id", "validator-fixture-v1"), o["spec"].pop("runtimeClassName")))
+    add("validator-source-relabeled-no-candidate-code", source_dev, lambda o: o["metadata"]["labels"].__setitem__("anvilkit.io/candidate-code", "false"))
+    add("validator-source-dev-claims-codegen", source_dev, lambda o: o["metadata"]["labels"].__setitem__("anvilkit.io/profile-id", "codegen-fixed-v1"))
     add("valid-candidate-job", candidate_job, lambda o: None, "pass")
 
     def sup(o):
@@ -100,6 +124,14 @@ def cases(resources: pathlib.Path):
     add("volume-secret", harness, lambda o: o["spec"]["volumes"].__setitem__(0, {"name": "workspace", "secret": {"secretName": "s"}}))
     add("volume-csi", harness, lambda o: o["spec"]["volumes"].append({"name": "csi", "csi": {"driver": "secrets-store.csi.k8s.io"}}))
     add("mount-added-to-sidecar", harness, lambda o: side(o)["volumeMounts"].append({"name": "verdict", "mountPath": "/anvilkit/verdict"}))
+    # The sidecar identity Secret (P0.1): exactly that Secret, read-only, in the sidecar alone.
+    add("identity-mounted-into-supervisor", harness, lambda o: sup(o)["volumeMounts"].append({"name": "identity", "mountPath": "/etc/anvilkit/identity", "readOnly": True}))
+    add("identity-other-secret", harness, lambda o: next(v for v in o["spec"]["volumes"] if v["name"] == "identity")["secret"].__setitem__("secretName", "anvilkit-agent-control-identity"))
+    add("identity-writable-in-sidecar", harness, lambda o: [m.__setitem__("readOnly", False) for m in side(o)["volumeMounts"] if m["name"] == "identity"])
+    add("identity-other-path", harness, lambda o: [m.__setitem__("mountPath", "/workspace/identity") for m in side(o)["volumeMounts"] if m["name"] == "identity"])
+    add("identity-missing", harness, lambda o: (o["spec"].__setitem__("volumes", [v for v in o["spec"]["volumes"] if v["name"] != "identity"]), side(o).__setitem__("volumeMounts", [m for m in side(o)["volumeMounts"] if m["name"] != "identity"])))
+    add("identity-optional", harness, lambda o: next(v for v in o["spec"]["volumes"] if v["name"] == "identity")["secret"].__setitem__("optional", True))
+    add("identity-in-fixture", fixture, lambda o: (o["spec"].__setitem__("volumes", [{"name": "identity", "secret": {"secretName": "anvilkit-job-access-sidecar-identity"}}]), container(o, "fixture").__setitem__("volumeMounts", [{"name": "identity", "mountPath": "/etc/anvilkit/identity", "readOnly": True}])))
     add("sockets-writable-in-supervisor", harness, lambda o: [m.__setitem__("readOnly", False) for m in sup(o)["volumeMounts"] if m["name"] == "sockets"])
     add("capability-added", harness, lambda o: sup(o)["securityContext"]["capabilities"]["add"].append("NET_ADMIN"))
     add("capability-sidecar", harness, lambda o: side(o)["securityContext"]["capabilities"].__setitem__("add", ["SETUID"]))
@@ -205,6 +237,34 @@ def cases(resources: pathlib.Path):
     add("job-parallel", job, lambda o: o["spec"].__setitem__("parallelism", 2))
     add("job-no-deadline", job, lambda o: o["spec"].pop("activeDeadlineSeconds"))
     add("job-ttl", job, lambda o: o["spec"].__setitem__("ttlSecondsAfterFinished", 0))
+
+    # P0.7 (PAR-01, PAR-02): the parser namespace's template.
+    def mount(o, name, volume, path="/tmp"):
+        c = container(o, name)
+        c["volumeMounts"] = [m for m in c["volumeMounts"] if m["mountPath"] != path] + [{"name": volume, "mountPath": path}]
+
+    def vol(o, name):
+        return next(v for v in o["spec"]["volumes"] if v["name"] == name)
+
+    add("valid-parser-pod", parser, lambda o: None, "pass")
+    add("valid-parser-job", parser_job, lambda o: None, "pass")
+    add("parser-shared-tmp-stage-out", parser, lambda o: mount(o, "stage-out", "tmp-parse"))
+    add("parser-shared-tmp-stage-in", parser, lambda o: mount(o, "stage-in", "tmp-parse"))
+    add("parser-parse-joins-stager-tmp", parser, lambda o: mount(o, "parse", "tmp-stage"))
+    add("parser-writes-input", parser, lambda o: [m.pop("readOnly") for m in container(o, "parse")["volumeMounts"] if m["name"] == "stage-in"])
+    add("parser-stager-writes-result", parser, lambda o: [m.pop("readOnly") for m in container(o, "stage-out")["volumeMounts"] if m["name"] == "stage-out"])
+    add("parser-no-resources", parser, lambda o: container(o, "stage-in").pop("resources"))
+    add("parser-no-memory-limit", parser, lambda o: container(o, "parse")["resources"]["limits"].pop("memory"))
+    add("parser-emptydir-unbounded", parser, lambda o: vol(o, "tmp-parse")["emptyDir"].pop("sizeLimit"))
+    add("parser-emptydir-memory", parser, lambda o: vol(o, "tmp-stage")["emptyDir"].__setitem__("medium", "Memory"))
+    add("parser-no-node-selector", parser, lambda o: o["spec"].pop("nodeSelector"))
+    add("parser-service-account", parser, lambda o: o["spec"].__setitem__("serviceAccountName", "anvilkit-agent-knowledge"))
+    add("parser-stager-unconfined", parser, lambda o: container(o, "stage-out")["securityContext"].__setitem__("seccompProfile", {"type": "Unconfined"}))
+    add("parser-working-directory", parser, lambda o: container(o, "stage-in").__setitem__("workingDir", "/stage/in"))
+    add("parser-pythonpath-env", parser, lambda o: container(o, "stage-out")["env"].append({"name": "PYTHONPATH", "value": "/tmp"}))
+    add("parser-foreign-digest", parser, lambda o: [c.__setitem__("image", c["image"].split("@")[0] + "@sha256:" + "1" * 64) for c in o["spec"]["initContainers"] + o["spec"]["containers"]])
+    add("job-parser-shared-tmp", parser_job, lambda o: mount(tmpl(o), "stage-out", "tmp-parse"))
+    add("job-parser-deadline-ceiling", parser_job, lambda o: o["spec"].__setitem__("activeDeadlineSeconds", 86400))
     return out
 
 

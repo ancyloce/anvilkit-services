@@ -1,0 +1,5 @@
+apiVersion: v2
+name: anvilkit-job-admission
+description: The Job-boundary admission of anvilkit-components and anvilkit-parsing (P09/P15 Kyverno ValidatingPolicies, the environment's registry allowlist) and the candidate seccomp profile installed on every node (P0.5)
+type: application
+version: 0.1.0

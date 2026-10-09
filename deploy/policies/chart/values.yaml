@@ -1,0 +1,35 @@
+# P0.5: the Job-boundary admission every environment installs through its
+# combination (the development foundation installs the same chart). The
+# template and digest policies (templates/components-jobs.yaml,
+# templates/parsing-jobs.yaml) are environment-independent; the registry
+# allowlist and the seccomp installer's placement are this environment's.
+
+# The image prefixes a Job pod's containers may come from, per namespace
+# (every container, native sidecars and ephemeral containers included).
+# Empty refuses to render: an environment names its registry (the
+# development registry, the qualification registry, Harbor in production).
+registries:
+  components: []
+  parsing: []
+
+# P0.8: the development-state candidate profiles this environment admits
+# without the gVisor RuntimeClass (contracts/jobs/profiles.json, state
+# development, candidateCode true): DEVELOPMENT_ONLY, the development
+# foundation's containerd runtime proving the bound-source path. Every other
+# environment leaves it empty, so candidate code runs only under gVisor.
+developmentProfiles: []
+
+# The candidate syscall profile (files/anvilkit-candidate.json, regenerated
+# by deploy/policies/seccomp/generate.sh) placed at
+# <kubeletRoot>/seccomp/anvilkit/candidate.json on every node the Job pools
+# use, by a DaemonSet that copies it from a ConfigMap and stays running as
+# the proof it is in place. Node provisioning that installs it itself (the
+# RKE2 configuration) sets install: false.
+seccomp:
+  install: true
+  namespace: kube-system
+  kubeletRoot: /var/lib/kubelet
+  image: docker.io/library/busybox@sha256:9db7b59979c38555a39def84a31fb98b5296952f9e3afd4f6f11f05b07adfab0
+  nodeSelector: {}
+  tolerations:
+    - {operator: Exists}

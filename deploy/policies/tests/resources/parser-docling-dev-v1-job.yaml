@@ -1,0 +1,256 @@
+{
+  "apiVersion": "batch/v1",
+  "kind": "Job",
+  "metadata": {
+    "name": "parse-0123456789abcdef0123456789abcdef",
+    "namespace": "anvilkit-parsing",
+    "labels": {
+      "app.kubernetes.io/managed-by": "anvilkit-agent-knowledge",
+      "anvilkit.io/job-kind": "parser",
+      "anvilkit.io/launch-key": "parse-0123456789abcdef0123456789abcdef",
+      "anvilkit.io/profile-id": "parser-docling-dev-v1"
+    },
+    "annotations": {
+      "anvilkit.io/attempt": "1"
+    }
+  },
+  "spec": {
+    "backoffLimit": 0,
+    "completions": 1,
+    "parallelism": 1,
+    "activeDeadlineSeconds": 600,
+    "ttlSecondsAfterFinished": 3600,
+    "template": {
+      "metadata": {
+        "labels": {
+          "app.kubernetes.io/managed-by": "anvilkit-agent-knowledge",
+          "anvilkit.io/job-kind": "parser",
+          "anvilkit.io/launch-key": "parse-0123456789abcdef0123456789abcdef",
+          "anvilkit.io/profile-id": "parser-docling-dev-v1"
+        }
+      },
+      "spec": {
+        "restartPolicy": "Never",
+        "automountServiceAccountToken": false,
+        "enableServiceLinks": false,
+        "nodeSelector": {
+          "anvilkit.io/pool": "components"
+        },
+        "securityContext": {
+          "runAsNonRoot": true,
+          "fsGroup": 10001,
+          "seccompProfile": {
+            "type": "RuntimeDefault"
+          }
+        },
+        "volumes": [
+          {
+            "name": "stage-in",
+            "emptyDir": {
+              "sizeLimit": "33Mi"
+            }
+          },
+          {
+            "name": "stage-out",
+            "emptyDir": {
+              "sizeLimit": "33Mi"
+            }
+          },
+          {
+            "name": "tmp-stage",
+            "emptyDir": {
+              "sizeLimit": "64Mi"
+            }
+          },
+          {
+            "name": "tmp-parse",
+            "emptyDir": {
+              "sizeLimit": "1Gi"
+            }
+          },
+          {
+            "name": "stage-urls",
+            "secret": {
+              "secretName": "parse-0123456789abcdef0123456789abcdef-stage",
+              "defaultMode": 256
+            }
+          }
+        ],
+        "initContainers": [
+          {
+            "name": "stage-in",
+            "image": "localhost:5001/anvilkit-parser@sha256:bacdc6abe47d68906cd8469035da4f5d7fa9b2df8849610643bf902151028a19",
+            "command": [
+              "/usr/local/bin/anvilkit-stage",
+              "in"
+            ],
+            "env": [
+              {
+                "name": "ANVILKIT_PARSE_ENVELOPE",
+                "value": "{\"schemaVersion\":1,\"launchId\":\"parse-0123456789abcdef0123456789abcdef\",\"launchKey\":\"parse-0123456789abcdef0123456789abcdef\",\"taskId\":\"task_0123456789abcdef\",\"generation\":\"1\",\"attempt\":\"1\",\"profileId\":\"parser-docling-dev-v1\",\"profileRevision\":\"2\",\"jobKind\":\"parser\",\"deadline\":\"2026-10-08T12:00:00Z\",\"input\":{\"digest\":\"sha256:0000000000000000000000000000000000000000000000000000000000000000\",\"sizeBytes\":\"6\",\"mediaType\":\"text/markdown\"}}"
+              },
+              {
+                "name": "ANVILKIT_PARSER_LIMITS",
+                "value": "{\"parserName\":\"docling\",\"parserVersion\":\"2.130.0\",\"mediaTypes\":[\"application/pdf\",\"text/plain\",\"text/markdown\",\"text/html\",\"application/vnd.openxmlformats-officedocument.wordprocessingml.document\"],\"maxInputBytes\":33554432,\"maxPages\":200,\"maxDecompressedBytes\":134217728,\"maxDecompressionRatio\":100,\"maxArchiveEntries\":2000,\"maxOutputBytes\":33554432,\"maxChunks\":5000,\"chunker\":{\"chunkerId\":\"docling-hierarchical\",\"revision\":\"1\",\"maxChunkChars\":2000}}"
+              }
+            ],
+            "securityContext": {
+              "runAsNonRoot": true,
+              "runAsUser": 10002,
+              "runAsGroup": 10001,
+              "allowPrivilegeEscalation": false,
+              "readOnlyRootFilesystem": true,
+              "capabilities": {
+                "drop": [
+                  "ALL"
+                ]
+              }
+            },
+            "resources": {
+              "requests": {
+                "cpu": "50m",
+                "memory": "64Mi"
+              },
+              "limits": {
+                "cpu": "500m",
+                "memory": "256Mi"
+              }
+            },
+            "volumeMounts": [
+              {
+                "name": "stage-in",
+                "mountPath": "/stage/in"
+              },
+              {
+                "name": "stage-urls",
+                "mountPath": "/run/anvilkit/stage",
+                "readOnly": true
+              },
+              {
+                "name": "tmp-stage",
+                "mountPath": "/tmp"
+              }
+            ]
+          },
+          {
+            "name": "parse",
+            "image": "localhost:5001/anvilkit-parser@sha256:bacdc6abe47d68906cd8469035da4f5d7fa9b2df8849610643bf902151028a19",
+            "command": [
+              "/usr/local/bin/anvilkit-parse"
+            ],
+            "env": [
+              {
+                "name": "ANVILKIT_PARSE_ENVELOPE",
+                "value": "{\"schemaVersion\":1,\"launchId\":\"parse-0123456789abcdef0123456789abcdef\",\"launchKey\":\"parse-0123456789abcdef0123456789abcdef\",\"taskId\":\"task_0123456789abcdef\",\"generation\":\"1\",\"attempt\":\"1\",\"profileId\":\"parser-docling-dev-v1\",\"profileRevision\":\"2\",\"jobKind\":\"parser\",\"deadline\":\"2026-10-08T12:00:00Z\",\"input\":{\"digest\":\"sha256:0000000000000000000000000000000000000000000000000000000000000000\",\"sizeBytes\":\"6\",\"mediaType\":\"text/markdown\"}}"
+              },
+              {
+                "name": "ANVILKIT_PARSER_LIMITS",
+                "value": "{\"parserName\":\"docling\",\"parserVersion\":\"2.130.0\",\"mediaTypes\":[\"application/pdf\",\"text/plain\",\"text/markdown\",\"text/html\",\"application/vnd.openxmlformats-officedocument.wordprocessingml.document\"],\"maxInputBytes\":33554432,\"maxPages\":200,\"maxDecompressedBytes\":134217728,\"maxDecompressionRatio\":100,\"maxArchiveEntries\":2000,\"maxOutputBytes\":33554432,\"maxChunks\":5000,\"chunker\":{\"chunkerId\":\"docling-hierarchical\",\"revision\":\"1\",\"maxChunkChars\":2000}}"
+              }
+            ],
+            "securityContext": {
+              "runAsNonRoot": true,
+              "runAsUser": 10001,
+              "runAsGroup": 10001,
+              "allowPrivilegeEscalation": false,
+              "readOnlyRootFilesystem": true,
+              "capabilities": {
+                "drop": [
+                  "ALL"
+                ]
+              },
+              "seccompProfile": {
+                "type": "Localhost",
+                "localhostProfile": "anvilkit/candidate.json"
+              }
+            },
+            "resources": {
+              "requests": {
+                "cpu": "2",
+                "memory": "3Gi"
+              },
+              "limits": {
+                "cpu": "2",
+                "memory": "3Gi"
+              }
+            },
+            "volumeMounts": [
+              {
+                "name": "stage-in",
+                "mountPath": "/stage/in",
+                "readOnly": true
+              },
+              {
+                "name": "stage-out",
+                "mountPath": "/stage/out"
+              },
+              {
+                "name": "tmp-parse",
+                "mountPath": "/tmp"
+              }
+            ]
+          }
+        ],
+        "containers": [
+          {
+            "name": "stage-out",
+            "image": "localhost:5001/anvilkit-parser@sha256:bacdc6abe47d68906cd8469035da4f5d7fa9b2df8849610643bf902151028a19",
+            "command": [
+              "/usr/local/bin/anvilkit-stage",
+              "out"
+            ],
+            "env": [
+              {
+                "name": "ANVILKIT_PARSE_ENVELOPE",
+                "value": "{\"schemaVersion\":1,\"launchId\":\"parse-0123456789abcdef0123456789abcdef\",\"launchKey\":\"parse-0123456789abcdef0123456789abcdef\",\"taskId\":\"task_0123456789abcdef\",\"generation\":\"1\",\"attempt\":\"1\",\"profileId\":\"parser-docling-dev-v1\",\"profileRevision\":\"2\",\"jobKind\":\"parser\",\"deadline\":\"2026-10-08T12:00:00Z\",\"input\":{\"digest\":\"sha256:0000000000000000000000000000000000000000000000000000000000000000\",\"sizeBytes\":\"6\",\"mediaType\":\"text/markdown\"}}"
+              },
+              {
+                "name": "ANVILKIT_PARSER_LIMITS",
+                "value": "{\"parserName\":\"docling\",\"parserVersion\":\"2.130.0\",\"mediaTypes\":[\"application/pdf\",\"text/plain\",\"text/markdown\",\"text/html\",\"application/vnd.openxmlformats-officedocument.wordprocessingml.document\"],\"maxInputBytes\":33554432,\"maxPages\":200,\"maxDecompressedBytes\":134217728,\"maxDecompressionRatio\":100,\"maxArchiveEntries\":2000,\"maxOutputBytes\":33554432,\"maxChunks\":5000,\"chunker\":{\"chunkerId\":\"docling-hierarchical\",\"revision\":\"1\",\"maxChunkChars\":2000}}"
+              }
+            ],
+            "securityContext": {
+              "runAsNonRoot": true,
+              "runAsUser": 10002,
+              "runAsGroup": 10001,
+              "allowPrivilegeEscalation": false,
+              "readOnlyRootFilesystem": true,
+              "capabilities": {
+                "drop": [
+                  "ALL"
+                ]
+              }
+            },
+            "resources": {
+              "requests": {
+                "cpu": "50m",
+                "memory": "64Mi"
+              },
+              "limits": {
+                "cpu": "500m",
+                "memory": "256Mi"
+              }
+            },
+            "terminationMessagePolicy": "File",
+            "volumeMounts": [
+              {
+                "name": "stage-out",
+                "mountPath": "/stage/out",
+                "readOnly": true
+              },
+              {
+                "name": "stage-urls",
+                "mountPath": "/run/anvilkit/stage",
+                "readOnly": true
+              },
+              {
+                "name": "tmp-stage",
+                "mountPath": "/tmp"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

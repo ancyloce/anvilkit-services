@@ -26,7 +26,17 @@ export PATH="$PATH:$(go env GOPATH)/bin"
 test -x "$KYVERNO" || { echo "UNEXECUTED: kyverno CLI not found at $KYVERNO (deploy/dev/up.sh downloads 1.19.1)" >&2; exit 2; }
 "$KYVERNO" version | head -1
 (cd "$ROOT/services/agent/workflow" && ANVILKIT_RENDER_POLICY_FIXTURES="$POLICIES/tests/resources" go test -count=1 -run TestRenderPolicyFixtures ./internal/adapters/kubernetes/ >/dev/null)
+# P0.7: the parser Job as Knowledge's launcher renders it.
+(cd "$ROOT/services/agent/knowledge" && ANVILKIT_RENDER_POLICY_FIXTURES="$POLICIES/tests/resources" npx vitest run test/parse.test.ts >/dev/null) \
+  || { echo "UNEXECUTED: the parser fixtures did not render (services/agent/knowledge: pnpm install)" >&2; exit 2; }
 "$PY" "$POLICIES/tests/mutate.py" "$POLICIES/tests/resources" "$WORK/cases"
+# The policies are the Job-admission chart rendered with an environment's
+# values (the development foundation's unless ANVILKIT_POLICY_VALUES names
+# another environment's file).
+HELM=${ANVILKIT_HELM:-$ROOT/.local/bin/helm}
+test -x "$HELM" || HELM=$(command -v helm) || { echo "UNEXECUTED: helm not found" >&2; exit 2; }
+"$HELM" template anvilkit-job-admission "$POLICIES/chart" -f "${ANVILKIT_POLICY_VALUES:-$ROOT/deploy/dev/values/anvilkit-job-admission.yaml}" \
+  --show-only templates/components-jobs.yaml --show-only templates/parsing-jobs.yaml --show-only templates/registries.yaml > "$WORK/policies.yaml"
 # kyverno apply evaluates namespace selectors from a values file offline.
 cat > "$WORK/values.yaml" <<VALUES
 apiVersion: cli.kyverno.io/v1alpha1
@@ -37,6 +47,9 @@ namespaceSelector:
   - name: anvilkit-components
     labels:
       kubernetes.io/metadata.name: anvilkit-components
+  - name: anvilkit-parsing
+    labels:
+      kubernetes.io/metadata.name: anvilkit-parsing
 VALUES
 failures=0
 total=0
@@ -44,7 +57,7 @@ for f in "$WORK"/cases/*.yaml; do
   case=$(basename "$f" .yaml)
   expect=$("$PY" -c "import json,sys; print(json.load(open('$WORK/cases/expectations.json'))['$case'])")
   total=$((total+1))
-  out=$("$KYVERNO" apply "$POLICIES/kyverno/anvilkit-components-jobs.yaml" "$POLICIES/kyverno/anvilkit-components-registries.dev.yaml" --resource "$f" --values-file "$WORK/values.yaml" 2>&1 || true)
+  out=$("$KYVERNO" apply "$WORK/policies.yaml" --resource "$f" --values-file "$WORK/values.yaml" 2>&1 || true)
   if echo "$out" | grep -qE 'fail: [1-9]'; then got=fail; elif echo "$out" | grep -qE 'pass: [1-9]'; then got=pass; else got="error"; fi
   if [ "$got" = "$expect" ]; then
     printf 'PASS offline %-36s %s\n' "$case" "$got"
@@ -54,16 +67,32 @@ for f in "$WORK"/cases/*.yaml; do
     failures=$((failures+1))
   fi
 done
+# P0.8: the development-state candidate profile is admitted only where the
+# environment lists it: the same chart without the list (every environment
+# but the development foundation) denies the launcher's own development Pod.
+"$HELM" template anvilkit-job-admission "$POLICIES/chart" -f "${ANVILKIT_POLICY_VALUES:-$ROOT/deploy/dev/values/anvilkit-job-admission.yaml}" \
+  --set developmentProfiles=null --show-only templates/components-jobs.yaml --show-only templates/registries.yaml > "$WORK/policies-nodev.yaml"
+total=$((total+1))
+out=$("$KYVERNO" apply "$WORK/policies-nodev.yaml" --resource "$WORK/cases/valid-validator-source-dev-pod.yaml" --values-file "$WORK/values.yaml" 2>&1 || true)
+if echo "$out" | grep -qE 'fail: [1-9]'; then
+  printf 'PASS offline %-36s fail (no development profile listed)\n' "validator-source-dev-unlisted"
+else
+  printf 'FAIL offline %-36s expected fail without the development list\n' "validator-source-dev-unlisted"
+  echo "$out" | tail -n 6 | sed 's/^/      | /'
+  failures=$((failures+1))
+fi
 if [ "${1:-}" = "--cluster" ]; then
   CTX=${ANVILKIT_DEV_KUBE_CONTEXT:-kind-anvilkit-dev}
   LAUNCHER=${ANVILKIT_LAUNCHER_KUBECONFIG:-$ROOT/.local/dev/launcher.kubeconfig}
+  # The parser namespace's launcher is Knowledge's identity (P15/P0.7).
+  PARSER_LAUNCHER=${ANVILKIT_PARSER_LAUNCHER_KUBECONFIG:-$ROOT/.local/dev/knowledge-launcher.kubeconfig}
   test -r "$LAUNCHER" || { echo "UNEXECUTED: launcher kubeconfig not found at $LAUNCHER (deploy/dev/up.sh writes it)" >&2; exit 2; }
   gvisor=yes
   kubectl --context "$CTX" get runtimeclass gvisor >/dev/null 2>&1 || gvisor=no
   for f in "$WORK"/cases/*.yaml; do
     case=$(basename "$f" .yaml)
     expect=$("$PY" -c "import json,sys; print(json.load(open('$WORK/cases/expectations.json'))['$case'])")
-    if [ "$case" = valid-candidate-pod ] && [ "$gvisor" = no ]; then
+    if { [ "$case" = valid-candidate-pod ] || [ "$case" = valid-validator-source-pod ]; } && [ "$gvisor" = no ]; then
       # The API server refuses a Pod whose RuntimeClass does not exist: on a
       # cluster without gVisor the candidate profile cannot be admitted at
       # all, which is the state P09 records (the profile stays disabled).
@@ -73,7 +102,9 @@ if [ "${1:-}" = "--cluster" ]; then
     total=$((total+1))
     if grep -q '^kind: Job$' "$f"; then
       who=launcher
-      if out=$(kubectl --kubeconfig "$LAUNCHER" create --dry-run=server -f "$f" 2>&1); then got=pass; else got=fail; fi
+      kc=$LAUNCHER
+      if grep -q '^  namespace: anvilkit-parsing$' "$f"; then kc=$PARSER_LAUNCHER; fi
+      if out=$(kubectl --kubeconfig "$kc" create --dry-run=server -f "$f" 2>&1); then got=pass; else got=fail; fi
     else
       who=admin
       if out=$(kubectl --context "$CTX" create --dry-run=server -f "$f" 2>&1); then got=pass; else got=fail; fi
@@ -89,7 +120,7 @@ if [ "${1:-}" = "--cluster" ]; then
       # F1/F2 regressions must reach the policy with a structurally valid
       # Job through the real launcher, not pass on an unrelated API error.
       case "$case" in
-        job-node-name|job-scheduler-unreviewed|job-*-resources-*|job-*-limits-*|job-*-requests-*|job-*-size-*|job-*-medium-*)
+        job-node-name|job-scheduler-unreviewed|job-*-resources-*|job-*-limits-*|job-*-requests-*|job-*-size-*|job-*-medium-*|job-parser-*)
           if [ "$reason" != policy ]; then
             printf 'FAIL expected policy rejection: %s\n%s\n' "$case" "$out"
             failures=$((failures+1))
