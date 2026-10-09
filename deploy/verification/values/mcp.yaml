@@ -1,0 +1,34 @@
+replicaCount: 1
+image:
+  repository: 10.203.0.12:30500/anvilkit-agent-mcp
+  digest: sha256:7beddc69041e767c47ffe893efeaa7b367af5feb8978a50cb8be300e1f176bc4
+  pullPolicy: IfNotPresent
+podDisruptionBudget:
+  enabled: false
+podLabels:
+  anvilkit.io/owner: repairs-f01-f12
+resources:
+  requests:
+    cpu: 50m
+    memory: 96Mi
+  limits:
+    cpu: '1'
+    memory: 512Mi
+database:
+  secret:
+    name: mcp-app
+nats:
+  url: nats://nats:4222
+control:
+  address: anvilkit-agent-control:9101
+relay:
+  image:
+    repository: 10.203.0.12:30500/anvilkit-agent-background-worker
+    digest: sha256:b3372948a97c26a9e1739828b5638b2dd7db765200291f74d60b9e74995069dc
+    pullPolicy: IfNotPresent
+  database:
+    secret:
+      name: mcp-relay
+  queue:
+    secret:
+      name: queue

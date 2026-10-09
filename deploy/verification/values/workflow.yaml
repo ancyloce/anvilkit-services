@@ -1,0 +1,42 @@
+replicaCount: 1
+image:
+  repository: 10.203.0.12:30500/anvilkit-agent-workflow
+  digest: sha256:5747e5f0dd4abed96659453558497b8999722b00e58828b5efb59d465659384f
+  pullPolicy: IfNotPresent
+podDisruptionBudget:
+  enabled: false
+podLabels:
+  anvilkit.io/owner: repairs-f01-f12
+resources:
+  requests:
+    cpu: 50m
+    memory: 96Mi
+  limits:
+    cpu: '1'
+    memory: 512Mi
+control:
+  address: anvilkit-agent-control:9101
+temporal:
+  address: temporal:7233
+launcher:
+  namespace: anvilkit-verification-sandbox
+  backend: anvilkit-rke2-verification
+  imageRegistry: 10.203.0.12:30500
+  sidecarControlAddress: anvilkit-agent-control.anvilkit-verification.svc:9101
+config:
+  kubernetes:
+    enabled_profiles:
+    - local-check-v1
+  model_proxy:
+    address: http://anvilkit-agent-model-proxy:9103
+  lifecycle:
+    preparation:
+      route_id: deepseek-verification
+      max_output_tokens: 2048
+      max_exposure_currency: USD
+      max_exposure_amount: '200000'
+      call_timeout: 3m
+      content_repair_allowance: 0
+      max_input_bytes: 262144
+podAnnotations:
+  anvilkit.io/model-proxy-token-secret: model-proxy-clients

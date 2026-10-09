@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: registry
+  labels: {anvilkit.io/owner: repairs-f01-f12}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector:
+    matchLabels: {app: verification-registry}
+  template:
+    metadata:
+      labels: {app: verification-registry, anvilkit.io/owner: repairs-f01-f12}
+    spec:
+      automountServiceAccountToken: false
+      nodeSelector: {anvilkit.io/workload: data}
+      containers:
+        - name: registry
+          image: {{ .Values.image | quote }}
+          ports: [{name: https, containerPort: 5000}]
+          env:
+            - {name: REGISTRY_HTTP_TLS_CERTIFICATE, value: /tls/tls.crt}
+            - {name: REGISTRY_HTTP_TLS_KEY, value: /tls/tls.key}
+            - {name: REGISTRY_AUTH, value: htpasswd}
+            - {name: REGISTRY_AUTH_HTPASSWD_REALM, value: AnvilKit Verification}
+            - {name: REGISTRY_AUTH_HTPASSWD_PATH, value: /auth/htpasswd}
+          readinessProbe: {tcpSocket: {port: https}, periodSeconds: 2}
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {cpu: '1', memory: 256Mi}
+          volumeMounts:
+            - {name: data, mountPath: /var/lib/registry}
+            - {name: tls, mountPath: /tls, readOnly: true}
+            - {name: auth, mountPath: /auth, readOnly: true}
+      volumes:
+        - name: data
+          hostPath: {path: /var/lib/anvilkit-verification/registry, type: DirectoryOrCreate}
+        - name: tls
+          secret: {secretName: registry-tls}
+        - name: auth
+          secret: {secretName: registry-auth}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: registry}
+spec:
+  type: NodePort
+  selector: {app: verification-registry}
+  ports: [{name: https, port: 5000, targetPort: https, nodePort: 30500}]

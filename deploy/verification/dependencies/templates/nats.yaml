@@ -1,0 +1,70 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nats
+  labels: &id001
+    app: verification-nats
+    anvilkit.io/owner: repairs-f01-f12
+    anvilkit.io/class: platform
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: verification-nats
+  template:
+    metadata:
+      labels: *id001
+    spec:
+      automountServiceAccountToken: false
+      nodeSelector:
+        anvilkit.io/workload: data
+      containers:
+      - name: nats
+        image: {{ .Values.nats | quote }}
+        ports:
+        - name: service
+          containerPort: 4222
+        readinessProbe:
+          tcpSocket:
+            port: service
+          periodSeconds: 2
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: '1'
+            memory: 768Mi
+        volumeMounts:
+        - name: data
+          mountPath: /data
+        command:
+        - nats-server
+        - -js
+        - -sd
+        - /data
+        - -m
+        - '8222'
+      volumes:
+      - name: data
+        hostPath:
+          path: /var/lib/anvilkit-verification/nats
+          type: DirectoryOrCreate
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nats
+  labels:
+    app: verification-nats
+    anvilkit.io/owner: repairs-f01-f12
+    anvilkit.io/class: platform
+spec:
+  selector:
+    app: verification-nats
+  ports:
+  - name: service
+    port: 4222
+    targetPort: service

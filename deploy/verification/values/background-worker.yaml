@@ -1,0 +1,27 @@
+replicaCount: 1
+image:
+  repository: 10.203.0.12:30500/anvilkit-agent-background-worker
+  digest: sha256:43b3af49c2a8f90e3a328c1b2695f9242f7f7beeebca1ad6b07184ffdee541bb
+  pullPolicy: IfNotPresent
+podDisruptionBudget:
+  enabled: false
+podLabels:
+  anvilkit.io/owner: repairs-f01-f12
+resources:
+  requests:
+    cpu: 50m
+    memory: 96Mi
+  limits:
+    cpu: '1'
+    memory: 512Mi
+queue:
+  secret:
+    name: queue
+owners:
+  knowledge:
+    address: anvilkit-agent-knowledge:9105
+  mcp:
+    address: anvilkit-agent-mcp:9106
+config:
+  worker:
+    concurrency: 1

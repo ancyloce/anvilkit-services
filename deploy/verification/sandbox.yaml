@@ -1,0 +1,70 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: anvilkit-verification-sandbox
+  labels:
+    anvilkit.io/owner: repairs-f01-f12
+---
+apiVersion: node.k8s.io/v1
+kind: RuntimeClass
+metadata:
+  name: gvisor
+  labels: {anvilkit.io/owner: repairs-f01-f12}
+handler: runsc
+scheduling:
+  nodeSelector: {anvilkit.io/workload: sandbox}
+  tolerations:
+    - {key: anvilkit.io/sandbox, operator: Equal, value: 'true', effect: NoSchedule}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: default-deny, namespace: anvilkit-verification-sandbox}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata: {name: heavy-job-concurrency, namespace: anvilkit-verification-sandbox}
+spec:
+  hard: {count/jobs.batch: '1'}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: gvisor-prerequisites
+  namespace: anvilkit-verification-sandbox
+  labels: {anvilkit.io/owner: repairs-f01-f12}
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 120
+  template:
+    metadata:
+      labels: {anvilkit.io/owner: repairs-f01-f12}
+    spec:
+      runtimeClassName: gvisor
+      automountServiceAccountToken: false
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: probe
+          image: alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
+          command: [sh, -ec]
+          args:
+            - |
+              dmesg | grep -qi gvisor
+              test ! -e /var/run/secrets/kubernetes.io/serviceaccount/token
+              ! wget -T 2 -q -O /dev/null http://1.1.1.1
+              ! wget -T 2 -q -O /dev/null https://10.43.0.1
+              echo GVISOR_NO_TOKEN_DENIED_EGRESS_PASS
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {cpu: '1', memory: 256Mi}

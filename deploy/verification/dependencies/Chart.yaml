@@ -1,0 +1,4 @@
+apiVersion: v2
+name: anvilkit-verification-dependencies
+version: 0.1.0
+description: Exclusively owned disposable data services for repair regressions

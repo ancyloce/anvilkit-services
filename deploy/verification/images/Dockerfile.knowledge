@@ -1,0 +1,12 @@
+ARG OWNER_IMAGE
+ARG FORWARDER_IMAGE
+ARG WORKER_IMAGE
+FROM ${OWNER_IMAGE} AS owner
+FROM ${FORWARDER_IMAGE} AS forwarder
+FROM ${WORKER_IMAGE}
+COPY --from=owner /anvilkit/knowledge /anvilkit/knowledge
+COPY --from=owner /etc/anvilkit/anvilkit-agent-knowledge /etc/anvilkit/anvilkit-agent-knowledge
+COPY --from=forwarder /usr/local/bin/anvilkit-knowledge-forwarder /usr/local/bin/anvilkit-knowledge-forwarder
+COPY supervise.mjs /anvilkit/supervise.mjs
+ENTRYPOINT ["node", "/anvilkit/supervise.mjs"]
+CMD []

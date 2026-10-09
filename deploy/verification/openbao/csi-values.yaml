@@ -1,0 +1,18 @@
+# Platform DaemonSet. Credentials stay in ephemeral CSI volumes, never K8s Secrets.
+syncSecret:
+  enabled: false
+enableSecretRotation: true
+rotationPollInterval: 2m
+tokenRequests:
+  - audience: openbao
+    expirationSeconds: 600
+linux:
+  image:
+    digest: sha256:b48d7d13dd06f0c7fdb2ec03683387e229d80d327172ecb0e21948b811540c6e
+  registrarImage:
+    digest: sha256:ab482308a4921e28a6df09a16ab99a457e9af9641ff44fb1be1a690d07ce8b70
+  livenessProbeImage:
+    digest: sha256:c4cc074199c045dd73ab85f28897e2a32f4d6f38ffdba4f3b13b8007ccbd3570
+  crds:
+    image:
+      tag: v1.6.1@sha256:cdacfdbe8966aa77c080b850b52a86880363119530f7aa6b4f05b8ffe19c2ec3

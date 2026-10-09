@@ -1,0 +1,4 @@
+apiVersion: v2
+name: anvilkit-verification-registry
+version: 0.1.0
+description: Private TLS registry for exclusively owned local verification images

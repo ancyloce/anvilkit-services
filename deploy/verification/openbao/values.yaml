@@ -1,0 +1,60 @@
+# Local functional testing: one persistent Raft member, TLS, no injector.
+global:
+  tlsDisable: false
+injector:
+  enabled: false
+server:
+  image:
+    tag: 2.6.2@sha256:11fd73a2102cda9c55d5d881a8c3210303146a7ec1e8ac76f526e175c6d24641
+  resources:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {memory: 512Mi}
+  dataStorage:
+    enabled: true
+    size: 2Gi
+    storageClass: standard
+  extraEnvironmentVars:
+    BAO_CACERT: /openbao/tls/ca.crt
+    BAO_TLS_SERVER_NAME: openbao.anvilkit-secrets.svc
+  volumes:
+    - name: tls
+      secret: {secretName: openbao-tls}
+  volumeMounts:
+    - name: tls
+      mountPath: /openbao/tls
+      readOnly: true
+  standalone:
+    enabled: false
+  ha:
+    enabled: true
+    replicas: 1
+    raft:
+      enabled: true
+      setNodeId: true
+      config: |
+        ui = true
+        disable_mlock = true
+        listener "tcp" {
+          address = "[::]:8200"
+          cluster_address = "[::]:8201"
+          tls_cert_file = "/openbao/tls/tls.crt"
+          tls_key_file = "/openbao/tls/tls.key"
+        }
+        storage "raft" { path = "/openbao/data" }
+        service_registration "kubernetes" {}
+csi:
+  image:
+    tag: 2.0.3@sha256:ad30d5f6223f30f62e8df6e444b84af5b05402a70c09712415dd1d7f139c027e
+  enabled: true
+  agent:
+    enabled: false
+  volumes:
+    - name: ca
+      configMap: {name: openbao-ca}
+  volumeMounts:
+    - name: ca
+      mountPath: /openbao/tls
+      readOnly: true
+  resources:
+    requests: {cpu: 25m, memory: 64Mi}
+    limits: {memory: 128Mi}

@@ -1,0 +1,70 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: minio
+  labels: &id001
+    app: verification-minio
+    anvilkit.io/owner: repairs-f01-f12
+    anvilkit.io/class: platform
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: verification-minio
+  template:
+    metadata:
+      labels: *id001
+    spec:
+      automountServiceAccountToken: false
+      nodeSelector:
+        anvilkit.io/workload: data
+      containers:
+      - name: minio
+        image: {{ .Values.minio | quote }}
+        ports:
+        - name: service
+          containerPort: 9000
+        readinessProbe:
+          tcpSocket:
+            port: service
+          periodSeconds: 2
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: '1'
+            memory: 768Mi
+        volumeMounts:
+        - name: data
+          mountPath: /data
+        command:
+        - minio
+        - server
+        - /data
+        envFrom:
+        - secretRef:
+            name: minio-credentials
+      volumes:
+      - name: data
+        hostPath:
+          path: /var/lib/anvilkit-verification/minio
+          type: DirectoryOrCreate
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: minio
+  labels:
+    app: verification-minio
+    anvilkit.io/owner: repairs-f01-f12
+    anvilkit.io/class: platform
+spec:
+  selector:
+    app: verification-minio
+  ports:
+  - name: service
+    port: 9000
+    targetPort: service

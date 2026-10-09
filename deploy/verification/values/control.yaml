@@ -1,0 +1,72 @@
+replicaCount: 1
+config:
+  profiles:
+    generation:
+      capacity: 1
+    preparation:
+      funding:
+        currency: USD
+        amount: '1000000'
+  model_proxy:
+    address: http://anvilkit-agent-model-proxy:9103
+  dispatch:
+    development:
+      enabled: true
+      authorized_routes:
+      - tenant_id: tenant_a
+        route_id: deepseek-verification
+      prices:
+      - revision: deepseek-flash-offpeak-2026-09-19
+        kind: model
+        route: deepseek-verification
+        provider: deepseek
+        model: deepseek-flash
+        currency: USD
+        effective_from: '2026-09-19T00:00:00Z'
+        effective_until: '2026-09-21T00:00:00Z'
+        input_includes_cached: true
+        output_includes_reasoning: true
+        per_million:
+          input_units: '150000'
+          output_units: '600000'
+          reasoning_units: '600000'
+          cached_input_units: '3000'
+        max_exposure: '200000'
+image:
+  repository: 10.203.0.12:30500/anvilkit-agent-control
+  digest: sha256:83f685a9484f34b4467a526d1ff9995887d3f5e6c689a4c2c4a2100fcd8fb9e6
+  pullPolicy: IfNotPresent
+podDisruptionBudget:
+  enabled: false
+podLabels:
+  anvilkit.io/owner: repairs-f01-f12
+resources:
+  requests:
+    cpu: 50m
+    memory: 96Mi
+  limits:
+    cpu: '1'
+    memory: 512Mi
+database:
+  secret:
+    name: control-app
+migration:
+  secret:
+    name: control-migrator
+temporal:
+  address: temporal:7233
+inventory:
+  s3:
+    endpoint: http://minio:9000
+    bucket: anvilkit-inventory
+    secret:
+      name: inventory
+artifacts:
+  enabled: true
+  s3:
+    endpoint: http://minio:9000
+    bucket: anvilkit-artifacts
+    secret:
+      name: artifacts
+podAnnotations:
+  anvilkit.io/model-proxy-token-secret: model-proxy-clients

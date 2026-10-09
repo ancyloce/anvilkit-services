@@ -1,0 +1,21 @@
+apiVersion: secrets-store.csi.x-k8s.io/v1
+kind: SecretProviderClass
+metadata:
+  name: model-proxy-deepseek
+  namespace: anvilkit-verification
+  labels:
+    anvilkit.io/owner: repairs-f01-f12
+spec:
+  provider: openbao
+  parameters:
+    roleName: model-proxy-deepseek
+    baoKubernetesMountPath: kubernetes-rke2
+    baoAddress: https://10.203.0.1:18200
+    baoTLSServerName: openbao.anvilkit-secrets.svc
+    baoCACertPath: /openbao/tls/ca.crt
+    audience: openbao
+    objects: |
+      - objectName: deepseek-api-key
+        secretPath: kv/data/anvilkit/local/model-proxy/deepseek
+        secretKey: api_key
+        filePermission: 0444

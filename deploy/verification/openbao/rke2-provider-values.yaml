@@ -1,0 +1,28 @@
+# Use the existing kind OpenBao server; only CSI infrastructure runs on RKE2.
+server:
+  enabled: false
+injector:
+  enabled: false
+csi:
+  enabled: true
+  image:
+    tag: 2.0.3@sha256:ad30d5f6223f30f62e8df6e444b84af5b05402a70c09712415dd1d7f139c027e
+  agent:
+    enabled: false
+  daemonSet:
+    providersDir: /var/run/secrets-store-csi-providers
+  pod:
+    nodeSelector:
+      anvilkit.io/workload: application
+    extraLabels:
+      anvilkit.io/owner: repairs-f01-f12
+  volumes:
+    - name: ca
+      configMap: {name: openbao-ca}
+  volumeMounts:
+    - name: ca
+      mountPath: /openbao/tls
+      readOnly: true
+  resources:
+    requests: {cpu: 25m, memory: 64Mi}
+    limits: {memory: 128Mi}

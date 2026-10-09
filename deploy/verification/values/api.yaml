@@ -1,0 +1,21 @@
+replicaCount: 1
+image:
+  repository: 10.203.0.12:30500/anvilkit-agent-api
+  digest: sha256:418a38f56a9732a1a54c47aa95906f18fdba1f08dc87dbedc831d21ee6d83290
+  pullPolicy: IfNotPresent
+podDisruptionBudget:
+  enabled: false
+podLabels:
+  anvilkit.io/owner: repairs-f01-f12
+resources:
+  requests:
+    cpu: 50m
+    memory: 96Mi
+  limits:
+    cpu: '1'
+    memory: 512Mi
+control:
+  address: anvilkit-agent-control:9101
+auth:
+  principalsSecret:
+    name: api-principals

@@ -1,0 +1,9 @@
+ARG OWNER_IMAGE
+ARG WORKER_IMAGE
+FROM ${OWNER_IMAGE} AS owner
+FROM ${WORKER_IMAGE}
+COPY --from=owner /usr/local/bin/anvilkit-agent-mcp /usr/local/bin/anvilkit-agent-mcp
+COPY --from=owner /etc/anvilkit/anvilkit-agent-mcp /etc/anvilkit/anvilkit-agent-mcp
+COPY supervise.mjs /anvilkit/supervise.mjs
+ENTRYPOINT ["node", "/anvilkit/supervise.mjs"]
+CMD []

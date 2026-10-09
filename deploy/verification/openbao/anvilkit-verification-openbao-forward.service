@@ -1,0 +1,12 @@
+[Unit]
+Description=Owned AnvilKit verification TLS tunnel to existing kind OpenBao
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+ExecStart=/root/Rhett/anvilkit-services/.local/bin/kubectl --kubeconfig=/root/.kube/config --context=kind-anvilkit-dev -n anvilkit-secrets port-forward --address=10.203.0.1 svc/openbao 18200:8200
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
