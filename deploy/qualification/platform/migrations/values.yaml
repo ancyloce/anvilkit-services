@@ -1,0 +1,22 @@
+# Release images by digest (the environment supplies them from the release manifest).
+migrationImage: ""
+knowledgeImage: ""
+# Each domain's migrator URL. P0.6 (csi.enabled): from OpenBao through the
+# Secrets Store CSI driver, the Jobs' own ServiceAccount and role
+# (anvilkit-migrations) reading the keys migration-<domain> and
+# migration-knowledge-store of csi.path; the URLs are sslmode=verify-full
+# against the qualification CA. Without csi, the named Secrets (key url).
+csi:
+  enabled: true
+  address: https://openbao.anvilkit-platform.svc:8200
+  caCertPath: /openbao/tls/ca.crt
+  audience: openbao
+  path: kv/data/anvilkit/apps/migrations
+# The data plane's CA bundle (the anvilkit-trust ConfigMap bootstrap.py
+# maintains, key ca.crt): the DSNs' sslrootcert names /etc/anvilkit/trust/ca.crt.
+trust:
+  configMap: anvilkit-trust
+domains:
+  - {name: knowledge, secret: anvilkit-migration-knowledge}
+  - {name: mcp, secret: anvilkit-migration-mcp}
+storeSecret: anvilkit-migration-knowledge-store

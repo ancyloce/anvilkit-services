@@ -1,0 +1,43 @@
+# DEVELOPMENT_ONLY environment values of anvilkit-agent-inference for the P23 qualification
+# cluster (kind anvilkit-qualification: three control-plane and three worker
+# nodes whose zone labels are simulated failure domains on one host). The
+# chart is owned by the service repository; this file is the parent's
+# environment combination. The image digest comes from the release manifest
+# (tools/release-artifacts.py) through deploy/gitops; Secrets are created by
+# deploy/qualification/bootstrap.py and never enter Git. The replica, HPA,
+# disruption, placement and pool limits are the ones deploy/gitops/lock.yaml
+# declares for this environment (tools/check-deployment-lock.py).
+image:
+  repository: anvilkit-dev-registry:5000/anvilkit-agent-inference
+  pullPolicy: IfNotPresent
+replicaCount: 2
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 70
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: DoNotSchedule
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: anvilkit-agent-inference
+  - maxSkew: 1
+    topologyKey: topology.kubernetes.io/zone
+    whenUnsatisfiable: DoNotSchedule
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: anvilkit-agent-inference
+# P0.6 (F-P0.1-2): the listener serves HTTPS with a certificate the
+# qualification PKI issues (anvilkit-pki); Knowledge verifies it by the
+# Service name against the same CA.
+tls:
+  mode: tls
+  trustDomain: anvilkit.qualification
+  certificate:
+    issuerRef:
+      name: anvilkit-qualification-ca

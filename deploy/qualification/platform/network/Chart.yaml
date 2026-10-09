@@ -1,0 +1,5 @@
+apiVersion: v2
+name: anvilkit-network
+description: Default-deny NetworkPolicies of the six AnvilKit namespaces with one allow rule per communication-matrix row (P0.4; external CIDRs are ENV-03 inputs)
+type: application
+version: 0.1.0

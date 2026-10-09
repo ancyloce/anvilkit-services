@@ -1,0 +1,69 @@
+# DEVELOPMENT_ONLY environment values of anvilkit-agent-workflow for the P23 qualification
+# cluster (kind anvilkit-qualification: three control-plane and three worker
+# nodes whose zone labels are simulated failure domains on one host). The
+# chart is owned by the service repository; this file is the parent's
+# environment combination. The image digest comes from the release manifest
+# (tools/release-artifacts.py) through deploy/gitops; Secrets are created by
+# deploy/qualification/bootstrap.py and never enter Git. The replica, HPA,
+# disruption, placement and pool limits are the ones deploy/gitops/lock.yaml
+# declares for this environment (tools/check-deployment-lock.py).
+image:
+  repository: anvilkit-dev-registry:5000/anvilkit-agent-workflow
+  pullPolicy: IfNotPresent
+replicaCount: 2
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 70
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: DoNotSchedule
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: anvilkit-agent-workflow
+  - maxSkew: 1
+    topologyKey: topology.kubernetes.io/zone
+    whenUnsatisfiable: DoNotSchedule
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: anvilkit-agent-workflow
+# P0.6: the frontend's TLS, verified against the CA of the workload identity bundle.
+temporal:
+  tls:
+    mode: tls
+    serverName: anvilkit-temporal-frontend
+    caSecret:
+      name: anvilkit-agent-workflow-identity
+      key: ca.crt
+  address: anvilkit-temporal-frontend.anvilkit-platform.svc.cluster.local:7233
+control:
+  address: anvilkit-agent-control.anvilkit-apps.svc.cluster.local:9101
+launcher:
+  namespace: anvilkit-components
+  backend: anvilkit-qualification
+  imageRegistry: anvilkit-dev-registry:5000
+  sidecarControlAddress: anvilkit-agent-control.anvilkit-apps.svc.cluster.local:9101
+# Telemetry (P23-06): spans to the node-local Collector (anvilkit-telemetry,
+# internalTrafficPolicy Local), metrics scraped from the annotated Pod's health port.
+podAnnotations:
+  prometheus.io/scrape: "true"
+telemetry:
+  otlpTls:
+    mode: development
+  otlpEndpoint: "anvilkit-otel-collector.anvilkit-observability.svc.cluster.local:4317"
+# P0.1: the workload identity issued by the qualification PKI (anvilkit-pki).
+identity:
+  trustDomain: anvilkit.qualification
+  certificate:
+    issuerRef:
+      name: anvilkit-qualification-ca
+# The data plane of this environment is still plaintext (P0.6): each such
+# connection names its development mode and the top-level guard admits it;
+# the gRPC listener and clients stay mTLS.
+development:
+  enabled: true

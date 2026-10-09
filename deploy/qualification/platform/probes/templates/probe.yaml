@@ -1,0 +1,64 @@
+# After every sync of the environment: the API admits a LocalCheck and the
+# operation reaches succeeded (API -> Control -> Temporal -> Workflow -> the
+# Kubernetes Job -> independent acceptance). A failure fails the sync of the
+# last wave, so Argo CD reports the environment unhealthy.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: anvilkit-probe
+data:
+  # The environment revision this probe belongs to (deploy/gitops/publish.py): each
+  # revision changes this tracked ConfigMap, so every sync of a new revision runs the
+  # PostSync probe (Argo CD leaves hooks out of its comparison).
+  environmentRevision: {{ required "environmentRevision is set by deploy/gitops/publish.py" .Values.environmentRevision | quote }}
+  probe.sh: |
+    set -eu
+    api={{ .Values.api }}
+    curl -fsS "$api/readyz" >/dev/null
+    cmd="probe-$(date +%s)-$$"
+    body='{"commandId":"'$cmd'","kind":"local_check","subject":{"profileId":"local-check-v1","subjectDigest":"{{ .Values.subjectDigest }}"}}'
+    created=$(curl -fsS -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d "$body" "$api/api/v1/operations")
+    id=$(printf '%s' "$created" | sed -n 's/.*"operationId":"\([^"]*\)".*/\1/p')
+    [ -n "$id" ] || { echo "no operationId in the intake answer"; exit 1; }
+    end=$(( $(date +%s) + {{ .Values.timeoutSeconds }} ))
+    while [ "$(date +%s)" -lt "$end" ]; do
+      lifecycle=$(curl -fsS -H "Authorization: Bearer $TOKEN" "$api/api/v1/operations/$id" | sed -n 's/.*"lifecycle":"\([^"]*\)".*/\1/p')
+      case "$lifecycle" in
+        succeeded) echo "probe operation $id succeeded"; exit 0 ;;
+        failed|canceled|rejected|expired) echo "probe operation $id ended $lifecycle"; exit 1 ;;
+      esac
+      sleep 2
+    done
+    echo "probe operation $id did not finish in {{ .Values.timeoutSeconds }}s (last: $lifecycle)"
+    exit 1
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: anvilkit-probe
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: 2
+  activeDeadlineSeconds: {{ add .Values.timeoutSeconds 120 }}
+  template:
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext: {runAsNonRoot: true, runAsUser: 100, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: probe
+          image: {{ .Values.image }}
+          command: ["sh", "/probe/probe.sh"]
+          env:
+            - name: TOKEN
+              valueFrom: {secretKeyRef: {name: {{ .Values.tokenSecret }}, key: token}}
+          resources:
+            requests: {cpu: 10m, memory: 16Mi}
+            limits: {cpu: 100m, memory: 64Mi}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: ["ALL"]}}
+          volumeMounts: [{name: probe, mountPath: /probe}]
+      volumes:
+        - name: probe
+          configMap: {name: anvilkit-probe}

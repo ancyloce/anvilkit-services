@@ -1,0 +1,65 @@
+{{- define "anvilkit-data.cluster" -}}
+{{- $ := index . 0 }}{{ $name := index . 1 }}{{ $maxConnections := index . 2 }}{{ $initdb := index . 3 }}{{ $roles := index . 4 }}
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: {{ $name }}
+spec:
+  # One primary and two standbys, one per zone; a synchronous ANY 1 standby
+  # that never blocks writes when no standby answers (DD-10 §3).
+  instances: 3
+  imageName: {{ $.Values.postgresImage }}
+  primaryUpdateStrategy: unsupervised
+  postgresql:
+    parameters:
+      max_connections: {{ $maxConnections | quote }}
+    synchronous:
+      method: any
+      number: 1
+      dataDurability: preferred
+  bootstrap:
+    initdb:
+      database: {{ $initdb.database }}
+      owner: {{ $initdb.owner }}
+  certificates:
+    serverTLSSecret: {{ index $.Values.serverTLS $name }}
+    serverCASecret: {{ index $.Values.serverTLS $name }}
+  storage:
+    size: {{ $.Values.storageSize }}
+  resources:
+    {{- toYaml $.Values.resources | nindent 4 }}
+  affinity:
+    enablePodAntiAffinity: true
+    podAntiAffinityType: required
+    topologyKey: topology.kubernetes.io/zone
+  plugins:
+    - name: barman-cloud.cloudnative-pg.io
+      isWALArchiver: true
+      parameters:
+        barmanObjectName: dr-store
+        serverName: {{ $name }}
+  managed:
+    roles:
+      {{- range $roles }}
+      - name: {{ . }}
+        ensure: present
+        login: true
+      {{- end }}
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: {{ $name }}
+spec:
+  cluster:
+    name: {{ $name }}
+  schedule: {{ $.Values.backup.schedule | quote }}
+  immediate: true
+  backupOwnerReference: self
+  method: plugin
+  pluginConfiguration:
+    name: barman-cloud.cloudnative-pg.io
+{{- end -}}
+{{ include "anvilkit-data.cluster" (list . "anvilkit-business" .Values.maxConnections.business (dict "database" "anvilkit_control" "owner" "anvilkit_control_migrator") .Values.businessRoles) }}
+---
+{{ include "anvilkit-data.cluster" (list . "anvilkit-temporal" .Values.maxConnections.temporal (dict "database" "temporal" "owner" "temporal") (list "temporal")) }}

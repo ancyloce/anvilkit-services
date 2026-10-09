@@ -1,0 +1,111 @@
+# DEVELOPMENT_ONLY environment values of anvilkit-agent-knowledge for the P23 qualification
+# cluster (kind anvilkit-qualification: three control-plane and three worker
+# nodes whose zone labels are simulated failure domains on one host). The
+# chart is owned by the service repository; this file is the parent's
+# environment combination. The image digest comes from the release manifest
+# (tools/release-artifacts.py) through deploy/gitops; the credentials reach the Pods
+# from OpenBao through the CSI driver (P0.6; bootstrap.py writes them there). The replica, HPA,
+# disruption, placement and pool limits are the ones deploy/gitops/lock.yaml
+# declares for this environment (tools/check-deployment-lock.py).
+image:
+  repository: anvilkit-dev-registry:5000/anvilkit-agent-knowledge
+  pullPolicy: IfNotPresent
+replicaCount: 2
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 70
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: DoNotSchedule
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: anvilkit-agent-knowledge
+        app.kubernetes.io/component: knowledge
+  - maxSkew: 1
+    topologyKey: topology.kubernetes.io/zone
+    whenUnsatisfiable: DoNotSchedule
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: anvilkit-agent-knowledge
+        app.kubernetes.io/component: knowledge
+secrets:
+  provider: csi
+  csi:
+    address: https://openbao.anvilkit-platform.svc:8200
+    caCertPath: /openbao/tls/ca.crt
+    path: kv/data/anvilkit/apps/anvilkit-agent-knowledge
+trust:
+  configMap: anvilkit-trust
+# P0.6: JetStream over TLS, verified against the CA of the workload identity
+# bundle; the forwarder's and the relay's NKey seeds are CSI files.
+nats:
+  tls:
+    mode: tls
+    caSecret:
+      name: anvilkit-agent-knowledge-identity
+      key: ca.crt
+  url: tls://anvilkit-nats.anvilkit-data.svc.cluster.local:4222
+control:
+  address: anvilkit-agent-control.anvilkit-apps.svc.cluster.local:9101
+objects:
+  endpoint: https://anvilkit-objects.anvilkit-data.svc.cluster.local:9000
+  stageEndpoint: https://anvilkit-objects.anvilkit-data.svc.cluster.local:9000
+inference:
+  tls:
+    mode: tls
+    caSecret:
+      name: anvilkit-agent-knowledge-identity
+      key: ca.crt
+  url: https://anvilkit-agent-inference.anvilkit-apps.svc.cluster.local:9108
+qdrant:
+  url: https://anvilkit-qdrant.anvilkit-data.svc.cluster.local:6333
+store:
+  enabled: true
+# P23: the removal inventory in the DR object store outside the cluster (its
+# own bucket and bucket-limited user beside Control's obligation inventory;
+# it shares the host, so it is not an independent failure domain: ENV-02).
+removals:
+  endpoint: http://anvilkit-qualification-dr:9000
+# The three-peer Qdrant of this environment: every collection RF=3/WCF=2 with
+# strong write ordering (DD-10); the database pools the lock budgets.
+config:
+  qdrant:
+    replication_factor: 3
+    write_consistency_factor: 2
+    write_ordering: strong
+  database:
+    max_conn: 8
+  store:
+    max_conn: 4
+forwarder:
+  enabled: true
+  image:
+    repository: anvilkit-dev-registry:5000/anvilkit-knowledge-forwarder
+relay:
+  enabled: true
+  image:
+    repository: anvilkit-dev-registry:5000/anvilkit-agent-background-worker
+# Telemetry (P23-06): spans to the node-local Collector (anvilkit-telemetry,
+# internalTrafficPolicy Local), metrics scraped from the annotated Pod's health port.
+podAnnotations:
+  prometheus.io/scrape: "true"
+telemetry:
+  otlpEndpoint: "http://anvilkit-otel-collector.anvilkit-observability.svc.cluster.local:4318"
+# P0.1: the workload identity issued by the qualification PKI (anvilkit-pki).
+identity:
+  trustDomain: anvilkit.qualification
+  certificate:
+    issuerRef:
+      name: anvilkit-qualification-ca
+# DEVELOPMENT_ONLY (P0.6): every in-cluster data connection is TLS with
+# verification and every credential comes from OpenBao; the guard still admits
+# the development-labelled connections left: the removal inventory in the DR
+# store outside the cluster (http, ENV-02) and the OTLP export (B-36).
+development:
+  enabled: true

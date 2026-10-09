@@ -1,0 +1,68 @@
+# Buckets, one user per service and its bucket-limited policy (the development
+# foundation's minio-setup.sh, against this store). Idempotent; rerun on sync.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: anvilkit-objects-setup
+data:
+  # The PostSync hook's image, tracked so a new one re-runs the setup.
+  mcImage: {{ .Values.mcImage | quote }}
+  setup.sh: |
+    set -eu
+    mc alias set store {{ if .Values.tls.enabled }}https{{ else }}http{{ end }}://anvilkit-objects:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null
+    {{- range .Values.buckets }}
+    mc mb --ignore-existing store/{{ .name }} >/dev/null
+    {{- if .versioned }}
+    mc version enable store/{{ .name }} >/dev/null
+    {{- end }}
+    cat > /tmp/{{ .name }}.json <<'POLICY'
+    {"Version": "2012-10-17", "Statement": [{"Effect": "Allow", "Action": {{ toJson .actions }}, "Resource": ["arn:aws:s3:::{{ .name }}", "arn:aws:s3:::{{ .name }}/*"]}]}
+    POLICY
+    mc admin policy create store {{ .name }} /tmp/{{ .name }}.json >/dev/null
+    mc admin user info store "${{ .user }}_ACCESS_KEY_ID" >/dev/null 2>&1 || mc admin user add store "${{ .user }}_ACCESS_KEY_ID" "${{ .user }}_SECRET_ACCESS_KEY" >/dev/null
+    mc admin policy attach store {{ .name }} --user "${{ .user }}_ACCESS_KEY_ID" >/dev/null 2>&1 || true
+    echo "bucket {{ .name }} ready"
+    {{- end }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: anvilkit-objects-setup
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: 20
+  template:
+    spec:
+      restartPolicy: OnFailure
+      securityContext: {runAsNonRoot: true, runAsUser: 1000, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: setup
+          image: {{ .Values.mcImage }}
+          command: ["sh", "/setup/setup.sh"]
+          env:
+            - {name: HOME, value: /tmp}
+            - {name: MC_CONFIG_DIR, value: /tmp/.mc}
+          envFrom:
+            - secretRef: {name: {{ .Values.rootSecret }}}
+            - secretRef: {name: {{ .Values.usersSecret }}}
+          resources:
+            requests: {cpu: 10m, memory: 32Mi}
+            limits: {cpu: 200m, memory: 128Mi}
+          securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: ["ALL"]}}
+          volumeMounts:
+            - {name: setup, mountPath: /setup}
+            {{- if .Values.tls.enabled }}
+            # mc trusts the CA files under $MC_CONFIG_DIR/certs/CAs.
+            - {name: ca, mountPath: /tmp/.mc/certs/CAs, readOnly: true}
+            {{- end }}
+      volumes:
+        - name: setup
+          configMap: {name: anvilkit-objects-setup}
+        {{- if .Values.tls.enabled }}
+        - name: ca
+          secret:
+            secretName: {{ .Values.tls.secretName }}
+            items: [{key: ca.crt, path: ca.crt}]
+        {{- end }}

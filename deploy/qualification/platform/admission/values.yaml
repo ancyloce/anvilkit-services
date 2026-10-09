@@ -1,0 +1,8 @@
+# The registry every anvilkit-apps image must come from, by digest.
+registry: anvilkit-dev-registry:5000
+# The release signing key's public half (tools/release-artifacts.py writes it to the
+# release manifest's directory). Supplied by the environment; DEVELOPMENT_ONLY until
+# ENV-10 names the key custody.
+publicKey: ""
+# The development registry serves plain HTTP.
+allowInsecureRegistry: true

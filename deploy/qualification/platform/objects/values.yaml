@@ -1,0 +1,28 @@
+# Docker Hub and quay.io no longer serve MinIO anonymously: cluster.sh up vendors the
+# host-cached images (minio/minio index sha256:14cea493…, minio/mc sha256:a7fe349e…)
+# into the environment registry; these are the pushed linux/amd64 manifests.
+image: anvilkit-dev-registry:5000/vendor/minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:52dfd5c0bbd38d3219f2058c7af216d9f9a27a994b7b5baad09bbd38866015ff
+mcImage: anvilkit-dev-registry:5000/vendor/minio/mc:a7fe349ef4bd@sha256:bdfae21c72b19fae5a005c56dddba25a873d75fac3dda60f55aea7e417382cbe
+storageSize: 4Gi
+# Root credentials and each service user's keys. P0.6: Secrets the CSI driver
+# syncs from OpenBao (deploy/qualification/platform/secrets), written there by
+# the bootstrap; MinIO and mc read only environment variables.
+rootSecret: anvilkit-objects-root
+usersSecret: anvilkit-objects-users
+# P0.6: the S3 API serves TLS with the cert-manager server certificate
+# (anvilkit-pki servers); the setup Job verifies it against the same CA.
+tls:
+  enabled: true
+  secretName: anvilkit-objects-tls
+# bucket -> the user (key prefix in the users Secret) and the actions it may use.
+buckets:
+  - name: anvilkit-artifacts
+    versioned: true
+    user: ARTIFACTS
+    actions: ["s3:GetObject", "s3:GetObjectVersion", "s3:PutObject", "s3:DeleteObject", "s3:DeleteObjectVersion", "s3:ListBucket", "s3:ListBucketVersions", "s3:GetBucketLocation", "s3:GetBucketVersioning"]
+  - name: anvilkit-model-proxy
+    user: MODEL_PROXY
+    actions: ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:ListBucket", "s3:GetBucketLocation"]
+  - name: anvilkit-knowledge
+    user: KNOWLEDGE
+    actions: ["s3:GetObject", "s3:PutObject", "s3:ListBucket", "s3:GetBucketLocation"]

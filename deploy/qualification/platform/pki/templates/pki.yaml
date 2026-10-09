@@ -1,0 +1,67 @@
+# SelfSigned bootstrap issuer -> root CA Certificate (its Secret lives in
+# cert-manager's namespace and no workload reads it) -> the CA ClusterIssuer
+# every service chart's Certificate references. The root is DEVELOPMENT_ONLY
+# trust material: ENV-03 replaces it with the environment's CA, and the
+# services keep rotating through cert-manager.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: {{ .Values.issuerName }}-bootstrap
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ .Values.issuerName }}-root
+  namespace: {{ .Release.Namespace }}
+spec:
+  isCA: true
+  commonName: {{ .Values.issuerName }}-root
+  secretName: {{ .Values.issuerName }}-root
+  duration: {{ .Values.rootDuration }}
+  renewBefore: {{ .Values.rootRenewBefore }}
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: {{ .Values.issuerName }}-bootstrap
+    kind: ClusterIssuer
+    group: cert-manager.io
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: {{ .Values.issuerName }}
+spec:
+  ca:
+    secretName: {{ .Values.issuerName }}-root
+{{- range .Values.servers }}
+---
+# P0.6: a data-plane server certificate (server auth only).
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ .name }}
+  namespace: {{ .namespace }}
+spec:
+  secretName: {{ .name }}
+  commonName: {{ first .dnsNames }}
+  duration: {{ $.Values.serverDuration }}
+  renewBefore: {{ $.Values.serverRenewBefore }}
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  usages: [digital signature, key encipherment, server auth{{ if .clientAuth }}, client auth{{ end }}]
+  dnsNames:
+    {{- toYaml .dnsNames | nindent 4 }}
+  {{- with .ipAddresses }}
+  ipAddresses:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  issuerRef:
+    name: {{ $.Values.issuerName }}
+    kind: ClusterIssuer
+    group: cert-manager.io
+{{- end }}

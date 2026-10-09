@@ -1,0 +1,54 @@
+# The trust domain of the workload identities this issuer signs
+# (spiffe://<trustDomain>/ns/<namespace>/sa/<service-account>). One trust
+# domain per environment; never shared with another cluster.
+trustDomain: anvilkit.qualification
+# The issuer the service charts reference (identity.certificate.issuerRef).
+issuerName: anvilkit-qualification-ca
+# The root CA's lifetime and renewal lead (cert-manager rotates it; the
+# services reload their bundles).
+rootDuration: 8760h
+rootRenewBefore: 720h
+# P0.6: the data plane's server certificates, issued by the same CA the
+# workloads' identity bundles carry (/etc/anvilkit/identity/ca.crt), so every
+# client verifies PostgreSQL (sslrootcert), NATS, Valkey, Qdrant, the object
+# store, Temporal and OpenBao against one trust anchor. Each Secret holds
+# tls.crt, tls.key and ca.crt in the server's namespace; cert-manager renews
+# them and the servers reload or roll.
+servers:
+  - name: openbao-tls
+    namespace: anvilkit-platform
+    dnsNames: [openbao, openbao.anvilkit-platform.svc, openbao.anvilkit-platform.svc.cluster.local, openbao-active.anvilkit-platform.svc,
+               openbao-internal, "*.openbao-internal", "*.openbao-internal.anvilkit-platform.svc", "*.openbao-internal.anvilkit-platform.svc.cluster.local"]
+    ipAddresses: [127.0.0.1]
+  - name: anvilkit-temporal-frontend-tls
+    namespace: anvilkit-platform
+    dnsNames: [anvilkit-temporal-frontend, anvilkit-temporal-frontend.anvilkit-platform.svc, anvilkit-temporal-frontend.anvilkit-platform.svc.cluster.local,
+               anvilkit-temporal-internal-frontend.anvilkit-platform.svc.cluster.local]
+  - name: anvilkit-business-server-tls
+    namespace: anvilkit-data
+    dnsNames: [anvilkit-business-rw, anvilkit-business-ro, anvilkit-business-r, anvilkit-business-rw.anvilkit-data.svc, anvilkit-business-rw.anvilkit-data.svc.cluster.local,
+               anvilkit-business-ro.anvilkit-data.svc.cluster.local, anvilkit-business-r.anvilkit-data.svc.cluster.local]
+  - name: anvilkit-temporal-server-tls
+    namespace: anvilkit-data
+    dnsNames: [anvilkit-temporal-rw, anvilkit-temporal-ro, anvilkit-temporal-r, anvilkit-temporal-rw.anvilkit-data.svc, anvilkit-temporal-rw.anvilkit-data.svc.cluster.local,
+               anvilkit-temporal-ro.anvilkit-data.svc.cluster.local, anvilkit-temporal-r.anvilkit-data.svc.cluster.local]
+  - name: anvilkit-nats-tls
+    namespace: anvilkit-data
+    # The cluster routes present it to each other as clients too.
+    clientAuth: true
+    dnsNames: [anvilkit-nats, anvilkit-nats.anvilkit-data.svc, anvilkit-nats.anvilkit-data.svc.cluster.local, "*.anvilkit-nats-headless",
+               "*.anvilkit-nats-headless.anvilkit-data.svc", "*.anvilkit-nats-headless.anvilkit-data.svc.cluster.local"]
+  - name: anvilkit-valkey-queue-tls
+    namespace: anvilkit-data
+    dnsNames: [anvilkit-valkey-queue, anvilkit-valkey-queue.anvilkit-data.svc.cluster.local, anvilkit-valkey-queue-master.anvilkit-data.svc.cluster.local,
+               anvilkit-valkey-queue-sentinel.anvilkit-data.svc.cluster.local, "*.anvilkit-valkey-queue-headless.anvilkit-data.svc.cluster.local"]
+  - name: anvilkit-qdrant-tls
+    namespace: anvilkit-data
+    # The peers present it to each other (p2p TLS).
+    clientAuth: true
+    dnsNames: [anvilkit-qdrant, anvilkit-qdrant.anvilkit-data.svc, anvilkit-qdrant.anvilkit-data.svc.cluster.local, "*.anvilkit-qdrant-headless.anvilkit-data.svc.cluster.local"]
+  - name: anvilkit-objects-tls
+    namespace: anvilkit-data
+    dnsNames: [anvilkit-objects, anvilkit-objects.anvilkit-data.svc, anvilkit-objects.anvilkit-data.svc.cluster.local]
+serverDuration: 2160h
+serverRenewBefore: 720h

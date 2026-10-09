@@ -1,0 +1,10 @@
+image: curlimages/curl:8.11.1@sha256:c1fe1679c34d9784c1b0d1e5f62ac0a79fca01fb6377cdd33e90473c6f9f9a69
+api: http://anvilkit-agent-api.anvilkit-apps.svc.cluster.local
+# The probe principal's bearer token (DEVELOPMENT_ONLY fixture identity until
+# ENV-07): a Secret the bootstrap creates, key token.
+tokenSecret: anvilkit-probe-token
+# The fixed LocalCheck subject (local-check-v1).
+subjectDigest: sha256:0dc7fa9db7237a2b5c96f70f59bb00f73bb86a0ca5554e91c312f9ada26e18b3
+timeoutSeconds: 300
+# The environment chart version, set by deploy/gitops/publish.py.
+environmentRevision: ""

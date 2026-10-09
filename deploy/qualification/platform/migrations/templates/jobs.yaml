@@ -1,0 +1,154 @@
+{{- if or (not .Values.migrationImage) (not .Values.knowledgeImage) }}{{ fail "migrationImage and knowledgeImage are required (release digests)" }}{{ end }}
+{{- define "anvilkit-migrations.pod" -}}
+restartPolicy: OnFailure
+{{- if .Values.csi.enabled }}
+serviceAccountName: anvilkit-migrations
+{{- end }}
+automountServiceAccountToken: false
+enableServiceLinks: false
+securityContext: {runAsNonRoot: true, runAsUser: 65532, runAsGroup: 65532, seccompProfile: {type: RuntimeDefault}}
+{{- end }}
+---
+# The Jobs below are Sync hooks, which Argo CD leaves out of its comparison: an
+# application whose manifests are only hooks never goes OutOfSync, so automated
+# sync would never run a new release's migrations. This tracked ConfigMap holds
+# every input of the hooks; a new image or domain makes the application OutOfSync
+# and its sync runs the hooks.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: anvilkit-migrations-inputs
+data:
+  migrationImage: {{ .Values.migrationImage | quote }}
+  knowledgeImage: {{ .Values.knowledgeImage | quote }}
+  domains: {{ .Values.domains | toJson | quote }}
+  storeSecret: {{ .Values.storeSecret | quote }}
+  csi: {{ .Values.csi | toJson | quote }}
+  trust: {{ .Values.trust | toJson | quote }}
+{{- if .Values.csi.enabled }}
+---
+# P0.6: the migration Jobs' identity and their credentials from OpenBao (a
+# wave before the hooks run).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: anvilkit-migrations
+  annotations: {argocd.argoproj.io/sync-wave: "-1"}
+automountServiceAccountToken: false
+---
+apiVersion: secrets-store.csi.x-k8s.io/v1
+kind: SecretProviderClass
+metadata:
+  name: anvilkit-migrations
+  annotations: {argocd.argoproj.io/sync-wave: "-1"}
+spec:
+  provider: openbao
+  parameters:
+    baoAddress: {{ .Values.csi.address | quote }}
+    baoCACertPath: {{ .Values.csi.caCertPath | quote }}
+    roleName: anvilkit-migrations
+    audience: {{ .Values.csi.audience | quote }}
+    objects: |
+      {{- range .Values.domains }}
+      - objectName: {{ printf "migration-%s" .name | quote }}
+        secretPath: {{ $.Values.csi.path | quote }}
+        secretKey: {{ printf "migration-%s" .name | quote }}
+        filePermission: 0444
+      {{- end }}
+      - objectName: "migration-knowledge-store"
+        secretPath: {{ .Values.csi.path | quote }}
+        secretKey: "migration-knowledge-store"
+        filePermission: 0444
+{{- end }}
+{{- range .Values.domains }}
+---
+# One domain's goose migrations under its migrator identity, before every
+# application of this sync (the Sync hook of wave -10's Application).
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ printf "anvilkit-migration-%s" .name }}
+  annotations:
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: 20
+  template:
+    spec:
+      {{- include "anvilkit-migrations.pod" $ | nindent 6 }}
+      containers:
+        - name: migrate
+          image: {{ $.Values.migrationImage }}
+          args: ["-domain", {{ .name | quote }}]
+          env:
+            {{- if $.Values.csi.enabled }}
+            - {name: ANVILKIT_MIGRATION_DSN_FILE, value: {{ printf "/var/run/secrets/anvilkit/csi/migration-%s" .name | quote }}}
+            {{- else }}
+            - name: ANVILKIT_MIGRATION_DSN
+              valueFrom: {secretKeyRef: {name: {{ .secret }}, key: url}}
+            {{- end }}
+          resources:
+            requests: {cpu: 10m, memory: 32Mi}
+            limits: {cpu: 500m, memory: 128Mi}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: ["ALL"]}}
+          {{- include "anvilkit-migrations.mount" $ | nindent 10 }}
+      {{- include "anvilkit-migrations.volume" $ | nindent 6 }}
+{{- end }}
+---
+# The PostgresStore projection's schema under its own migrator identity (P17);
+# runs after the knowledge domain migration that grants it.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: anvilkit-migration-knowledge-store
+  annotations:
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  backoffLimit: 20
+  template:
+    spec:
+      {{- include "anvilkit-migrations.pod" . | nindent 6 }}
+      containers:
+        - name: migrate
+          image: {{ .Values.knowledgeImage }}
+          command: ["node", "/anvilkit/knowledge/dist/storemigrate.js"]
+          env:
+            - {name: HOME, value: /tmp}
+            {{- if .Values.csi.enabled }}
+            - {name: ANVILKIT_KNOWLEDGE_STORE_MIGRATION_URL_FILE, value: /var/run/secrets/anvilkit/csi/migration-knowledge-store}
+            {{- else }}
+            - name: ANVILKIT_KNOWLEDGE_STORE_MIGRATION_URL
+              valueFrom: {secretKeyRef: {name: {{ .Values.storeSecret }}, key: url}}
+            {{- end }}
+          resources:
+            requests: {cpu: 10m, memory: 64Mi}
+            limits: {cpu: 500m, memory: 256Mi}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: ["ALL"]}}
+          {{- include "anvilkit-migrations.mount" . | nindent 10 }}
+      {{- include "anvilkit-migrations.volume" . | nindent 6 }}
+{{- define "anvilkit-migrations.mount" -}}
+{{- if or .Values.csi.enabled .Values.trust.configMap -}}
+volumeMounts:
+{{- if .Values.csi.enabled }}
+  - {name: credentials, mountPath: /var/run/secrets/anvilkit/csi, readOnly: true}
+{{- end }}
+{{- if .Values.trust.configMap }}
+  - {name: trust, mountPath: /etc/anvilkit/trust, readOnly: true}
+{{- end }}
+{{- end -}}
+{{- end -}}
+{{- define "anvilkit-migrations.volume" -}}
+{{- if or .Values.csi.enabled .Values.trust.configMap -}}
+volumes:
+{{- if .Values.csi.enabled }}
+  - name: credentials
+    csi: {driver: secrets-store.csi.k8s.io, readOnly: true, volumeAttributes: {secretProviderClass: anvilkit-migrations}}
+{{- end }}
+{{- if .Values.trust.configMap }}
+  - name: trust
+    configMap: {name: {{ .Values.trust.configMap }}, items: [{key: ca.crt, path: ca.crt}]}
+{{- end }}
+{{- end -}}
+{{- end -}}

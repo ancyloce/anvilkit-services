@@ -1,0 +1,39 @@
+# P23 qualification cluster (DEVELOPMENT_ONLY). Three control-plane nodes with
+# stacked etcd behind kind's load balancer and three workers whose zone labels
+# stand in for failure domains. Every node is a container on this one host and
+# the kind Docker network: the topology exercises Kubernetes placement,
+# disruption and control-plane quorum, never a real failure domain (ENV-01/02).
+# Not RKE2, Cilium, kube-vip or gVisor. Created and removed by
+# deploy/qualification/cluster.sh; the development foundation's anvilkit-dev
+# cluster is a separate cluster and is never touched.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: anvilkit-qualification
+networking:
+  apiServerAddress: 127.0.0.1
+nodes:
+  - role: control-plane
+    image: kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5
+  - role: control-plane
+    image: kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5
+  - role: control-plane
+    image: kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5
+  - role: worker
+    image: kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5
+    labels:
+      topology.kubernetes.io/zone: qa-a
+  - role: worker
+    image: kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5
+    labels:
+      topology.kubernetes.io/zone: qa-b
+  - role: worker
+    image: kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5
+    labels:
+      topology.kubernetes.io/zone: qa-c
+# Registries through containerd's hosts directory: the development registry by
+# its name on the kind network over plain HTTP, Docker Hub through the
+# environment's pull-through cache (cluster.sh writes the hosts.toml files).
+containerdConfigPatches:
+  - |-
+    [plugins."io.containerd.grpc.v1.cri".registry]
+      config_path = "/etc/containerd/certs.d"

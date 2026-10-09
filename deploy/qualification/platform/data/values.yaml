@@ -1,0 +1,47 @@
+# PostgreSQL 17.11 for CloudNativePG 1.30, pinned by digest.
+postgresImage: ghcr.io/cloudnative-pg/postgresql:17.11-standard-trixie@sha256:db440678e1eca4f53999f819a6200ceb4b8cd2339c568c9bb0596052d3bc4ac5
+storageSize: 2Gi
+resources:
+  requests: {cpu: 100m, memory: 256Mi}
+  limits: {cpu: "1", memory: 1Gi}
+# The lock's connection budgets (deploy/gitops/lock.yaml connectionBudgets).
+maxConnections:
+  business: 300
+  temporal: 200
+# Base backups and WAL go to the DR object store outside the cluster.
+backup:
+  destinationPath: s3://anvilkit-backups/
+  endpointURL: http://anvilkit-qualification-dr:9000
+  secret: anvilkit-dr-backup
+  retention: 7d
+  schedule: "0 0 3 * * *"
+# Login roles of the business cluster. P0.6: no Kubernetes Secret carries a
+# role password: the operator manages each role's existence and LOGIN, and
+# deploy/qualification/bootstrap.py sets (and drills.py rotates) the password
+# over the primary's local socket and writes it only to OpenBao, from where
+# the services' CSI volumes deliver their DSNs.
+businessRoles:
+  - anvilkit_control_app
+  - anvilkit_control_migrator
+  - anvilkit_knowledge_app
+  - anvilkit_knowledge_migrator
+  - anvilkit_knowledge_relay
+  - anvilkit_knowledge_forwarder
+  - anvilkit_knowledge_store_migrator
+  - anvilkit_knowledge_store
+  - anvilkit_mcp_app
+  - anvilkit_mcp_migrator
+  - anvilkit_mcp_relay
+# One database per owned domain, owned by its migrator role (the public schema
+# follows the database owner and PUBLIC has no CREATE on PostgreSQL 17).
+businessDatabases:
+  - {name: anvilkit_knowledge, owner: anvilkit_knowledge_migrator}
+  - {name: anvilkit_mcp, owner: anvilkit_mcp_migrator}
+
+# P0.6: the server certificates the clusters present (cert-manager, issued by
+# the qualification CA every workload's identity bundle carries; the clients
+# connect with sslmode=verify-full against it). The operator keeps its own
+# client and replication CA.
+serverTLS:
+  anvilkit-business: anvilkit-business-server-tls
+  anvilkit-temporal: anvilkit-temporal-server-tls

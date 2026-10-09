@@ -1,0 +1,68 @@
+{{- if not .Values.publicKey }}
+{{- fail "publicKey is required: the release signing key's public half" }}
+{{- end }}
+# P23-03: every container, init container and ephemeral container of a Pod in
+# anvilkit-apps runs an image of the release registry pinned by digest and
+# signed by the release key. An image from another registry, a tag, an
+# unsigned image or a signature by another key is denied at admission.
+# The release's signed CycloneDX SBOM attestations are verified by
+# tools/release-artifacts.py, not here: Kyverno 1.19.1 refuses every
+# attestation without a transparency-log bundle (VerifyAttestationSignature
+# requires cosign's bundle verification), and the release uploads nothing to
+# a public log.
+# Pods only: autogen is off, so a Deployment is admitted and its ReplicaSet's
+# Pods are what the policy decides (Argo CD reports them as Degraded).
+apiVersion: policies.kyverno.io/v1
+kind: ImageValidatingPolicy
+metadata:
+  name: anvilkit-apps-signed-images
+spec:
+  validationActions: [Deny]
+  failurePolicy: Fail
+  webhookConfiguration:
+    timeoutSeconds: 30
+  evaluation:
+    background:
+      enabled: false
+  autogen:
+    podControllers:
+      controllers: []
+  matchConstraints:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: anvilkit-apps
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["pods"]
+  matchImageReferences:
+    - glob: {{ printf "%s/*" .Values.registry | quote }}
+  credentials:
+    allowInsecureRegistry: {{ .Values.allowInsecureRegistry }}
+  validationConfigurations:
+    mutateDigest: false
+    verifyDigest: true
+    required: true
+  attestors:
+    - name: release
+      cosign:
+        key:
+          data: |
+            {{- .Values.publicKey | nindent 12 }}
+        ctlog:
+          insecureIgnoreTlog: true
+          insecureIgnoreSCT: true
+  variables:
+    - name: images
+      expression: >-
+        object.spec.containers.map(c, c.image)
+        + (has(object.spec.initContainers) ? object.spec.initContainers.map(c, c.image) : [])
+        + (has(object.spec.ephemeralContainers) ? object.spec.ephemeralContainers.map(c, c.image) : [])
+  validations:
+    - expression: >-
+        variables.images.all(i, i.startsWith({{ printf "%s/" .Values.registry | quote }}) && i.contains('@sha256:'))
+      message: {{ printf "every image must come from %s and be pinned by digest" .Values.registry | quote }}
+    - expression: >-
+        images.containers.map(image, verifyImageSignatures(image, [attestors.release])).all(e, e > 0)
+      message: an image is not signed by the release key

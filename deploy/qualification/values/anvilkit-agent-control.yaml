@@ -1,0 +1,92 @@
+# DEVELOPMENT_ONLY environment values of anvilkit-agent-control for the P23 qualification
+# cluster (kind anvilkit-qualification: three control-plane and three worker
+# nodes whose zone labels are simulated failure domains on one host). The
+# chart is owned by the service repository; this file is the parent's
+# environment combination. The image digest comes from the release manifest
+# (tools/release-artifacts.py) through deploy/gitops; the credentials reach the Pods
+# from OpenBao through the CSI driver (P0.6; bootstrap.py writes them there). The replica, HPA,
+# disruption, placement and pool limits are the ones deploy/gitops/lock.yaml
+# declares for this environment (tools/check-deployment-lock.py).
+image:
+  repository: anvilkit-dev-registry:5000/anvilkit-agent-control
+  pullPolicy: IfNotPresent
+replicaCount: 2
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 70
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: DoNotSchedule
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: anvilkit-agent-control
+        app.kubernetes.io/component: control
+  - maxSkew: 1
+    topologyKey: topology.kubernetes.io/zone
+    whenUnsatisfiable: DoNotSchedule
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: anvilkit-agent-control
+        app.kubernetes.io/component: control
+secrets:
+  provider: csi
+  csi:
+    address: https://openbao.anvilkit-platform.svc:8200
+    caCertPath: /openbao/tls/ca.crt
+    path: kv/data/anvilkit/apps/anvilkit-agent-control
+    migrationPath: kv/data/anvilkit/apps/anvilkit-agent-control-migration
+trust:
+  configMap: anvilkit-trust
+# P0.6: the frontend's TLS, verified against the CA of the workload identity bundle.
+temporal:
+  tls:
+    mode: tls
+    serverName: anvilkit-temporal-frontend
+    caSecret:
+      name: anvilkit-agent-control-identity
+      key: ca.crt
+  address: anvilkit-temporal-frontend.anvilkit-platform.svc.cluster.local:7233
+# The obligation inventory lives in the DR object store outside the cluster
+# (a separate container, not a bucket of the in-cluster store; it shares the
+# host, so it is not an independent failure domain: ENV-02).
+inventory:
+  s3:
+    endpoint: http://anvilkit-qualification-dr:9000
+    bucket: anvilkit-inventory
+artifacts:
+  enabled: true
+  s3:
+    endpoint: https://anvilkit-objects.anvilkit-data.svc.cluster.local:9000
+    bucket: anvilkit-artifacts
+migration:
+  enabled: true
+# Telemetry (P23-06): spans to the node-local Collector (anvilkit-telemetry,
+# internalTrafficPolicy Local), metrics scraped from the annotated Pod's metrics port.
+podAnnotations:
+  prometheus.io/scrape: "true"
+telemetry:
+  otlpTls:
+    mode: development
+  otlpEndpoint: "anvilkit-otel-collector.anvilkit-observability.svc.cluster.local:4317"
+  metricsPort: 9464
+# P0.1: the workload identity issued by the qualification PKI (anvilkit-pki).
+identity:
+  trustDomain: anvilkit.qualification
+  certificate:
+    issuerRef:
+      name: anvilkit-qualification-ca
+# DEVELOPMENT_ONLY (P0.6): every in-cluster data connection is TLS with
+# verification and every credential comes from OpenBao; the guard still admits
+# the two development-labelled connections left: the obligation inventory in the
+# DR store outside the cluster (http, ENV-02) and the OTLP export
+# (telemetry.otlpTls.mode development, B-36). The database URLs are
+# sslmode=verify-full (the Control configuration refuses anything else outside
+# development).
+development:
+  enabled: true

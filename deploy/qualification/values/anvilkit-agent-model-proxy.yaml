@@ -1,0 +1,69 @@
+# DEVELOPMENT_ONLY environment values of anvilkit-agent-model-proxy for the P23 qualification
+# cluster (kind anvilkit-qualification: three control-plane and three worker
+# nodes whose zone labels are simulated failure domains on one host). The
+# chart is owned by the service repository; this file is the parent's
+# environment combination. The image digest comes from the release manifest
+# (tools/release-artifacts.py) through deploy/gitops; Secrets are created by
+# deploy/qualification/bootstrap.py and never enter Git. The replica, HPA,
+# disruption, placement and pool limits are the ones deploy/gitops/lock.yaml
+# declares for this environment (tools/check-deployment-lock.py).
+image:
+  repository: anvilkit-dev-registry:5000/anvilkit-agent-model-proxy
+  pullPolicy: IfNotPresent
+replicaCount: 2
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 70
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: DoNotSchedule
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: anvilkit-agent-model-proxy
+  - maxSkew: 1
+    topologyKey: topology.kubernetes.io/zone
+    whenUnsatisfiable: DoNotSchedule
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: anvilkit-agent-model-proxy
+control:
+  address: anvilkit-agent-control.anvilkit-apps.svc.cluster.local:9101
+identity:
+  trustDomain: anvilkit.qualification
+  certificate:
+    issuerRef:
+      name: anvilkit-qualification-ca
+  mode: development
+  principalsSecret:
+    name: anvilkit-agent-model-proxy-principals
+secrets:
+  provider: csi
+  csi:
+    address: https://openbao.anvilkit-platform.svc:8200
+    caCertPath: /openbao/tls/ca.crt
+    path: kv/data/anvilkit/apps/anvilkit-agent-model-proxy
+trust:
+  configMap: anvilkit-trust
+store:
+  s3:
+    endpoint: https://anvilkit-objects.anvilkit-data.svc.cluster.local:9000
+    bucket: anvilkit-model-proxy
+# Telemetry (P23-06): spans to the node-local Collector (anvilkit-telemetry,
+# internalTrafficPolicy Local), metrics scraped from the annotated Pod's health port.
+podAnnotations:
+  prometheus.io/scrape: "true"
+telemetry:
+  otlpEndpoint: "http://anvilkit-otel-collector.anvilkit-observability.svc.cluster.local:4318"
+# P0.1: the Control client presents the workload certificate the chart's
+# Certificate (anvilkit-pki) issues; the listener keeps the DEVELOPMENT_ONLY
+# bearer principals (identity.mode development) under the guard; its mtls
+# mode now maps the caller's SPIFFE URI SAN (F-P0.1-1, P0.6), and switching
+# this environment to it (with the Workflow and sidecar clients) is the next step.
+development:
+  enabled: true

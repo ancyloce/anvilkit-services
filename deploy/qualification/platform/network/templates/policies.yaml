@@ -1,0 +1,107 @@
+{{- /*
+P0.4: default deny in every isolated namespace, DNS egress, the
+intra-namespace allowance of the stateful namespaces and one policy per
+component assembled from the flows of the communication matrix. A rule
+whose peer list would be empty is not rendered: an empty "to"/"from" means
+every peer in NetworkPolicy, so an external without CIDRs admits nothing.
+*/ -}}
+{{- $v := .Values -}}
+{{- range $i, $f := $v.flows }}
+{{- if and $f.from (not (hasKey $v.components $f.from)) }}{{ fail (printf "flow %d names an unknown source component %q" $i $f.from) }}{{ end }}
+{{- if and $f.to (not (hasKey $v.components $f.to)) }}{{ fail (printf "flow %d names an unknown target component %q" $i $f.to) }}{{ end }}
+{{- if and $f.fromExternal (not (hasKey $v.externals $f.fromExternal)) }}{{ fail (printf "flow %d names an unknown external %q" $i $f.fromExternal) }}{{ end }}
+{{- if and $f.toExternal (not (hasKey $v.externals $f.toExternal)) }}{{ fail (printf "flow %d names an unknown external %q" $i $f.toExternal) }}{{ end }}
+{{- if not (or (and $f.from (or $f.to $f.toExternal)) (and $f.fromExternal $f.to)) }}{{ fail (printf "flow %d needs a source and a target" $i) }}{{ end }}
+{{- end }}
+{{- range $name, $c := $v.components }}
+{{- if and (not $c.external) (not (hasKey $v.namespaces $c.namespace)) }}{{ fail (printf "component %s is in %s, which is not an isolated namespace (mark it external)" $name $c.namespace) }}{{ end }}
+{{- end }}
+{{- range $ns, $cfg := $v.namespaces }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: anvilkit-network-default-deny
+  namespace: {{ $ns }}
+  labels: {app.kubernetes.io/name: anvilkit-network}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: anvilkit-network-dns
+  namespace: {{ $ns }}
+  labels: {app.kubernetes.io/name: anvilkit-network}
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: {{ $v.dns.namespace }}}}
+          podSelector: {matchLabels: {{ toJson $v.dns.selector }}}
+      ports:
+        - {protocol: UDP, port: {{ $v.dns.port }}}
+        - {protocol: TCP, port: {{ $v.dns.port }}}
+{{- if $cfg.intraNamespace }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: anvilkit-network-intra-namespace
+  namespace: {{ $ns }}
+  labels: {app.kubernetes.io/name: anvilkit-network}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from: [{podSelector: {}}]
+  egress:
+    - to: [{podSelector: {}}]
+{{- end }}
+{{- end }}
+{{- range $name, $c := $v.components }}
+{{- if not $c.external }}
+{{- $ingress := list }}
+{{- $egress := list }}
+{{- range $f := $v.flows }}
+{{- $ports := list }}
+{{- range $p := ($f.ports | default (list)) }}{{ $ports = append $ports (dict "protocol" "TCP" "port" $p) }}{{ end }}
+{{- if eq ($f.to | default "") $name }}
+{{- $peers := list }}
+{{- if $f.from }}
+{{- $src := index $v.components $f.from }}
+{{- $peers = append $peers (dict "namespaceSelector" (dict "matchLabels" (dict "kubernetes.io/metadata.name" $src.namespace)) "podSelector" (dict "matchLabels" ($src.selector | default dict))) }}
+{{- else }}
+{{- range $cidr := (index $v.externals $f.fromExternal).cidrs }}{{ $peers = append $peers (dict "ipBlock" (dict "cidr" $cidr)) }}{{ end }}
+{{- end }}
+{{- if $peers }}{{ $ingress = append $ingress (dict "from" $peers "ports" $ports) }}{{ end }}
+{{- end }}
+{{- if eq ($f.from | default "") $name }}
+{{- $peers := list }}
+{{- if $f.to }}
+{{- $dst := index $v.components $f.to }}
+{{- $peers = append $peers (dict "namespaceSelector" (dict "matchLabels" (dict "kubernetes.io/metadata.name" $dst.namespace)) "podSelector" (dict "matchLabels" ($dst.selector | default dict))) }}
+{{- else }}
+{{- $ext := index $v.externals $f.toExternal }}
+{{- range $cidr := $ext.cidrs }}{{ $peers = append $peers (dict "ipBlock" (dict "cidr" $cidr)) }}{{ end }}
+{{- if not $f.ports }}{{ $ports = list }}{{ range $p := ($ext.ports | default (list)) }}{{ $ports = append $ports (dict "protocol" "TCP" "port" $p) }}{{ end }}{{ end }}
+{{- end }}
+{{- if $peers }}{{ $egress = append $egress (dict "to" $peers "ports" $ports) }}{{ end }}
+{{- end }}
+{{- end }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: anvilkit-network-{{ kebabcase $name }}
+  namespace: {{ $c.namespace }}
+  labels: {app.kubernetes.io/name: anvilkit-network}
+spec:
+  podSelector: {matchLabels: {{ toJson ($c.selector | default dict) }}}
+  policyTypes: [Ingress, Egress]
+  ingress: {{ toJson $ingress }}
+  egress: {{ toJson $egress }}
+{{- end }}
+{{- end }}

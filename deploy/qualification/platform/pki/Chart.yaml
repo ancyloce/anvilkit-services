@@ -1,0 +1,5 @@
+apiVersion: v2
+name: anvilkit-pki
+description: Workload PKI of the qualification cluster (P0.1; DEVELOPMENT_ONLY trust material until ENV-03 supplies the environment's CA)
+type: application
+version: 0.1.0

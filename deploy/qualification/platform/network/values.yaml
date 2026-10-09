@@ -1,0 +1,172 @@
+# P0.4: pod-level network isolation of the six AnvilKit namespaces
+# (architecture.md communication matrix, DD-10 §2). Every namespace below
+# gets default deny in both directions and DNS egress to CoreDNS; every
+# allowed path is one flow, which renders as egress on its source and
+# ingress on its target. A pod that matches no component (an unlabeled pod)
+# keeps only DNS. A flow to or from an external whose CIDR list is empty
+# admits nothing: the external addresses are ENV-03 inputs.
+#
+# NetworkPolicy isolates pods, not the containers of one pod: the candidate
+# container of a Job pod is kept off the network by its syscall profile and,
+# on the target runtime, by gVisor (deploy/policies). Enforcement needs a
+# NetworkPolicy-enforcing CNI (Cilium on the target platform); kindnet on the
+# development foundation does not enforce.
+
+# intraNamespace admits traffic between the pods of the namespace (the
+# replication, membership and raft traffic of the stateful products).
+namespaces:
+  anvilkit-apps: {intraNamespace: false}
+  anvilkit-data: {intraNamespace: true}
+  anvilkit-platform: {intraNamespace: true}
+  anvilkit-observability: {intraNamespace: true}
+  anvilkit-components: {intraNamespace: false}
+  anvilkit-parsing: {intraNamespace: false}
+
+# The CoreDNS pods every namespace resolves names with.
+dns:
+  namespace: kube-system
+  selector: {k8s-app: kube-dns}
+  port: 53
+
+# Each component: its namespace and the labels its chart puts on its pods.
+# An empty selector is every pod of the namespace (the Job namespaces).
+# Components outside the six namespaces (external: true) are peers only.
+components:
+  api: {namespace: anvilkit-apps, selector: {app.kubernetes.io/name: anvilkit-agent-api}}
+  control: {namespace: anvilkit-apps, selector: {app.kubernetes.io/name: anvilkit-agent-control}}
+  workflow: {namespace: anvilkit-apps, selector: {app.kubernetes.io/name: anvilkit-agent-workflow}}
+  modelProxy: {namespace: anvilkit-apps, selector: {app.kubernetes.io/name: anvilkit-agent-model-proxy}}
+  knowledge: {namespace: anvilkit-apps, selector: {app.kubernetes.io/name: anvilkit-agent-knowledge}}
+  mcp: {namespace: anvilkit-apps, selector: {app.kubernetes.io/name: anvilkit-agent-mcp}}
+  backgroundWorker: {namespace: anvilkit-apps, selector: {app.kubernetes.io/name: anvilkit-agent-background-worker}}
+  inference: {namespace: anvilkit-apps, selector: {app.kubernetes.io/name: anvilkit-agent-inference}}
+  migrations: {namespace: anvilkit-apps, selector: {app.kubernetes.io/name: anvilkit-migrations}}
+  jobs: {namespace: anvilkit-components, selector: {}}
+  parserJobs: {namespace: anvilkit-parsing, selector: {}}
+  postgresBusiness: {namespace: anvilkit-data, selector: {cnpg.io/cluster: anvilkit-business}}
+  postgresTemporal: {namespace: anvilkit-data, selector: {cnpg.io/cluster: anvilkit-temporal}}
+  objects: {namespace: anvilkit-data, selector: {app.kubernetes.io/name: anvilkit-objects}}
+  nats: {namespace: anvilkit-data, selector: {app.kubernetes.io/name: nats}}
+  valkeyQueue: {namespace: anvilkit-data, selector: {app.kubernetes.io/instance: anvilkit-valkey-queue}}
+  qdrant: {namespace: anvilkit-data, selector: {app.kubernetes.io/name: qdrant}}
+  temporal: {namespace: anvilkit-platform, selector: {app.kubernetes.io/name: temporal}}
+  openbao: {namespace: anvilkit-platform, selector: {app.kubernetes.io/name: openbao}}
+  probes: {namespace: anvilkit-platform, selector: {app.kubernetes.io/name: anvilkit-probes}}
+  collector: {namespace: anvilkit-observability, selector: {app.kubernetes.io/name: opentelemetry-collector}}
+  cnpgOperator: {namespace: cnpg-system, selector: {app.kubernetes.io/name: cloudnative-pg}, external: true}
+
+# Addresses outside the cluster, by CIDR (ENV-03). Empty admits nothing.
+externals:
+  # The Kubernetes API server endpoints (the Workflow and Knowledge Job
+  # launchers, the CloudNativePG instance manager, the Collector's
+  # attribute processor).
+  kubernetesAPI: {cidrs: [], ports: [6443]}
+  # The kubelets of the nodes, for the plaintext probe listeners only.
+  nodes: {cidrs: [], ports: []}
+  pagix: {cidrs: [], ports: [443]}
+  providers: {cidrs: [], ports: [443]}
+  mcpUpstreams: {cidrs: [], ports: [443]}
+  contextForge: {cidrs: [], ports: [443]}
+  # Control's obligation inventory in its independent failure domain.
+  inventory: {cidrs: [], ports: [443]}
+  # The DR object store of the database backups.
+  backups: {cidrs: [], ports: [443]}
+  # The public entry of the API (the gateway or load balancer).
+  gateway: {cidrs: [], ports: []}
+
+# The communication matrix (architecture.md "Communication matrix"): one flow
+# per allowed path, TCP unless a port says otherwise.
+flows:
+  # API: Control, Knowledge, MCP via the v1 contracts; its own public entry.
+  - {from: api, to: control, ports: [9101]}
+  - {from: api, to: knowledge, ports: [9105]}
+  - {from: api, to: mcp, ports: [9106]}
+  - {fromExternal: gateway, to: api, ports: [9100]}
+  - {from: probes, to: api, ports: [9100]}
+  # Workflow: Control, Temporal, the Kubernetes launcher, the controlled
+  # model route, the guarded Pagix port and artifact reads.
+  - {from: workflow, to: control, ports: [9101]}
+  - {from: workflow, to: temporal, ports: [7233]}
+  - {from: workflow, to: modelProxy, ports: [9103]}
+  - {from: workflow, to: objects, ports: [9000]}
+  - {from: workflow, toExternal: kubernetesAPI}
+  - {from: workflow, toExternal: pagix}
+  # Control: its database, the Temporal relay, artifacts, the Model Proxy's
+  # original-identity query and the independent inventory.
+  - {from: control, to: postgresBusiness, ports: [5432]}
+  - {from: control, to: temporal, ports: [7233]}
+  - {from: control, to: objects, ports: [9000]}
+  - {from: control, to: modelProxy, ports: [9103]}
+  - {from: control, toExternal: inventory}
+  # Model Proxy: per-call admission at Control, its store, the providers.
+  - {from: modelProxy, to: control, ports: [9101]}
+  - {from: modelProxy, to: objects, ports: [9000]}
+  - {from: modelProxy, toExternal: providers}
+  # Knowledge: authorization at Control, its database, Qdrant, Inference,
+  # objects, the outbox forwarder's NATS, the owner queue relay's Valkey and
+  # the parser launcher.
+  - {from: knowledge, to: control, ports: [9101]}
+  - {from: knowledge, to: postgresBusiness, ports: [5432]}
+  - {from: knowledge, to: qdrant, ports: [6333, 6334]}
+  - {from: knowledge, to: inference, ports: [9108]}
+  - {from: knowledge, to: objects, ports: [9000]}
+  - {from: knowledge, to: nats, ports: [4222]}
+  - {from: knowledge, to: valkeyQueue, ports: [6379, 26379]}
+  - {from: knowledge, toExternal: kubernetesAPI}
+  # MCP: admission and the revocation barrier at Control, its database,
+  # NATS, its owner queue relay, the approved connection layer and the
+  # reviewed upstreams.
+  - {from: mcp, to: control, ports: [9101]}
+  - {from: mcp, to: postgresBusiness, ports: [5432]}
+  - {from: mcp, to: nats, ports: [4222]}
+  - {from: mcp, to: valkeyQueue, ports: [6379, 26379]}
+  - {from: mcp, toExternal: contextForge}
+  - {from: mcp, toExternal: mcpUpstreams}
+  # Background Worker: BullMQ and the task-owner APIs only.
+  - {from: backgroundWorker, to: valkeyQueue, ports: [6379, 26379]}
+  - {from: backgroundWorker, to: knowledge, ports: [9105]}
+  - {from: backgroundWorker, to: mcp, ports: [9106]}
+  # The migration Jobs of the owned databases.
+  - {from: migrations, to: postgresBusiness, ports: [5432]}
+  # The trusted access sidecar of a Job pod: Control, the Model Proxy,
+  # Knowledge and MCP routes and the presigned artifact transfers.
+  - {from: jobs, to: control, ports: [9101]}
+  - {from: jobs, to: modelProxy, ports: [9103]}
+  - {from: jobs, to: knowledge, ports: [9105]}
+  - {from: jobs, to: mcp, ports: [9106]}
+  - {from: jobs, to: objects, ports: [9000]}
+  # The parser Job's stagers: the presigned transfers only.
+  - {from: parserJobs, to: objects, ports: [9000]}
+  # Temporal's own database; the CloudNativePG operator and instance manager.
+  - {from: temporal, to: postgresTemporal, ports: [5432]}
+  - {from: cnpgOperator, to: postgresBusiness, ports: [8000, 5432]}
+  - {from: cnpgOperator, to: postgresTemporal, ports: [8000, 5432]}
+  - {from: postgresBusiness, toExternal: kubernetesAPI}
+  - {from: postgresTemporal, toExternal: kubernetesAPI}
+  - {from: postgresBusiness, toExternal: backups}
+  - {from: postgresTemporal, toExternal: backups}
+  # Telemetry: OTLP from the services to the Collector, its scrape of the
+  # metrics listeners and its Kubernetes attributes.
+  - {from: api, to: collector, ports: [4317, 4318]}
+  - {from: control, to: collector, ports: [4317, 4318]}
+  - {from: workflow, to: collector, ports: [4317, 4318]}
+  - {from: modelProxy, to: collector, ports: [4317, 4318]}
+  - {from: knowledge, to: collector, ports: [4317, 4318]}
+  - {from: mcp, to: collector, ports: [4317, 4318]}
+  - {from: backgroundWorker, to: collector, ports: [4317, 4318]}
+  - {from: inference, to: collector, ports: [4317, 4318]}
+  - {from: collector, to: api, ports: [9464]}
+  - {from: collector, to: control, ports: [9464]}
+  - {from: collector, toExternal: kubernetesAPI}
+  # P0.6: OpenBao's Kubernetes auth method reviews the CSI provider's
+  # ServiceAccount tokens (TokenReview).
+  - {from: openbao, toExternal: kubernetesAPI}
+  # Kubelet probes reach the plaintext probe listeners only.
+  - {fromExternal: nodes, to: api, ports: [9100]}
+  - {fromExternal: nodes, to: control, ports: [9113]}
+  - {fromExternal: nodes, to: workflow, ports: [9102]}
+  - {fromExternal: nodes, to: modelProxy, ports: [9104]}
+  - {fromExternal: nodes, to: knowledge, ports: [9115, 9125, 9126]}
+  - {fromExternal: nodes, to: mcp, ports: [9116, 9126]}
+  - {fromExternal: nodes, to: backgroundWorker, ports: [9127]}
+  - {fromExternal: nodes, to: inference, ports: [9108]}

@@ -1,0 +1,107 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: anvilkit-streams
+data:
+  # The PostSync hook's other inputs, tracked here so a change re-runs it (Argo CD
+  # leaves hooks out of its comparison).
+  image: {{ .Values.image | quote }}
+  natsUrl: {{ .Values.natsUrl | quote }}
+  tlsCASecret: {{ .Values.tlsCASecret | quote }}
+  csi: {{ .Values.csi | toJson | quote }}
+  {{- range .Values.streams }}
+  {{ . }}.json: {{ dict "name" (printf "ANVILKIT_%s" (upper .)) "subjects" (list (printf "anvilkit.%s.>" .)) "retention" "limits" "storage" "file" "discard" "old" "max_msgs" -1 "max_bytes" -1 "max_age" 604800000000000 "max_msg_size" 1048576 "duplicate_window" 120000000000 "num_replicas" $.Values.replicas | toJson | quote }}
+  {{- end }}
+  setup.sh: |
+    set -eu
+    set -- --server "$NATS_URL"
+    {{- if .Values.tlsCASecret }}
+    set -- "$@" --tlsca /etc/nats-ca/ca.crt
+    {{- end }}
+    {{- if .Values.csi.enabled }}
+    set -- "$@" --nkey /var/run/secrets/anvilkit/csi/nats-streams-nkey
+    {{- end }}
+    for name in {{ join " " .Values.streams }}; do
+      stream=ANVILKIT_$(echo "$name" | tr '[:lower:]' '[:upper:]')
+      if nats "$@" stream info "$stream" >/dev/null 2>&1; then
+        echo "stream $stream present"
+      else
+        nats "$@" stream add "$stream" --config "/setup/$name.json" >/dev/null
+        echo "stream $stream created"
+      fi
+    done
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: anvilkit-streams
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: 30
+  template:
+    spec:
+      restartPolicy: OnFailure
+      {{- if .Values.csi.enabled }}
+      serviceAccountName: anvilkit-streams
+      {{- end }}
+      automountServiceAccountToken: false
+      securityContext: {runAsNonRoot: true, runAsUser: 1000, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: setup
+          image: {{ .Values.image }}
+          command: ["sh", "/setup/setup.sh"]
+          # The image's working directory is /root, which the non-root user cannot stat.
+          workingDir: /tmp
+          env: [{name: NATS_URL, value: {{ .Values.natsUrl | quote }}}, {name: HOME, value: /tmp}]
+          resources:
+            requests: {cpu: 10m, memory: 32Mi}
+            limits: {cpu: 200m, memory: 128Mi}
+          securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: ["ALL"]}}
+          volumeMounts:
+            - {name: setup, mountPath: /setup}
+            {{- if .Values.tlsCASecret }}
+            - {name: nats-ca, mountPath: /etc/nats-ca, readOnly: true}
+            {{- end }}
+            {{- if .Values.csi.enabled }}
+            - {name: credentials, mountPath: /var/run/secrets/anvilkit/csi, readOnly: true}
+            {{- end }}
+      volumes:
+        - name: setup
+          configMap: {name: anvilkit-streams}
+        {{- if .Values.tlsCASecret }}
+        - name: nats-ca
+          secret: {secretName: {{ .Values.tlsCASecret }}, items: [{key: ca.crt, path: ca.crt}]}
+        {{- end }}
+        {{- if .Values.csi.enabled }}
+        - name: credentials
+          csi: {driver: secrets-store.csi.k8s.io, readOnly: true, volumeAttributes: {secretProviderClass: anvilkit-streams}}
+        {{- end }}
+{{- if .Values.csi.enabled }}
+---
+# P0.6: the provisioning user's NKey seed from OpenBao (the Job's own
+# identity; the server lists only its public key).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: anvilkit-streams
+automountServiceAccountToken: false
+---
+apiVersion: secrets-store.csi.x-k8s.io/v1
+kind: SecretProviderClass
+metadata:
+  name: anvilkit-streams
+spec:
+  provider: openbao
+  parameters:
+    baoAddress: {{ .Values.csi.address | quote }}
+    baoCACertPath: {{ .Values.csi.caCertPath | quote }}
+    roleName: anvilkit-streams
+    audience: {{ .Values.csi.audience | quote }}
+    objects: |
+      - objectName: "nats-streams-nkey"
+        secretPath: {{ .Values.csi.path | quote }}
+        secretKey: "nats-streams-nkey"
+        filePermission: 0444
+{{- end }}

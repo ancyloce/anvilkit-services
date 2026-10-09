@@ -1,0 +1,5 @@
+apiVersion: v2
+name: anvilkit-migrations
+description: The knowledge and mcp schema migrations and the Knowledge Store migration as Sync hooks (P23)
+type: application
+version: 0.1.1

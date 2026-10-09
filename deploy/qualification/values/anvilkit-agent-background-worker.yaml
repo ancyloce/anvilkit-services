@@ -1,0 +1,60 @@
+# DEVELOPMENT_ONLY environment values of anvilkit-agent-background-worker for the P23 qualification
+# cluster (kind anvilkit-qualification: three control-plane and three worker
+# nodes whose zone labels are simulated failure domains on one host). The
+# chart is owned by the service repository; this file is the parent's
+# environment combination. The image digest comes from the release manifest
+# (tools/release-artifacts.py) through deploy/gitops; Secrets are created by
+# deploy/qualification/bootstrap.py and never enter Git. The replica, HPA,
+# disruption, placement and pool limits are the ones deploy/gitops/lock.yaml
+# declares for this environment (tools/check-deployment-lock.py).
+image:
+  repository: anvilkit-dev-registry:5000/anvilkit-agent-background-worker
+  pullPolicy: IfNotPresent
+replicaCount: 2
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 70
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: DoNotSchedule
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: anvilkit-agent-background-worker
+  - maxSkew: 1
+    topologyKey: topology.kubernetes.io/zone
+    whenUnsatisfiable: DoNotSchedule
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: anvilkit-agent-background-worker
+secrets:
+  provider: csi
+  csi:
+    address: https://openbao.anvilkit-platform.svc:8200
+    caCertPath: /openbao/tls/ca.crt
+    path: kv/data/anvilkit/apps/anvilkit-agent-background-worker
+trust:
+  configMap: anvilkit-trust
+
+owners:
+  knowledge:
+    address: anvilkit-agent-knowledge.anvilkit-apps.svc.cluster.local:9105
+  mcp:
+    address: anvilkit-agent-mcp.anvilkit-apps.svc.cluster.local:9106
+# Telemetry (P23-06): spans to the node-local Collector (anvilkit-telemetry,
+# internalTrafficPolicy Local), metrics scraped from the annotated Pod's health port.
+podAnnotations:
+  prometheus.io/scrape: "true"
+telemetry:
+  otlpEndpoint: "http://anvilkit-otel-collector.anvilkit-observability.svc.cluster.local:4318"
+# P0.1: the workload identity issued by the qualification PKI (anvilkit-pki).
+identity:
+  trustDomain: anvilkit.qualification
+  certificate:
+    issuerRef:
+      name: anvilkit-qualification-ca

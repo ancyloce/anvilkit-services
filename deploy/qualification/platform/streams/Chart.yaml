@@ -1,0 +1,5 @@
+apiVersion: v2
+name: anvilkit-streams
+description: The three JetStream streams of the event catalog at three replicas (P23)
+type: application
+version: 0.1.1

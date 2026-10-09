@@ -1,0 +1,5 @@
+apiVersion: v2
+name: anvilkit-admission
+description: Signed-image admission of anvilkit-apps (P23-03; DEVELOPMENT_ONLY release key)
+type: application
+version: 0.1.1

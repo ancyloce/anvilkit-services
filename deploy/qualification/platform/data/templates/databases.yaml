@@ -1,0 +1,24 @@
+{{- range .Values.businessDatabases }}
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: {{ .name | replace "_" "-" }}
+spec:
+  cluster:
+    name: anvilkit-business
+  name: {{ .name }}
+  owner: {{ .owner }}
+  ensure: present
+{{- end }}
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: temporal-visibility
+spec:
+  cluster:
+    name: anvilkit-temporal
+  name: temporal_visibility
+  owner: temporal
+  ensure: present

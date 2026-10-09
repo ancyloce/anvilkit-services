@@ -1,0 +1,23 @@
+# The Barman Cloud plugin's object store: base backups and WAL of both clusters
+# in the DR store (a separate container outside the cluster, same host: not an
+# independent failure domain, ENV-02).
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  name: dr-store
+spec:
+  retentionPolicy: {{ .Values.backup.retention | quote }}
+  configuration:
+    destinationPath: {{ .Values.backup.destinationPath }}
+    endpointURL: {{ .Values.backup.endpointURL }}
+    s3Credentials:
+      accessKeyId:
+        name: {{ .Values.backup.secret }}
+        key: ACCESS_KEY_ID
+      secretAccessKey:
+        name: {{ .Values.backup.secret }}
+        key: ACCESS_SECRET_KEY
+    wal:
+      compression: gzip
+    data:
+      compression: gzip
