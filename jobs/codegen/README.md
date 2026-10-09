@@ -21,7 +21,7 @@ docker build --build-context supervisor=jobs/codegen/supervisor \
 sh jobs/codegen/team/tools/image-smoke.sh anvilkit-codegen-team
 ```
 
-`deploy/dev/images.sh` builds both images into the development registry. The image digests are pinned by `contracts/jobs/profiles.json` and admitted by `deploy/policies/kyverno/`; a rebuilt image is a new digest and needs a profile revision there. The team image's inputs outside its repository are pinned in its CI (`SUPERVISOR_REF`, `CONTRACTS_REF`, the validator digest in the `Dockerfile`).
+`deploy/dev/images.sh` builds both images into the development registry. The image digests are pinned by `contracts/jobs/profiles.json` and admitted by `deploy/policies/chart/` (the Job-admission chart); a rebuilt image is a new digest and needs a profile revision there. The team image's inputs outside its repository are pinned in its CI (`SUPERVISOR_REF`, `CONTRACTS_REF`, the validator digest in the `Dockerfile`).
 
 ## Parent-owned integration
 
