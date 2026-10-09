@@ -41,7 +41,12 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 LOCK = ROOT / "deploy/gitops/lock.yaml"
 SERVICES = [f"anvilkit-agent-{s}" for s in ("api", "control", "workflow", "model-proxy", "knowledge", "mcp", "background-worker", "inference")]
 PLATFORM = {"kubernetes-control-plane", "business-postgresql", "temporal-postgresql", "temporal-server", "qdrant", "queue-valkey",
-            "cache-valkey", "nats-jetstream", "apollo-mysql", "contextforge", "openbao", "ceph"}
+            "cache-valkey", "nats-jetstream", "apollo-mysql", "contextforge", "openbao", "ceph", "network-policies", "secret-delivery"}
+# Platform charts every environment combination carries: the default deny
+# NetworkPolicies of the communication matrix (P0.4) and the Secrets the
+# third-party charts read, synced from OpenBao by the CSI driver (P0.6).
+REQUIRED_CHARTS = {"deploy/qualification/platform/network": "anvilkit-network",
+                   "deploy/qualification/platform/secrets": "anvilkit-secrets"}
 PLACEHOLDER_DIGEST = "sha256:" + "0" * 64
 
 
@@ -231,9 +236,18 @@ def check_structure(lock: dict, findings: list[str]) -> list[str]:
     return not_verified
 
 
-def evaluate(lock: dict, rendered: dict[str, list[dict]]) -> tuple[list[str], list[str], list[str]]:
+def check_combination(combination: dict, findings: list[str]) -> None:
+    sources = {(a.get("chart") or {}).get("source"): a for a in combination.get("applications", [])}
+    for source, name in sorted(REQUIRED_CHARTS.items()):
+        if source not in sources:
+            findings.append(f"the combination lacks the {name} chart ({source})")
+
+
+def evaluate(lock: dict, rendered: dict[str, list[dict]], combination: dict | None = None) -> tuple[list[str], list[str], list[str]]:
     findings: list[str] = []
     not_verified = check_structure(lock, findings)
+    if combination is not None:
+        check_combination(combination, findings)
     maxima = {}
     for app in lock["applications"]:
         if app["name"] in rendered:
@@ -242,7 +256,7 @@ def evaluate(lock: dict, rendered: dict[str, list[dict]]) -> tuple[list[str], li
     return findings, budget, not_verified
 
 
-def self_test(lock: dict, rendered: dict[str, list[dict]]) -> list[str]:
+def self_test(lock: dict, rendered: dict[str, list[dict]], combination: dict) -> list[str]:
     def dep(docs, name):
         return next(d for d in docs if d["kind"] == "Deployment" and d["metadata"]["name"] == name)
 
@@ -279,16 +293,26 @@ def self_test(lock: dict, rendered: dict[str, list[dict]]) -> list[str]:
             if d["kind"] == "PodDisruptionBudget":
                 d["spec"]["selector"]["matchLabels"].pop("app.kubernetes.io/component")
 
+    def no_network_policies(r, lk, cb):
+        cb["applications"] = [a for a in cb["applications"] if (a.get("chart") or {}).get("source") != "deploy/qualification/platform/network"]
+
+    def no_secret_delivery(r, lk, cb):
+        cb["applications"] = [a for a in cb["applications"] if (a.get("chart") or {}).get("source") != "deploy/qualification/platform/secrets"]
+
     probes = {"PodDisruptionBudget removed": drop_pdb, "zone spread removed": drop_zone_spread,
               "grace below the drain limit": short_grace, "sidecar without limits": sidecar_without_limits,
               "connection budget exceeded": over_budget, "pool size drift": pool_drift,
               "platform row missing": missing_platform, "production maximum guessed": guessed_production,
-              "PDB selects the migration Job": pdb_selects_migration}
+              "PDB selects the migration Job": pdb_selects_migration, "network policies absent": no_network_policies,
+              "secret delivery absent": no_secret_delivery}
     failures = []
     for label, mutate in probes.items():
-        r, lk = copy.deepcopy(rendered), copy.deepcopy(lock)
-        mutate(r, lk)
-        findings, _, _ = evaluate(lk, r)
+        r, lk, cb = copy.deepcopy(rendered), copy.deepcopy(lock), copy.deepcopy(combination)
+        if mutate in (no_network_policies, no_secret_delivery):  # combination probes
+            mutate(r, lk, cb)
+        else:
+            mutate(r, lk)
+        findings, _, _ = evaluate(lk, r, cb)
         print(f"  probe {label:<32} {'detected: ' + findings[0] if findings else 'NOT DETECTED'}")
         if not findings:
             failures.append(label)
@@ -315,7 +339,8 @@ def main() -> int:
             rendered[app["name"]] = render(helm_bin, app, values)
         except RuntimeError as e:
             findings.append(f"{app['name']}: render failed: {e}")
-    more, budget, not_verified = evaluate(lock, rendered)
+    combination = yaml.safe_load((ROOT / lock["environments"]["qualification"]["combination"]).read_text())
+    more, budget, not_verified = evaluate(lock, rendered, combination)
     findings += more
     print(f"deployment lock revision {lock['lockRevision']}: {len(lock['applications'])} applications, {len(lock['platform'])} platform rows")
     print("connection budgets (qualification):")
@@ -324,7 +349,7 @@ def main() -> int:
     print("\n".join(not_verified))
     if a.self_test:
         print("self-test:")
-        if self_test(lock, rendered):
+        if self_test(lock, rendered, combination):
             findings.append("self-test: a known defect was not detected")
     if findings:
         print("FINDINGS:")

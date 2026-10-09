@@ -334,6 +334,8 @@ def run_case(c: dict, s: dict, raw_dir: pathlib.Path) -> dict:
            "gates": c.get("gates", []), "profiles": c.get("profiles", []), "budget": c["budget"]}
     if "foundation" in s.get("requires", []) and (why := foundation_ready()):
         return {**out, "status": "NOT_RUN", "reason": why}
+    if "network-cluster" in s.get("requires", []) and not os.environ.get("ANVILKIT_NETWORK_KUBECONFIG"):
+        return {**out, "status": "NOT_RUN", "reason": "ANVILKIT_NETWORK_KUBECONFIG not set: a cluster whose CNI enforces NetworkPolicy (Cilium) with the anvilkit-network chart installed"}
     if not d.exists():
         return {**out, "status": "NOT_RUN", "reason": f"{d} does not exist"}
     timeout = budget_seconds(c["budget"])
