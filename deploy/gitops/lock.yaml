@@ -25,6 +25,9 @@ environments:
     status: DEVELOPMENT_ONLY
     namespace: anvilkit-apps
     values: deploy/qualification/values
+    # The pinned combination; check-deployment-lock.py requires the
+    # combination charts every environment carries (the network policies).
+    combination: deploy/gitops/environments/qualification.yaml
     nodes: {controlPlane: 3, workers: 3, zones: [qa-a, qa-b, qa-c]}
 
 # Placement every application uses in a qualifying environment: one Pod per
@@ -152,7 +155,7 @@ platform:
   - name: queue-valkey
     product: Valkey + CloudPirates Sentinel chart
     target: one primary, two replicas, three Sentinels (quorum 2); AOF, noeviction, TLS/ACL
-    qualification: {status: DEVELOPMENT_ONLY, topology: "one primary, two replicas, three Sentinels (quorum 2), AOF, noeviction; no TLS; chart 0.25.11 patched so the Sentinel no longer logs its password-bearing configuration"}
+    qualification: {status: DEVELOPMENT_ONLY, topology: "one primary, two replicas, three Sentinels (quorum 2), AOF, noeviction; TLS-only (servers, replication, Sentinel, the master proxy passing TLS through; P0.6) with the default user only (per-service ACL users not yet); chart 0.25.11 patched so the Sentinel no longer logs its password-bearing configuration and the proxy checks over TLS"}
     production: {status: REQUIRED, inputs: [ENV-01, ENV-02, ENV-03]}
   - name: cache-valkey
     product: Valkey
@@ -177,7 +180,7 @@ platform:
   - name: openbao
     product: OpenBao Raft
     target: three Raft voters, independent seal/unseal/recovery material, CSI, rotation
-    qualification: {status: DEVELOPMENT_ONLY, topology: "three Raft voters, Shamir seal; unseal material held outside the cluster under .local/qualification"}
+    qualification: {status: DEVELOPMENT_ONLY, topology: "three Raft voters, TLS listener and joins (P0.6), Shamir seal; the shares held only in the custody directory outside the cluster (.local/qualification/openbao, never the DR store), the initial root token revoked after configuration; Kubernetes auth with one read-only role per workload; CSI provider DaemonSet"}
     production: {status: REQUIRED, inputs: [ENV-02, ENV-10]}
   - name: ceph
     product: Rook-Ceph RBD + RGW
@@ -207,10 +210,20 @@ platform:
   - name: admission
     product: Kyverno 1.19.1
     target: exact image digest/signature, SA, RuntimeClass, volumes, capabilities
-    qualification: {status: DEVELOPMENT_ONLY, topology: "Kyverno 1.19.1 with the parent's policies and the signed-image policy"}
+    qualification: {status: DEVELOPMENT_ONLY, topology: "Kyverno 1.19.1 at three admission replicas behind a PDB (minAvailable 2); the anvilkit-job-admission chart (the components and parser template/digest policies, the qualification registry allowlist, the seccomp installer DaemonSet) and the signed-image policy in the combination; bootstrap.py runs check.sh --cluster after the sync"}
     production: {status: REQUIRED, inputs: [ENV-01]}
+  - name: secret-delivery
+    product: Secrets Store CSI driver 1.6.1 with the OpenBao provider (the anvilkit-secrets chart for Secret-only consumers)
+    target: every credential from OpenBao through CSI volumes; no Kubernetes Secret with credential material created by hand; rotation without image or chart changes (P0.6)
+    qualification: {status: DEVELOPMENT_ONLY, topology: "secrets-store-csi-driver (sync only for anvilkit-secrets' classes, rotation poll 2m) and the services' SecretProviderClasses in the combination; check-secrets.py --rendered checks the rendered manifests and bootstrap.py's credential URLs, --cluster classifies the live Secrets"}
+    production: {status: REQUIRED, inputs: [ENV-01, ENV-10]}
+  - name: network-policies
+    product: Kubernetes NetworkPolicy (the anvilkit-network chart) enforced by Cilium
+    target: default deny in the six AnvilKit namespaces and one allow rule per communication-matrix row (P0.4)
+    qualification: {status: DEVELOPMENT_ONLY, topology: "the anvilkit-network chart in the combination; kindnet does not enforce NetworkPolicy on this cluster, so it is present but no control; check-network.py --offline evaluates the rendered policies and --cluster probes them on a Cilium cluster"}
+    production: {status: REQUIRED, inputs: [ENV-01, ENV-03]}
   - name: certificates
     product: cert-manager 1.21.2
     target: workload mTLS issuance and rotation
-    qualification: {status: DEVELOPMENT_ONLY, topology: "cert-manager for the CNPG backup plugin only; no workload mTLS (NR-IDENTITY)"}
+    qualification: {status: DEVELOPMENT_ONLY, topology: "cert-manager issues every workload certificate from the self-signed anvilkit-qualification-ca (anvilkit-pki chart, trust domain anvilkit.qualification); internal gRPC is mTLS with SPIFFE URI SAN authorization (P0.1, IT-IDENTITY); the data plane (Temporal, NATS, OTLP, Inference) stays plaintext under the development guard until P0.6; no production trust material (NR-IDENTITY)"}
     production: {status: REQUIRED, inputs: [ENV-03, ENV-07]}

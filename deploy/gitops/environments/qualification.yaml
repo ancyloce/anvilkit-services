@@ -31,6 +31,14 @@ applications:
     chart: {upstream: oci://quay.io/jetstack/charts/cert-manager, name: cert-manager, version: v1.21.2}
     values:
       crds: {enabled: true}
+  # P0.1: the workload PKI (SelfSigned bootstrap -> root CA -> ClusterIssuer
+  # anvilkit-qualification-ca) every service chart's identity Certificate
+  # references; DEVELOPMENT_ONLY trust material until ENV-03.
+  - name: anvilkit-pki
+    wave: -48
+    layer: platform
+    namespace: cert-manager
+    chart: {source: deploy/qualification/platform/pki, name: anvilkit-pki}
   - name: metrics-server
     wave: -50
     layer: platform
@@ -51,7 +59,9 @@ applications:
         jsonPointers: [/metadata/annotations, /metadata/labels]
     syncOptions: [ServerSideApply=true, RespectIgnoreDifferences=true]
     values:
-      admissionController: {replicas: 1}
+      # P0.5: three admission replicas behind a PDB, so losing one never stops
+      # the Job-boundary admission (failurePolicy Fail).
+      admissionController: {replicas: 3, podDisruptionBudget: {enabled: true, minAvailable: 2}}
       backgroundController: {replicas: 1}
       cleanupController: {replicas: 1}
       reportsController: {replicas: 1}
@@ -73,6 +83,37 @@ applications:
     chart: {source: deploy/qualification/platform/admission, name: anvilkit-admission}
     releaseFiles:
       publicKey: cosign.pub
+  # P0.5: the Job-boundary admission (deploy/policies/chart): the components and
+  # parser template/digest policies, this environment's registry allowlist and
+  # the DaemonSet that places the candidate seccomp profile on every node.
+  # bootstrap.py runs deploy/policies/check.sh --cluster after the sync.
+  - name: anvilkit-job-admission
+    wave: -44
+    layer: platform
+    namespace: kyverno
+    chart: {source: deploy/policies/chart, name: anvilkit-job-admission}
+    values:
+      registries:
+        components: ["anvilkit-dev-registry:5000/", "docker.io/library/busybox@"]
+        parsing: ["anvilkit-dev-registry:5000/"]
+  # P0.4: default deny in the six AnvilKit namespaces with one allow rule per
+  # row of the communication matrix (deploy/qualification/platform/network;
+  # check-network.py). kindnet does not enforce NetworkPolicy, so on this
+  # cluster the policies are the production shape, not a control; Cilium is
+  # the enforcing CNI of the target platform. The externals are this
+  # cluster's kind network (DEVELOPMENT_ONLY): the API server and kubelets of
+  # its nodes and the DR store container; ENV-03 supplies the environment's.
+  - name: anvilkit-network
+    wave: -45
+    layer: platform
+    namespace: anvilkit-platform
+    chart: {source: deploy/qualification/platform/network, name: anvilkit-network}
+    values:
+      externals:
+        kubernetesAPI: {cidrs: ["172.22.0.0/16"], ports: [6443]}
+        nodes: {cidrs: ["172.22.0.0/16"], ports: []}
+        backups: {cidrs: ["172.22.0.0/16"], ports: [9000]}
+        inventory: {cidrs: ["172.22.0.0/16"], ports: [9000]}
   # The redacted telemetry pipeline (P23-06): one Collector per worker node. It
   # reads the anvilkit-* container logs, scrapes the services' metrics ports and
   # receives their spans over OTLP; spans keep the allowlisted attributes only
@@ -213,6 +254,27 @@ applications:
             traces: {receivers: [otlp], processors: [memory_limiter, redaction, batch], exporters: [file/traces]}
             metrics: {receivers: [prometheus], processors: [memory_limiter, batch], exporters: [file/metrics]}
             logs: {receivers: [filelog], processors: [memory_limiter, transform/logs, batch], exporters: [file/logs]}
+  # P0.6: the Secrets Store CSI driver (the OpenBao provider is the openbao chart's
+  # DaemonSet). Secret sync only for the classes that declare secretObjects
+  # (anvilkit-secrets); rotation polls every 2 minutes; the Pods' ServiceAccount
+  # tokens of audience openbao are passed to the provider (OpenBao's Kubernetes auth).
+  - name: secrets-store-csi-driver
+    wave: -40
+    layer: platform
+    namespace: kube-system
+    chart: {upstream: https://kubernetes-sigs.github.io/secrets-store-csi-driver/charts, name: secrets-store-csi-driver, version: 1.6.1}
+    values:
+      syncSecret: {enabled: true}
+      enableSecretRotation: true
+      rotationPollInterval: 2m
+      tokenRequests:
+        - {audience: openbao, expirationSeconds: 600}
+      linux:
+        image: {digest: "sha256:b48d7d13dd06f0c7fdb2ec03683387e229d80d327172ecb0e21948b811540c6e"}
+        registrarImage: {digest: "sha256:ab482308a4921e28a6df09a16ab99a457e9af9641ff44fb1be1a690d07ce8b70"}
+        livenessProbeImage: {digest: "sha256:c4cc074199c045dd73ab85f28897e2a32f4d6f38ffdba4f3b13b8007ccbd3570"}
+        crds:
+          image: {tag: "v1.6.1@sha256:cdacfdbe8966aa77c080b850b52a86880363119530f7aa6b4f05b8ffe19c2ec3"}
   # --- stateful services -----------------------------------------------------
   - name: anvilkit-data
     wave: -30
@@ -229,30 +291,55 @@ applications:
     layer: stateful
     namespace: anvilkit-data
     chart: {upstream: https://nats-io.github.io/k8s/helm/charts, name: nats, version: 2.12.4}
+    # P0.6: client and route TLS with the cert-manager server certificate
+    # (anvilkit-pki servers, routes verify each other against the CA) and the
+    # NKey users with per-role subject permissions: the ConfigMap
+    # anvilkit-nats-auth that deploy/qualification/bootstrap.py renders from
+    # the NKeys whose seeds it writes to OpenBao (public keys only); the
+    # config reloader re-reads it on rotation.
     values:
       config:
-        cluster: {enabled: true, replicas: 3}
+        cluster:
+          enabled: true
+          replicas: 3
+          tls: {enabled: true, secretName: anvilkit-nats-tls, merge: {ca_file: /etc/nats-certs/cluster/ca.crt}}
+        nats:
+          tls: {enabled: true, secretName: anvilkit-nats-tls}
         jetstream:
           enabled: true
           fileStore: {pvc: {size: 1Gi}}
+        merge:
+          $include: ../nats-auth/auth.conf
       container:
         image: {tag: "2.12.4-alpine@sha256:31c6ed3b2da61645aaa3ad9217b5a52b34b6ebd555ecb71259cd7723c59ae1ea"}
+        patch:
+          - {op: add, path: /volumeMounts/-, value: {name: nats-auth, mountPath: /etc/nats-auth, readOnly: true}}
       natsBox: {enabled: false}
       podTemplate:
         topologySpreadConstraints:
           kubernetes.io/hostname: {maxSkew: 1, whenUnsatisfiable: DoNotSchedule}
+        patch:
+          - {op: add, path: /spec/volumes/-, value: {name: nats-auth, configMap: {name: anvilkit-nats-auth}}}
   - name: anvilkit-valkey-queue
     wave: -30
     layer: stateful
     namespace: anvilkit-data
-    # The upstream chart patched to stop printing the Sentinel configuration (it holds the
-    # password): deploy/qualification/platform/valkey/ANVILKIT-PATCH.md.
+    # The upstream chart patched (deploy/qualification/platform/valkey/ANVILKIT-PATCH.md) to
+    # stop printing the Sentinel configuration (it holds the password) and, P0.6, to pass
+    # TLS through its master proxy with TLS-verified health checks. P0.6: the servers,
+    # replication and Sentinel speak TLS only with the cert-manager server certificate;
+    # the clients connect rediss:// to the master Service and verify it against the CA.
+    # The password is the CSI-synced Secret anvilkit-valkey-queue (anvilkit-secrets).
+    # Per-service ACL users are NOT in this combination (the chart carries no ACL file
+    # next to the replication and Sentinel password): every client authenticates as the
+    # default user, a recorded P0.6 gap; the development lane runs one ACL user per role.
     chart: {source: deploy/qualification/platform/valkey, name: valkey}
     values:
       architecture: replication
       replicaCount: 3
       image: {tag: "9.0.2-alpine@sha256:68677f85c863830af7836ff07c4a13b7f085ebeff62f4dedb71499ca27d229f2", imagePullPolicy: IfNotPresent}
       auth: {enabled: true, existingSecret: anvilkit-valkey-queue, existingSecretPasswordKey: password}
+      tls: {enabled: true, existingSecret: anvilkit-valkey-queue-tls, certCAFilename: ca.crt, authClients: false}
       config:
         maxMemoryPolicy: noeviction
         save: ""
@@ -262,37 +349,75 @@ applications:
         enabled: true
         quorum: 2
         image: {tag: "9.0.2-alpine@sha256:68677f85c863830af7836ff07c4a13b7f085ebeff62f4dedb71499ca27d229f2", pullPolicy: IfNotPresent}
-        masterProxy: {enabled: true}
+        # The HAProxy sidecar must not share the pod's TLS port (tls.port 6380).
+        masterProxy: {enabled: true, containerPort: 6390}
   - name: anvilkit-qdrant
     wave: -30
     layer: stateful
     namespace: anvilkit-data
     chart: {upstream: https://qdrant.github.io/qdrant-helm, name: qdrant, version: 1.19.0}
+    # The chart compares the tag as a semantic version and has no digest field: Qdrant
+    # is pinned by tag only here (a recorded limitation). The API key comes from the
+    # CSI-synced Secret anvilkit-qdrant-apikey (anvilkit-secrets; the chart's
+    # apiKey.valueFrom needs Helm lookup, which Argo CD's rendering cannot do). P0.6: the
+    # API and the peer-to-peer channel serve TLS with the cert-manager server certificate.
     values:
       replicaCount: 3
-      # The chart compares the tag as a semantic version and has no digest
-      # field: Qdrant is pinned by tag only here (a recorded limitation).
       image: {tag: "v1.19.0"}
-      # Knowledge authenticates with this key (Secrets from bootstrap.py, never in Git).
-      # The chart's apiKey.valueFrom reads the Secret with Helm lookup, which Argo CD's
-      # rendering cannot do; Qdrant takes the key from its environment instead.
       env:
         - {name: QDRANT__SERVICE__API_KEY, valueFrom: {secretKeyRef: {name: anvilkit-qdrant-apikey, key: apiKey}}}
       persistence: {size: 2Gi}
       snapshotPersistence: {enabled: true, size: 2Gi}
+      additionalVolumes:
+        - name: tls
+          secret: {secretName: anvilkit-qdrant-tls}
+      additionalVolumeMounts:
+        - {name: tls, mountPath: /qdrant/tls, readOnly: true}
       config:
-        cluster: {enabled: true}
+        cluster:
+          enabled: true
+          p2p: {enable_tls: true}
+        service: {enable_tls: true}
+        tls:
+          cert: /qdrant/tls/tls.crt
+          key: /qdrant/tls/tls.key
+          ca_cert: /qdrant/tls/ca.crt
+          cert_ttl: 3600
   - name: openbao
     wave: -30
     layer: stateful
     namespace: anvilkit-platform
     chart: {upstream: https://openbao.github.io/openbao-helm, name: openbao, version: 0.29.5}
+    # P0.6: the listener and the raft joins serve TLS with the cert-manager server
+    # certificate openbao-tls (joins verify it against the CA); the CSI provider
+    # (DaemonSet, agent off) mounts only that CA. Kubernetes auth, the per-service
+    # roles and policies and the KV v2 credentials are bootstrap.py's; the root token
+    # is revoked after it, and the unseal shares never leave the custody location.
     values:
+      global: {tlsDisable: false}
       injector: {enabled: false}
-      csi: {enabled: false}
+      csi:
+        enabled: true
+        image: {tag: "2.0.3@sha256:ad30d5f6223f30f62e8df6e444b84af5b05402a70c09712415dd1d7f139c027e"}
+        agent: {enabled: false}
+        volumes:
+          - name: openbao-ca
+            secret: {secretName: openbao-tls, items: [{key: ca.crt, path: ca.crt}]}
+        volumeMounts:
+          - {name: openbao-ca, mountPath: /openbao/tls, readOnly: true}
+        resources:
+          requests: {cpu: 25m, memory: 64Mi}
+          limits: {memory: 128Mi}
       ui: {enabled: false}
       server:
         dataStorage: {size: 1Gi}
+        extraEnvironmentVars:
+          BAO_CACERT: /openbao/tls/ca.crt
+        volumes:
+          - name: openbao-tls
+            secret: {secretName: openbao-tls}
+        volumeMounts:
+          - {name: openbao-tls, mountPath: /openbao/tls, readOnly: true}
         ha:
           enabled: true
           replicas: 3
@@ -302,30 +427,103 @@ applications:
             config: |
               ui = false
               listener "tcp" {
-                tls_disable = 1
                 address = "[::]:8200"
                 cluster_address = "[::]:8201"
+                tls_cert_file = "/openbao/tls/tls.crt"
+                tls_key_file = "/openbao/tls/tls.key"
+                tls_min_version = "tls12"
+                # The shares' break-glass: a root token is generated only with the custody
+                # threshold of unseal shares (bao 2.6 refuses the unauthenticated endpoint by default).
+                disable_unauthed_generate_root_endpoints = false
               }
               storage "raft" {
                 path = "/openbao/data"
-                retry_join { leader_api_addr = "http://openbao-0.openbao-internal:8200" }
-                retry_join { leader_api_addr = "http://openbao-1.openbao-internal:8200" }
-                retry_join { leader_api_addr = "http://openbao-2.openbao-internal:8200" }
+                retry_join {
+                  leader_api_addr = "https://openbao-0.openbao-internal:8200"
+                  leader_ca_cert_file = "/openbao/tls/ca.crt"
+                }
+                retry_join {
+                  leader_api_addr = "https://openbao-1.openbao-internal:8200"
+                  leader_ca_cert_file = "/openbao/tls/ca.crt"
+                }
+                retry_join {
+                  leader_api_addr = "https://openbao-2.openbao-internal:8200"
+                  leader_ca_cert_file = "/openbao/tls/ca.crt"
+                }
               }
               service_registration "kubernetes" {}
+  # P0.6: the Kubernetes Secrets the third-party charts read, synced from OpenBao by the
+  # CSI driver (no Secret with credential material is created by hand).
+  - name: anvilkit-secrets
+    wave: -29
+    layer: stateful
+    namespace: anvilkit-platform
+    chart: {source: deploy/qualification/platform/secrets, name: anvilkit-secrets}
+    values:
+      syncs:
+        - name: anvilkit-secrets-data
+          namespace: anvilkit-data
+          path: kv/data/anvilkit/sync/data
+          secrets:
+            - {name: anvilkit-dr-backup, data: {ACCESS_KEY_ID: dr-backup-access-key-id, ACCESS_SECRET_KEY: dr-backup-secret-access-key}}
+            - {name: anvilkit-valkey-queue, data: {password: valkey-password}}
+            - {name: anvilkit-qdrant-apikey, data: {apiKey: qdrant-api-key}}
+            - {name: anvilkit-objects-root, data: {MINIO_ROOT_USER: objects-root-user, MINIO_ROOT_PASSWORD: objects-root-password}}
+            - name: anvilkit-objects-users
+              data:
+                ARTIFACTS_ACCESS_KEY_ID: objects-artifacts-access-key-id
+                ARTIFACTS_SECRET_ACCESS_KEY: objects-artifacts-secret-access-key
+                MODEL_PROXY_ACCESS_KEY_ID: objects-model-proxy-access-key-id
+                MODEL_PROXY_SECRET_ACCESS_KEY: objects-model-proxy-secret-access-key
+                KNOWLEDGE_ACCESS_KEY_ID: objects-knowledge-access-key-id
+                KNOWLEDGE_SECRET_ACCESS_KEY: objects-knowledge-secret-access-key
+        - name: anvilkit-secrets-platform
+          namespace: anvilkit-platform
+          path: kv/data/anvilkit/sync/platform
+          secrets:
+            - {name: anvilkit-temporal-db, data: {password: temporal-db-password}}
+            - {name: anvilkit-probe-token, data: {token: probe-token}}
+        - name: anvilkit-secrets-apps
+          namespace: anvilkit-apps
+          path: kv/data/anvilkit/sync/apps
+          secrets:
+            # DEVELOPMENT_ONLY: the API's fixture principals (no IdP in qualification, ENV-07).
+            - {name: anvilkit-agent-api-principals, data: {principals.json: api-principals}}
+            # DEVELOPMENT_ONLY: the Model Proxy's bearer principals (its listener's mtls mode
+            # with the SPIFFE mapping is the next step; F-P0.1-1 landed in the service).
+            - {name: anvilkit-agent-model-proxy-principals, data: {principals.json: model-proxy-principals}}
   # --- platform services ------------------------------------------------------
   - name: anvilkit-temporal
     wave: -20
     layer: stateful
     namespace: anvilkit-platform
     chart: {upstream: https://go.temporal.io/helm-charts, name: temporal, version: 1.6.0}
+    # P0.6: the frontend serves TLS with the cert-manager server certificate (the
+    # services' temporal.tls.mode tls verifies it by serverName), the internal clients
+    # and the namespace Job verify it, and the persistence connects to the CNPG
+    # cluster with verify-full TLS; the database password is the CSI-synced
+    # anvilkit-temporal-db Secret (anvilkit-secrets).
     values:
       server:
         frontend: {replicaCount: 2}
         history: {replicaCount: 3}
         matching: {replicaCount: 2}
         worker: {replicaCount: 2}
+        additionalVolumes:
+          - name: frontend-tls
+            secret: {secretName: anvilkit-temporal-frontend-tls}
+        additionalVolumeMounts:
+          - {name: frontend-tls, mountPath: /etc/temporal/tls/frontend, readOnly: true}
         config:
+          tls:
+            frontend:
+              server:
+                certFile: /etc/temporal/tls/frontend/tls.crt
+                keyFile: /etc/temporal/tls/frontend/tls.key
+                requireClientAuth: false
+              client:
+                serverName: anvilkit-temporal-frontend
+                rootCaFiles: [/etc/temporal/tls/frontend/ca.crt]
           namespaces:
             create: true
             namespace: [{name: anvilkit, retention: 3d}]
@@ -346,6 +544,7 @@ applications:
                   manageSchema: true
                   maxConns: 20
                   maxIdleConns: 5
+                  tls: {enabled: true, caFile: /etc/temporal/tls/frontend/ca.crt, enableHostVerification: true, serverName: anvilkit-temporal-rw.anvilkit-data.svc.cluster.local}
               visibility:
                 sql:
                   pluginName: postgres12
@@ -360,6 +559,16 @@ applications:
                   manageSchema: true
                   maxConns: 10
                   maxIdleConns: 2
+                  tls: {enabled: true, caFile: /etc/temporal/tls/frontend/ca.crt, enableHostVerification: true, serverName: anvilkit-temporal-rw.anvilkit-data.svc.cluster.local}
+      admintools:
+        additionalVolumes:
+          - name: frontend-tls
+            secret: {secretName: anvilkit-temporal-frontend-tls, items: [{key: ca.crt, path: ca.crt}]}
+        additionalVolumeMounts:
+          - {name: frontend-tls, mountPath: /etc/temporal/tls/frontend, readOnly: true}
+        additionalEnv:
+          - {name: TEMPORAL_TLS_CA, value: /etc/temporal/tls/frontend/ca.crt}
+          - {name: TEMPORAL_TLS_SERVER_NAME, value: anvilkit-temporal-frontend}
       web: {enabled: false}
   - name: anvilkit-streams
     wave: -20
