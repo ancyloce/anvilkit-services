@@ -1,0 +1,240 @@
+# P24-09: the explicit retirement inventory of the legacy anvilkit-local environment.
+#
+# Every legacy executable, worker, credential, image, container, volume, active
+# source-build dependency and Git/runtime arrangement, with its consumers, the
+# decision, what historical evidence is preserved and how, and the concrete P24b
+# action. Observed 2026-10-02/03 (deploy/handover/rehearse.py inputs/legacy,
+# outputs/handover/<RUN>/{inputs,legacy-inventory}.json); deploy/handover/handover.py
+# checks every entry against the observed state before any action.
+#
+# Decisions:
+#   retire    removed from active use by P24b after the final capture (destructive:
+#             needs the execution authorization named in `authorization`)
+#   preserve  kept as historical evidence or backup; never an active input again
+#   none      nothing to retire: already replaced or not a legacy arrangement
+#
+# Nothing here is executed by the rehearsal. P24b runs only after a successful P23
+# and with explicit authorization (delivery.md, P24 Recovery: production
+# publication, route transfer and destructive retirement are concrete release
+# actions requiring the appropriate execution authorization).
+schemaVersion: 1
+scope:
+  name: anvilkit-local
+  description: >-
+    The legacy local stack (Compose project anvilkit-local on this host: Agent API,
+    Control and Workflow of the S0-S2 development plan, PostgreSQL 18.6, Temporal
+    1.31.2), the only old implementation with runtime state. Its admission point is
+    the legacy API on 127.0.0.1:18080; its containers have been exited since
+    2026-09-23T17:46:35Z.
+  oldEntry: http://127.0.0.1:18080/v1
+  newEntry: /api/v1 of anvilkit-agent-api (the environment's single entry)
+  inheritance: >-
+    none required by evidence (legacy-inventory.json assessment): six terminal
+    development-fixture preparations, no cost, effect, send, permit, publication,
+    receipt or page lock, no open business execution; the business owner's
+    confirmation is pending.
+
+items:
+  # ------------------------------------------------------------- runtime: containers
+  - id: legacy-containers
+    kind: container
+    identity:
+      composeProject: anvilkit-local
+      names:
+        - anvilkit-local-postgres-1
+        - anvilkit-local-temporal-1
+        - anvilkit-local-anvilkit-agent-control-1
+        - anvilkit-local-anvilkit-agent-workflow-1
+        - anvilkit-local-anvilkit-agent-api-1
+    consumers: [compose.yaml]
+    decision: retire
+    preserve: >-
+      their state lives in the three volumes below (captured before removal); the
+      containers themselves hold nothing else (read_only roots, logs driver local)
+    action: >-
+      close: docker update --restart=no on each (they may never restart into the
+      old scope); retire: docker rm after the final capture and checks
+    authorization: closing the old scope and destructive retirement
+    reversible: closing yes (restore the restart policy); removal only by recreating from compose.yaml before it is retired
+
+  # ------------------------------------------------------------- runtime: images
+  - id: legacy-images
+    kind: image
+    identity:
+      - {reference: "anvilkit-local-anvilkit-agent-api:legacy-20260915", id: "sha256:1cbc543fa038", alsoTagged: latest}
+      - {reference: "anvilkit-local-anvilkit-agent-control:legacy-20260916", id: "sha256:9b02ae87bfdb", alsoTagged: latest}
+      - {reference: "anvilkit-local-anvilkit-agent-workflow:legacy-20260916", id: "sha256:4b8e21f5fe6e", alsoTagged: latest}
+    consumers: [compose.yaml, deploy/handover/rehearse.py (closure positive controls)]
+    decision: retire
+    preserve: >-
+      docker save of the three images into .local/legacy/images-<RUN>/ with their
+      digests (historical executables, never run again); the closure rehearsal keeps
+      its control evidence in outputs/handover/
+    action: docker save, verify the archive digests, then docker rmi of the six tags
+    authorization: destructive retirement
+
+  # ------------------------------------------------------------- runtime: data
+  - id: legacy-volumes
+    kind: volume
+    identity: [anvilkit-local_postgres-data, anvilkit-local_intake-data, anvilkit-local_artifact-data]
+    consumers: [legacy-containers]
+    decision: preserve
+    preserve: >-
+      final capture: a logical export of every legacy database (pg_dump from a
+      disposable copy, never from the running scope) and archives of the intake and
+      artifact volumes into .local/legacy/data-<RUN>/ (0700), each verified by a
+      restore whose per-table digests equal the inventory's; the volumes stay until
+      ENV-09 sets a retention period (no retention is invented here)
+    action: capture and verify; removal only after an ENV-09 retention decision
+    authorization: none for the capture (read-only, on a copy); destructive retirement for any removal
+    note: >-
+      the records contain prompts and briefs (business content), so the export lives
+      only under .local/, never in outputs/, logs or Git
+
+  - id: legacy-temporal-histories
+    kind: workflow-history
+    identity: {namespace: anvilkit-local-check, database: temporal (inside anvilkit-local_postgres-data)}
+    consumers: [legacy-containers]
+    decision: preserve
+    preserve: >-
+      part of the database capture; the new Workflow never takes over old histories
+      (delivery.md, handover and recovery); only Temporal's own scanner workflows
+      were open at capture time
+    action: none beyond the capture
+    authorization: none
+
+  # ------------------------------------------------------------- credentials
+  - id: legacy-credentials
+    kind: credential
+    identity:
+      path: .local/compose/
+      contents: >-
+        two private CAs (API/Control and Temporal) with their keys, service and client
+        certificates (notAfter 2026-10-13T21:38:16Z), database passwords, the fixture
+        caller token (caller-a.headers), env files
+    consumers: [compose.yaml, tools/prepare-local-compose.py]
+    decision: retire
+    preserve: >-
+      nothing secret is kept; acceptance-results.json (non-secret evidence) moves to
+      .local/legacy/evidence-<RUN>/ before the directory is destroyed
+    action: >-
+      after the containers are removed: destroy the private keys, passwords and the
+      caller token (rm of .local/compose/); the certificates expire on 2026-10-13
+      regardless, which also ends any restart of the old scope with them
+    authorization: destructive retirement
+    note: no credential of the legacy scope is used by any new service (install-check configuration scan)
+
+  # ------------------------------------------------------------- active source-build dependencies
+  - id: legacy-compose-definition
+    kind: source
+    identity: {path: compose.yaml, tracked: true}
+    consumers: [docker compose (the anvilkit-local project)]
+    decision: retire
+    preserve: Git history (the file stays in every earlier commit)
+    action: delete from the working tree; the user commits the removal
+    authorization: destructive retirement and the user's Git operation
+
+  - id: legacy-compose-profile
+    kind: source
+    identity: {path: deploy/local/, tracked: false, files: [README.md, Service.Dockerfile, init-agent.sh, temporal.sh]}
+    consumers: [compose.yaml]
+    decision: retire
+    preserve: >-
+      copied into .local/legacy/deploy-local-<RUN>/ before deletion (it was never
+      committed, so Git history does not hold it)
+    action: copy, verify, delete from the working tree
+    authorization: destructive retirement
+
+  - id: legacy-compose-preparation
+    kind: source
+    identity: {path: tools/prepare-local-compose.py, tracked: true}
+    consumers: [deploy/local/README.md]
+    decision: retire
+    preserve: Git history
+    action: delete from the working tree; the user commits the removal
+    authorization: destructive retirement and the user's Git operation
+
+  - id: legacy-hero-fixture-tool
+    kind: source
+    identity: {path: tools/component/hero-fixture.mjs, tracked: true}
+    consumers: []
+    decision: retire
+    preserve: Git history
+    action: delete from the working tree; the user commits the removal
+    authorization: destructive retirement and the user's Git operation
+    note: the S1 Hero fixture tooling; nothing invokes it since the legacy verification tools were archived (cleanup record)
+
+  - id: legacy-source-snapshots
+    kind: source
+    identity: {path: .local/legacy/, entries: [anvilkit-agent-api-20260915, anvilkit-agent-control-20260916, anvilkit-agent-workflow-20260916]}
+    consumers: [compose.yaml (build contexts)]
+    decision: preserve
+    preserve: kept as the preserved legacy worktrees (each with MANIFEST.sha256, HEAD, uncommitted.patch); never a build input after compose.yaml is retired
+    action: none
+    authorization: none
+
+  - id: legacy-archived-contracts
+    kind: source
+    identity: {path: docs/archive/contracts/, ignoredByGit: true}
+    consumers: [compose.yaml (PostgreSQL bootstrap mounts), tools/component/hero-fixture.mjs, deploy/handover/rehearse.py (legacy DTOs)]
+    decision: preserve
+    preserve: kept as the historical record (docs/archive establishes nothing about the replacement)
+    action: none
+    authorization: none
+
+  - id: parent-references
+    kind: source
+    identity:
+      - tools/check-source-export.py (LEGACY_TOOLING reported as retained)
+      - README.md, AGENTS.md, deploy/dev/README.md, deploy/qualification/README.md (descriptions of the legacy environment)
+      - .gitignore (/.local/compose/)
+    consumers: []
+    decision: retire
+    preserve: Git history
+    action: update after the retirement so nothing describes the legacy environment as active
+    authorization: the retirement action itself (documentation and checker follow the observed state)
+
+  # ------------------------------------------------------------- Git/runtime arrangements
+  - id: legacy-submodule-arrangement
+    kind: git
+    identity: [services/agent/api, services/agent/control, services/agent/workflow, services/agent/model-proxy, jobs/shared/access-sidecar]
+    consumers: []
+    decision: none
+    preserve: Git history of each repository
+    action: >-
+      none: every one of these submodules now records its replacement repository's
+      commit (the legacy commits survive only in history and in .local/legacy/)
+    authorization: none
+
+  - id: legacy-host-ports
+    kind: network
+    identity: ["127.0.0.1:18080", "127.0.0.1:18081", "127.0.0.1:18082", "127.0.0.1:15432", "127.0.0.1:17233-17236", "127.0.0.1:16933-16936"]
+    consumers: [legacy-containers]
+    decision: retire
+    preserve: nothing
+    action: free once the containers are removed (checked by the final checks)
+    authorization: follows legacy-containers
+
+  # ------------------------------------------------------------- clients and write authority
+  - id: clients
+    kind: client
+    identity: {studio: "anvilkit-studio apps/studio lib/agent (ANVILKIT_AGENT_API_URL, generated /api/v1 client)"}
+    consumers: []
+    decision: none
+    preserve: n/a
+    action: >-
+      none to retire: the Studio holds no legacy API client (no /v1 route, port 18080
+      or legacy caller header); the transfer is pointing ANVILKIT_AGENT_API_URL at
+      the new entry of the released environment
+    authorization: route transfer (the environment's entry is a release action)
+
+  - id: write-authority
+    kind: authority
+    identity: {old: "legacy Control (agent_control schema)", new: "anvilkit-agent-control (anvilkit_control)"}
+    consumers: []
+    decision: retire
+    preserve: the database capture
+    action: >-
+      the old scope stays closed (legacy-containers) and the new Control is the only
+      writer; nothing is imported (inheritance: none required by evidence)
+    authorization: closing the old scope
