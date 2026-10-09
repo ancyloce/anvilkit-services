@@ -33,6 +33,23 @@ migration:
   secret:
     name: anvilkit-agent-control-migrator
     key: url
+# P0.1: the listener is mTLS with a certificate issued by the development
+# PKI (deploy/dev/k8s/pki.yaml); the foundation's Temporal frontend is
+# plaintext, which only the top-level DEVELOPMENT_ONLY guard admits.
+identity:
+  mode: mtls
+  trustDomain: anvilkit.local
+  certificate:
+    create: true
+    issuerRef:
+      name: anvilkit-dev-ca
+      kind: ClusterIssuer
+      group: cert-manager.io
+development:
+  enabled: true
+temporal:
+  tls:
+    mode: development
 podDisruptionBudget:
   enabled: false
 resources:

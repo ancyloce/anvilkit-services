@@ -1,0 +1,9 @@
+# DEVELOPMENT_ONLY environment values of the Job-boundary admission chart
+# (deploy/policies/chart) for the kind cluster of the development foundation:
+# the development registry of deploy/dev/up.sh, and the pinned busybox of
+# the P05 LocalCheck fixture in the components namespace.
+registries:
+  components: ["localhost:5001/", "docker.io/library/busybox@"]
+  parsing: ["localhost:5001/"]
+# P0.8 DEVELOPMENT_ONLY: the bound-source validator on the foundation's runtime.
+developmentProfiles: [validator-source-dev-v1]

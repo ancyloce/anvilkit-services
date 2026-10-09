@@ -20,6 +20,31 @@ launcher:
   backend: kind-anvilkit-dev
   imageRegistry: localhost:5001
   sidecarControlAddress: anvilkit-agent-control.anvilkit-apps.svc.cluster.local:9101
+# P0.1: the worker and every harness Job's access sidecar present certificates
+# issued by the development PKI (deploy/dev/k8s/pki.yaml); the foundation's
+# Temporal frontend is plaintext, which only the top-level DEVELOPMENT_ONLY
+# guard admits (it downgrades no gRPC, Proxy or sidecar connection).
+identity:
+  mode: mtls
+  trustDomain: anvilkit.local
+  certificate:
+    create: true
+    issuerRef:
+      name: anvilkit-dev-ca
+      kind: ClusterIssuer
+      group: cert-manager.io
+temporal:
+  tls:
+    mode: development
+control:
+  serverName: anvilkit-agent-control
+modelProxy:
+  serverName: anvilkit-agent-model-proxy
+sidecar:
+  identityMode: mtls
+  identitySecret: anvilkit-job-access-sidecar-identity
+development:
+  enabled: true
 podDisruptionBudget:
   enabled: false
 resources:

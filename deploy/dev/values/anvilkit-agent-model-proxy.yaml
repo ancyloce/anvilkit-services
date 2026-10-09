@@ -17,11 +17,30 @@ image:
   pullPolicy: Never
 control:
   address: anvilkit-agent-control.anvilkit-apps.svc.cluster.local:9101
+  # P0.1: the Control client presents the workload certificate the chart's
+  # Certificate (anvilkit-dev-ca) issues and verifies Control by its name.
+  identity:
+    mode: mtls
+    mtlsSecret:
+      serverName: anvilkit-agent-control
+# The listener keeps the DEVELOPMENT_ONLY bearer principals of the
+# foundation (admitted only by development.enabled); its mtls mode maps the
+# caller's SPIFFE URI SAN (identity.mtls.principals[{spiffe_id, principal_id,
+# kind}], F-P0.1-1 done in P0.6).
 identity:
   mode: development
+  trustDomain: anvilkit.local
+  certificate:
+    create: true
+    issuerRef:
+      name: anvilkit-dev-ca
+      kind: ClusterIssuer
+      group: cert-manager.io
   principalsSecret:
     name: anvilkit-agent-model-proxy-principals
     key: principals.json
+development:
+  enabled: true
 store:
   s3:
     bucket: anvilkit-model-proxy

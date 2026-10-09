@@ -1,0 +1,18 @@
+{
+  "interactiveLogin": false,
+  "tokenCallbacks": [
+    {
+      "issuerId": "anvilkit",
+      "tokenExpiry": 7200,
+      "requestMappings": [
+        {"requestParam": "username", "match": "user-a", "claims": {"sub": "user_a", "aud": ["anvilkit-agent-api"], "tenant": "tenant_a", "project": "proj_a", "roles": ["author"]}},
+        {"requestParam": "username", "match": "user-b", "claims": {"sub": "user_b", "aud": ["anvilkit-agent-api"], "tenant": "tenant_b", "project": "proj_b", "roles": ["author"]}},
+        {"requestParam": "username", "match": "user-a-other-project", "claims": {"sub": "user_c", "aud": ["anvilkit-agent-api"], "tenant": "tenant_a", "project": "proj_c", "roles": ["author"]}},
+        {"requestParam": "username", "match": "operator-a", "claims": {"sub": "operator_a", "aud": ["anvilkit-agent-api"], "tenant": "tenant_a", "project": "proj_ops", "roles": ["author", "operator"]}},
+        {"requestParam": "username", "match": "reviewer-a", "claims": {"sub": "reviewer_a", "aud": ["anvilkit-agent-api"], "tenant": "tenant_a", "project": "proj_a", "roles": ["reviewer"]}},
+        {"requestParam": "username", "match": "wrong-audience", "claims": {"sub": "user_a", "aud": ["another-service"], "tenant": "tenant_a", "project": "proj_a", "roles": ["author"]}},
+        {"requestParam": "username", "match": "*", "claims": {"sub": "unmapped", "aud": ["nobody"]}}
+      ]
+    }
+  ]
+}

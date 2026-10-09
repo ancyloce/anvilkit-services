@@ -78,7 +78,13 @@ PPASS=$(sed -n 's/^ANVILKIT_MODEL_PROXY_STORE_SECRET_ACCESS_KEY=//p' "$LOCAL/min
 
 # --wait only on the long-running services; schema setup runs as their dependency and
 # the namespace and bucket steps are one-shots that must not trip --wait on re-runs.
-docker compose -f "$ROOT/deploy/dev/compose.yaml" up -d --wait --wait-timeout 180 postgres temporal minio nats valkey-queue valkey-cache qdrant
+docker compose -f "$ROOT/deploy/dev/compose.yaml" up -d --wait --wait-timeout 180 postgres temporal minio nats valkey-queue valkey-cache qdrant oidc
+# P0.3: the development OIDC provider answers discovery once its JVM is up.
+i=0
+until curl -sf http://127.0.0.1:25556/anvilkit/.well-known/openid-configuration >/dev/null; do
+  i=$((i + 1)); [ "$i" -lt 120 ] || { echo "the development OIDC provider did not answer discovery" >&2; exit 1; }
+  sleep 1
+done
 docker compose -f "$ROOT/deploy/dev/compose.yaml" run --rm --no-deps temporal-namespace >/dev/null
 docker compose -f "$ROOT/deploy/dev/compose.yaml" run --rm --no-deps minio-setup >/dev/null
 # P14: the three domain streams of the event catalog on the JetStream.
@@ -88,7 +94,9 @@ docker compose -f "$ROOT/deploy/dev/compose.yaml" run --rm --no-deps nats-setup 
 # (services/agent/control, cmd/anvilkit-migration) applies it; the
 # knowledge and mcp schemas stay with the parent's jobs/migration until
 # those services own them.
-(cd "$ROOT/services/agent/control" && GOWORK=off go run ./cmd/anvilkit-migration \
+# The foundation's PostgreSQL is plaintext: -development admits it (P0.6;
+# every other DSN must be sslmode=verify-full).
+(cd "$ROOT/services/agent/control" && GOWORK=off go run ./cmd/anvilkit-migration -development \
   -dsn "postgres://anvilkit_control_migrator:${PW}@127.0.0.1:25432/anvilkit_control?sslmode=disable")
 # P14: the owner queue relay identities and the Knowledge outbox forwarder
 # identity that migration 00002 grants to (postgres-init.sh creates them on a
@@ -100,14 +108,14 @@ for role in anvilkit_knowledge_relay anvilkit_mcp_relay anvilkit_knowledge_forwa
       "CREATE ROLE $role LOGIN PASSWORD '$PW'" >/dev/null
 done
 for domain in knowledge mcp; do
-  (cd "$ROOT/jobs/migration" && go run ./cmd/anvilkit-migration -domain "$domain" \
+  (cd "$ROOT/jobs/migration" && go run ./cmd/anvilkit-migration -domain "$domain" -development \
     -dsn "postgres://anvilkit_${domain}_migrator:${PW}@127.0.0.1:25432/anvilkit_${domain}?sslmode=disable")
 done
 # P17: the PostgresStore vendor schema of the memory projection, migrated by
 # the Store's own migrations under its separate identity (Knowledge's
 # store-migrate entry; the service runs with ensureTables: false).
 if [ -f "$ROOT/services/agent/knowledge/dist/storemigrate.js" ]; then
-  (cd "$ROOT/services/agent/knowledge" && ANVILKIT_KNOWLEDGE_STORE_MIGRATION_URL="postgres://anvilkit_knowledge_store_migrator:${PW}@127.0.0.1:25432/anvilkit_knowledge?sslmode=disable" \
+  (cd "$ROOT/services/agent/knowledge" && ANVILKIT_KNOWLEDGE_STORE_MIGRATION_DEVELOPMENT=true ANVILKIT_KNOWLEDGE_STORE_MIGRATION_URL="postgres://anvilkit_knowledge_store_migrator:${PW}@127.0.0.1:25432/anvilkit_knowledge?sslmode=disable" \
     node dist/storemigrate.js)
 else
   echo "UNEXECUTED: the memory Store schema (build services/agent/knowledge first, then re-run up.sh)" >&2
@@ -117,6 +125,24 @@ if ! kind get clusters 2>/dev/null | grep -qx anvilkit-dev; then
   kind create cluster --config "$ROOT/deploy/dev/kind.yaml" --wait 120s
 fi
 kubectl --context kind-anvilkit-dev apply -f "$ROOT/deploy/dev/k8s/namespaces.yaml" >/dev/null
+# P0.1: cert-manager (pinned) and the DEVELOPMENT_ONLY workload PKI
+# (deploy/dev/k8s/pki.yaml): the charts' Certificates and the host-side
+# leaves of deploy/dev/certs.sh are issued by the same ClusterIssuer
+# anvilkit-dev-ca, so in-cluster services, host-side processes and the
+# integration harness share one trust chain. The CA private key stays in
+# the cluster Secret.
+CERT_MANAGER_DIR="$LOCAL/cert-manager"
+CERT_MANAGER_VERSION=v1.21.2
+mkdir -p "$CERT_MANAGER_DIR"
+if [ ! -f "$CERT_MANAGER_DIR/cert-manager.yaml" ]; then
+  curl -sSL -o "$CERT_MANAGER_DIR/cert-manager.yaml" "https://github.com/cert-manager/cert-manager/releases/download/$CERT_MANAGER_VERSION/cert-manager.yaml"
+fi
+echo "e03b668ec8675214af6b0a671699d088f2601fa3878e0dbe1b41d3feafd1879f  $CERT_MANAGER_DIR/cert-manager.yaml" | sha256sum -c --quiet
+kubectl --context kind-anvilkit-dev apply --server-side -f "$CERT_MANAGER_DIR/cert-manager.yaml" >/dev/null
+for d in cert-manager cert-manager-cainjector cert-manager-webhook; do
+  kubectl --context kind-anvilkit-dev -n cert-manager rollout status "deploy/$d" --timeout=240s >/dev/null
+done
+sh "$ROOT/deploy/dev/certs.sh" >/dev/null
 # The launcher identity of a worker outside the cluster (the integration
 # scenarios and manual runs start the Workflow on the host): the Workflow
 # chart is the single owner of the launcher RBAC, so the host-side identity
@@ -136,8 +162,14 @@ done
 helm template anvilkit-agent-workflow-host "$ROOT/services/agent/workflow/deploy/chart" -n anvilkit-components \
   --set temporal.address=unused --set control.address=unused --set launcher.backend=kind-anvilkit-dev \
   --set launcher.imageRegistry=unused --set launcher.sidecarControlAddress=unused \
-  -s templates/serviceaccount.yaml -s templates/rbac.yaml \
+  --set development.enabled=true --set temporal.tls.mode=development \
+  --set identity.trustDomain=anvilkit.local --set identity.certificate.issuerRef.name=anvilkit-dev-ca \
+  -s templates/serviceaccount.yaml -s templates/rbac.yaml -s templates/certificate.yaml \
   | kubectl --context kind-anvilkit-dev -n anvilkit-components apply -f - >/dev/null
+# P0.1: the access sidecar's identity (the Certificate the Workflow chart
+# renders into anvilkit-components; the launcher mounts its Secret into the
+# sidecar container only) must be issued before a harness Job is launched.
+kubectl --context kind-anvilkit-dev -n anvilkit-components wait certificate/anvilkit-job-access-sidecar-identity --for=condition=Ready --timeout=120s >/dev/null
 
 # P09 (DEVELOPMENT_ONLY runtime inputs of the trusted Job boundary; none of
 # them qualifies gVisor, the RKE2/Cilium combination or a production registry):
@@ -157,9 +189,6 @@ if ! docker exec "$NODE" grep -q 'config_path = "/etc/containerd/certs.d"' /etc/
   docker exec "$NODE" sh -c 'printf "\n[plugins.\"io.containerd.grpc.v1.cri\".registry]\n  config_path = \"/etc/containerd/certs.d\"\n" >> /etc/containerd/config.toml && systemctl restart containerd'
 fi
 kubectl --context kind-anvilkit-dev label node "$NODE" anvilkit.io/pool=components --overwrite >/dev/null
-docker exec "$NODE" mkdir -p /var/lib/kubelet/seccomp/anvilkit
-docker cp "$ROOT/deploy/policies/seccomp/anvilkit-candidate.json" "$NODE:/var/lib/kubelet/seccomp/anvilkit/candidate.json"
-docker exec "$NODE" chmod 0644 /var/lib/kubelet/seccomp/anvilkit/candidate.json
 KYVERNO_DIR="$LOCAL/kyverno"
 KYVERNO_VERSION=v1.19.1
 mkdir -p "$KYVERNO_DIR"
@@ -174,10 +203,36 @@ echo "d3322cb346d3d42dd0f41e230b0d1d7bc5619960e1c36fdac4d9151d724b88e6  $KYVERNO
 echo "b38228f367fc0fdc2b08f4c83ea50ac5f16c60ff8d62d76a66157c33c47b70ae  $KYVERNO_DIR/kyverno-cli.tar.gz" | sha256sum -c --quiet
 kubectl --context kind-anvilkit-dev apply --server-side -f "$KYVERNO_DIR/install.yaml" >/dev/null
 kubectl --context kind-anvilkit-dev -n kyverno rollout status deploy/kyverno-admission-controller --timeout=240s >/dev/null
-kubectl --context kind-anvilkit-dev apply -f "$ROOT/deploy/policies/kyverno/anvilkit-components-jobs.yaml" -f "$ROOT/deploy/policies/kyverno/anvilkit-components-registries.dev.yaml" -f "$ROOT/deploy/policies/network/anvilkit-components-egress.yaml" >/dev/null
-# P15: the parser namespace's admission policies (the fixed parser template
-# and this environment's registry) and its default-deny network policy.
-kubectl --context kind-anvilkit-dev apply -f "$ROOT/deploy/policies/kyverno/anvilkit-parsing-jobs.yaml" -f "$ROOT/deploy/policies/kyverno/anvilkit-parsing-registries.dev.yaml" -f "$ROOT/deploy/policies/network/anvilkit-parsing-egress.yaml" >/dev/null
+# P0.5: the Job-boundary admission chart every environment installs (the
+# components and parser template/digest policies, this environment's
+# registry allowlist) and the DaemonSet that places the candidate seccomp
+# profile on every node; the same chart is the qualification combination's.
+# Kyverno's admission controller runs three replicas behind a PDB, so losing
+# one does not stop admission.
+kubectl --context kind-anvilkit-dev -n kyverno scale deploy/kyverno-admission-controller --replicas=3 >/dev/null
+kubectl --context kind-anvilkit-dev apply -f - >/dev/null <<'PDB'
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: kyverno-admission-controller, namespace: kyverno}
+spec:
+  minAvailable: 2
+  selector: {matchLabels: {app.kubernetes.io/component: admission-controller, app.kubernetes.io/instance: kyverno}}
+PDB
+kubectl --context kind-anvilkit-dev -n kyverno rollout status deploy/kyverno-admission-controller --timeout=240s >/dev/null
+for legacy in validatingpolicy/anvilkit-components-jobs validatingpolicy/anvilkit-components-pods validatingpolicy/anvilkit-components-ephemeral validatingpolicy/anvilkit-components-registries validatingpolicy/anvilkit-parsing-jobs validatingpolicy/anvilkit-parsing-pods validatingpolicy/anvilkit-parsing-ephemeral validatingpolicy/anvilkit-parsing-registries; do
+  # Policies applied by earlier versions of this script are adopted by the chart.
+  if kubectl --context kind-anvilkit-dev get "$legacy" >/dev/null 2>&1 \
+     && [ "$(kubectl --context kind-anvilkit-dev get "$legacy" -o jsonpath='{.metadata.labels.app\.kubernetes\.io/managed-by}')" != "Helm" ]; then
+    kubectl --context kind-anvilkit-dev delete "$legacy" >/dev/null
+  fi
+done
+helm --kube-context kind-anvilkit-dev upgrade --install anvilkit-job-admission "$ROOT/deploy/policies/chart" -n kyverno \
+  -f "$ROOT/deploy/dev/values/anvilkit-job-admission.yaml" --wait --timeout 4m >/dev/null
+kubectl --context kind-anvilkit-dev -n kube-system rollout status ds/anvilkit-seccomp-installer --timeout=180s >/dev/null
+# The development foundation's own network isolation of the Job namespaces:
+# default deny and the egress rule generated below from this machine's
+# addresses (its Control and object store run outside the cluster).
+kubectl --context kind-anvilkit-dev apply -f "$ROOT/deploy/policies/network/anvilkit-components-egress.yaml" -f "$ROOT/deploy/policies/network/anvilkit-parsing-egress.yaml" >/dev/null
 # The foundation's PostgreSQL, Temporal and MinIO join the kind network so
 # the Control and Workflow releases in the cluster (and a Job's sidecar)
 # reach them by their kind-network addresses; the loopback-only published
@@ -200,6 +255,7 @@ TEMPORAL_KIND_IP=$(docker inspect anvilkit-dev-temporal-1 --format '{{(index .Ne
 helm template anvilkit-agent-knowledge-host "$ROOT/services/agent/knowledge/deploy/chart" -n anvilkit-parsing \
   --set parser.enabled=true --set serviceAccount.name=anvilkit-agent-knowledge-host --set database.secret.name=unused --set nats.url=unused \
   --set forwarder.database.secret.name=unused --set relay.database.secret.name=unused --set relay.queue.secret.name=unused \
+  --set development.enabled=true --set nats.tls.mode=development --set identity.certificate.issuerRef.name=anvilkit-dev-ca \
   -s templates/serviceaccount.yaml -s templates/rbac.yaml \
   | kubectl --context kind-anvilkit-dev -n anvilkit-parsing apply -f - >/dev/null
 cat <<POLICY | kubectl --context kind-anvilkit-dev apply -f - >/dev/null
@@ -365,6 +421,11 @@ export ANVILKIT_DEV_MODEL_PROXY_TOKEN_SIDECAR="${PS_TOKEN}"
 export ANVILKIT_DEV_MODEL_PROXY_TOKEN_CONTROL="${PC_TOKEN}"
 export ANVILKIT_KYVERNO_CLI="$KYVERNO_DIR/kyverno"
 export ANVILKIT_DEV_API_TOKEN_A="${TA}"
+# P0.3 (DEVELOPMENT_ONLY): the issuer of the development OIDC provider
+# (deploy/dev/oidc/config.json); the API verifies its tokens under
+# auth.mode oidc with audience anvilkit-agent-api, the harness obtains them
+# by password grant for the development users.
+export ANVILKIT_DEV_OIDC_ISSUER="http://127.0.0.1:25556/anvilkit"
 # P14 (DEVELOPMENT_ONLY): the JetStream, the queue Valkey (BullMQ) and the
 # separate cache Valkey; the owned databases of Knowledge and MCP with their
 # app, relay, forwarder and migrator identities; the placements of the
@@ -404,13 +465,15 @@ export ANVILKIT_BACKGROUND_WORKER_CONTRACTS_DIR="$ROOT/contracts"
 # presigned URLs are signed for), the parser launcher's kubeconfig and
 # registry, and the Inference placement (a container started by the
 # integration scenario or by hand: docker run -p 127.0.0.1:29108:9108
-# anvilkit-agent-inference:dev with ANVILKIT_INFERENCE_LISTEN=0.0.0.0:9108).
+# anvilkit-agent-inference:dev with ANVILKIT_INFERENCE_LISTEN=0.0.0.0:9108 and
+# the development PKI's Inference certificate as
+# ANVILKIT_INFERENCE_TLS_{CERT,KEY}_FILE: it serves HTTPS only, P0.6).
 export ANVILKIT_KNOWLEDGE_OBJECTS_ENDPOINT="http://127.0.0.1:29000"
 export ANVILKIT_KNOWLEDGE_OBJECTS_STAGE_ENDPOINT="http://${MINIO_KIND_IP}:9000"
 export ANVILKIT_KNOWLEDGE_OBJECTS_CREDENTIALS_FILE="$LOCAL/minio-knowledge.env"
 export ANVILKIT_KNOWLEDGE_KUBECONFIG="$LOCAL/knowledge-launcher.kubeconfig"
 export ANVILKIT_KNOWLEDGE_IMAGE_REGISTRY="localhost:5001"
-export ANVILKIT_DEV_INFERENCE_URL="http://127.0.0.1:29108"
+export ANVILKIT_DEV_INFERENCE_URL="https://127.0.0.1:29108"
 # P16 (DEVELOPMENT_ONLY): the Qdrant node of the foundation and its API key.
 export ANVILKIT_KNOWLEDGE_QDRANT_URL="http://127.0.0.1:26333"
 export ANVILKIT_KNOWLEDGE_QDRANT_API_KEY="${QKEY}"
@@ -422,5 +485,38 @@ export ANVILKIT_KNOWLEDGE_STORE_DATABASE_URL="\$ANVILKIT_DEV_KNOWLEDGE_STORE_DSN
 # other databases never read the development database's records).
 export ANVILKIT_KNOWLEDGE_REMOVALS_ENDPOINT="http://127.0.0.1:29000"
 export ANVILKIT_KNOWLEDGE_REMOVALS_CREDENTIALS_FILE="$LOCAL/minio-removals.env"
+# P0.1 (DEVELOPMENT_ONLY PKI): the workload certificates of the host-side
+# processes and the integration harness, issued by the cluster's
+# cert-manager (deploy/dev/certs.sh) under the trust domain anvilkit.local
+# and synchronized to .local/dev/certs/<principal>/{tls.crt,tls.key,ca.crt}.
+# Every internal gRPC listener and client runs mTLS by default; the
+# plaintext foundation services (Temporal, NATS, OTLP) are admitted only by
+# each service's development.enabled guard; Inference serves HTTPS (P0.6).
+export ANVILKIT_DEV_CERTS_DIR="$LOCAL/certs"
+export ANVILKIT_DEV_TRUST_DOMAIN="anvilkit.local"
+export ANVILKIT_CONTROL_IDENTITY_CERT_FILE="$LOCAL/certs/anvilkit-agent-control/tls.crt"
+export ANVILKIT_CONTROL_IDENTITY_KEY_FILE="$LOCAL/certs/anvilkit-agent-control/tls.key"
+export ANVILKIT_CONTROL_IDENTITY_CA_FILE="$LOCAL/certs/anvilkit-agent-control/ca.crt"
+export ANVILKIT_API_IDENTITY_CERT_FILE="$LOCAL/certs/anvilkit-agent-api/tls.crt"
+export ANVILKIT_API_IDENTITY_KEY_FILE="$LOCAL/certs/anvilkit-agent-api/tls.key"
+export ANVILKIT_API_IDENTITY_CA_FILE="$LOCAL/certs/anvilkit-agent-api/ca.crt"
+export ANVILKIT_WORKFLOW_IDENTITY_CERT_FILE="$LOCAL/certs/anvilkit-agent-workflow/tls.crt"
+export ANVILKIT_WORKFLOW_IDENTITY_KEY_FILE="$LOCAL/certs/anvilkit-agent-workflow/tls.key"
+export ANVILKIT_WORKFLOW_IDENTITY_CA_FILE="$LOCAL/certs/anvilkit-agent-workflow/ca.crt"
+export ANVILKIT_KNOWLEDGE_IDENTITY_CERT_FILE="$LOCAL/certs/anvilkit-agent-knowledge/tls.crt"
+export ANVILKIT_KNOWLEDGE_IDENTITY_KEY_FILE="$LOCAL/certs/anvilkit-agent-knowledge/tls.key"
+export ANVILKIT_KNOWLEDGE_IDENTITY_CA_FILE="$LOCAL/certs/anvilkit-agent-knowledge/ca.crt"
+export ANVILKIT_MCP_IDENTITY_CERT_FILE="$LOCAL/certs/anvilkit-agent-mcp/tls.crt"
+export ANVILKIT_MCP_IDENTITY_KEY_FILE="$LOCAL/certs/anvilkit-agent-mcp/tls.key"
+export ANVILKIT_MCP_IDENTITY_CA_FILE="$LOCAL/certs/anvilkit-agent-mcp/ca.crt"
+export ANVILKIT_BACKGROUND_WORKER_IDENTITY_CERT_FILE="$LOCAL/certs/anvilkit-agent-background-worker/tls.crt"
+export ANVILKIT_BACKGROUND_WORKER_IDENTITY_KEY_FILE="$LOCAL/certs/anvilkit-agent-background-worker/tls.key"
+export ANVILKIT_BACKGROUND_WORKER_IDENTITY_CA_FILE="$LOCAL/certs/anvilkit-agent-background-worker/ca.crt"
+export ANVILKIT_MODEL_PROXY_CONTROL_IDENTITY_CERT_FILE="$LOCAL/certs/anvilkit-agent-model-proxy/tls.crt"
+export ANVILKIT_MODEL_PROXY_CONTROL_IDENTITY_KEY_FILE="$LOCAL/certs/anvilkit-agent-model-proxy/tls.key"
+export ANVILKIT_MODEL_PROXY_CONTROL_IDENTITY_CA_FILE="$LOCAL/certs/anvilkit-agent-model-proxy/ca.crt"
+export ANVILKIT_FORWARDER_DEVELOPMENT_ENABLED="true"
+export ANVILKIT_FORWARDER_NATS_TLS_MODE="development"
+export ANVILKIT_INTEGRATION_IDENTITY_DIR="$LOCAL/certs/anvilkit-agent-workflow"
 ENV
 echo "dev foundation ready; source $LOCAL/env.sh"

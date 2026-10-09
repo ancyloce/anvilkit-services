@@ -192,6 +192,22 @@ services:
       timeout: 3s
       retries: 40
 
+  # P0.3: the disposable OIDC provider of the development foundation
+  # (DEVELOPMENT_ONLY; ENV-07 supplies the real IdP). A real issuer with
+  # discovery, a JWKS and RS256-signed tokens; deploy/dev/oidc/config.json
+  # maps each development user (password grant, any password) to the
+  # tenant/project/roles claims the API's claim mapping reads. It holds no
+  # secret: it authenticates nobody and exists for the integration harness.
+  oidc:
+    image: ghcr.io/navikt/mock-oauth2-server:2.2.1@sha256:2418020949eefdf15e64e5dff74eaa7614de382ed7276564adb2c9b57f864169
+    restart: unless-stopped
+    environment:
+      JSON_CONFIG_PATH: /etc/anvilkit-oidc/config.json
+    ports:
+      - "127.0.0.1:25556:8080"
+    volumes:
+      - ./oidc/config.json:/etc/anvilkit-oidc/config.json:ro
+
 volumes:
   postgres-data:
   minio-data:

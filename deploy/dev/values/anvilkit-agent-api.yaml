@@ -17,6 +17,27 @@ auth:
   principalsSecret:
     name: anvilkit-agent-api-principals
     key: principals.json
+# P0.1: the API's gRPC clients present a certificate issued by the development
+# PKI (deploy/dev/k8s/pki.yaml) and verify the owners by their service names.
+identity:
+  mode: mtls
+  trustDomain: anvilkit.local
+  certificate:
+    create: true
+    issuerRef:
+      name: anvilkit-dev-ca
+      kind: ClusterIssuer
+      group: cert-manager.io
+control:
+  serverName: anvilkit-agent-control
+knowledge:
+  serverName: anvilkit-agent-knowledge
+mcp:
+  serverName: anvilkit-agent-mcp
+# The foundation's OTLP collector (when placed) is plaintext, which only the
+# top-level DEVELOPMENT_ONLY guard admits; it downgrades no gRPC client.
+development:
+  enabled: true
 podDisruptionBudget:
   enabled: false
 resources:

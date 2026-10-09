@@ -1,0 +1,49 @@
+# The DEVELOPMENT_ONLY workload PKI of the development foundation (P0.1):
+# a self-signed bootstrap issuer signs one root CA Certificate whose Secret
+# (cert-manager namespace, never read by a service) backs the CA
+# ClusterIssuer that issues every workload certificate: the charts' own
+# Certificates in the cluster and, through deploy/dev/certs.sh, the leaf
+# certificates of host-side processes and the integration harness. The
+# trust domain is anvilkit.local; production trust material is an ENV-03
+# input and never this file.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: anvilkit-dev-selfsigned
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: anvilkit-dev-root-ca
+  namespace: cert-manager
+spec:
+  isCA: true
+  commonName: anvilkit-dev-root-ca
+  secretName: anvilkit-dev-root-ca
+  duration: 8760h
+  renewBefore: 720h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: anvilkit-dev-selfsigned
+    kind: ClusterIssuer
+    group: cert-manager.io
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: anvilkit-dev-ca
+spec:
+  ca:
+    secretName: anvilkit-dev-root-ca
+---
+# Host-side principals' Certificates live here (deploy/dev/certs.sh); the
+# namespace of a Certificate resource is not the namespace of the identity,
+# which is the URI SAN's.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: anvilkit-dev-pki

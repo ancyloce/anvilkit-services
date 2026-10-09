@@ -27,8 +27,9 @@
 # context "contracts" (the schemas the Job validates its outputs against;
 # DEVELOPMENT_ONLY until a contracts release is consumed). The digests
 # printed here are what contracts/jobs/profiles.json pins for
-# codegen-fixed-v1, harness-wiring-dev-v1 and validator-fixed-dev-v1 and what
-# deploy/policies/kyverno admits; a rebuilt image is a new digest and needs a
+# codegen-fixed-v1, harness-wiring-dev-v1 and the validator profiles (P0.8:
+# validator-fixture-v1, validator-source-v1, validator-source-dev-v1) and what
+# deploy/policies/chart admits; a rebuilt image is a new digest and needs a
 # profile revision.
 set -eu
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
