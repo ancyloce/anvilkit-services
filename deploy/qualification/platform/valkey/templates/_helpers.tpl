@@ -141,3 +141,12 @@ Return the proper Valkey exporter image name
 {{- define "valkey.metrics.image" -}}
 {{- include "cloudpirates.image" (dict "image" .Values.metrics.image "global" .Values.global) -}}
 {{- end }}
+
+{{/*
+AnvilKit patch 3 (P0.6): valkey-cli's options for a Sentinel, which with tls.enabled
+listens on TLS only (tls-port, port 0) and reaches the servers and the other
+Sentinels over TLS (tls-replication), verified against the mounted CA.
+*/}}
+{{- define "valkey.sentinelTlsArgs" -}}
+{{- if .Values.tls.enabled }} --tls --cert /etc/valkey/tls/{{ .Values.tls.certFilename }} --key /etc/valkey/tls/{{ .Values.tls.certKeyFilename }} --cacert /etc/valkey/tls/{{ .Values.tls.certCAFilename }}{{- end }}
+{{- end -}}

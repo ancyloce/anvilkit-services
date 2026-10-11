@@ -86,7 +86,7 @@ spec:
               # Check if any sentinel is already running and knows the master
               for i in $(seq 0 {{ sub .Values.replicaCount 1 }}); do
                 SENTINEL_HOST="{{ include "valkey.fullname" . }}-${i}.{{ include "valkey.fullname" . }}-headless"
-                MASTER_INFO=$(valkey-cli -h "${SENTINEL_HOST}" -p {{ .Values.sentinel.port }} {{- if .Values.auth.enabled }} -a "${VALKEY_PASSWORD}"{{- end }} sentinel get-master-addr-by-name {{ .Values.sentinel.masterName }} 2>/dev/null | head -1 || echo "")
+                MASTER_INFO=$(valkey-cli -h "${SENTINEL_HOST}" -p {{ .Values.sentinel.port }}{{ include "valkey.sentinelTlsArgs" . }} {{- if .Values.auth.enabled }} -a "${VALKEY_PASSWORD}"{{- end }} sentinel get-master-addr-by-name {{ .Values.sentinel.masterName }} 2>/dev/null | head -1 || echo "")
                 if [ -n "$MASTER_INFO" ] && [ "$MASTER_INFO" != "Could not connect" ]; then
                   CURRENT_MASTER="$MASTER_INFO"
                   SENTINEL_FOUND=true
@@ -234,6 +234,12 @@ spec:
               mountPath: {{ .Values.config.mountPath }}
             - name: valkey-config
               mountPath: /tmp/valkey
+            {{- if .Values.tls.enabled }}
+            # AnvilKit patch 3 (P0.6): the Sentinels speak TLS only.
+            - name: tls-certs
+              mountPath: /etc/valkey/tls
+              readOnly: true
+            {{- end }}
       {{- end }}
       containers:
         - name: {{ .Chart.Name }}
@@ -350,6 +356,12 @@ spec:
           volumeMounts:
             - name: sentinel-config
               mountPath: /tmp
+            {{- if .Values.tls.enabled }}
+            # AnvilKit patch 3 (P0.6): the Sentinels speak TLS only.
+            - name: tls-certs
+              mountPath: /etc/valkey/tls
+              readOnly: true
+            {{- end }}
             {{- if .Values.sentinel.preStop.enabled }}
             - name: prestop-script
               mountPath: /scripts
@@ -386,7 +398,7 @@ spec:
               for i in $(seq 0 {{ sub .Values.replicaCount 1 }}); do
                 if [ "$i" != "$POD_ORDINAL" ]; then
                   SENTINEL_HOST="{{ include "valkey.fullname" . }}-${i}.{{ include "valkey.fullname" . }}-headless.{{ include "cloudpirates.namespace" . }}.svc.{{ .Values.clusterDomain }}"
-                  EXISTING_MASTER=$(valkey-cli -h "${SENTINEL_HOST}" -p {{ .Values.sentinel.port }} {{- if .Values.auth.enabled }} -a "${VALKEY_PASSWORD}"{{- end }} sentinel get-master-addr-by-name {{ .Values.sentinel.masterName }} 2>/dev/null | head -1 || echo "")
+                  EXISTING_MASTER=$(valkey-cli -h "${SENTINEL_HOST}" -p {{ .Values.sentinel.port }}{{ include "valkey.sentinelTlsArgs" . }} {{- if .Values.auth.enabled }} -a "${VALKEY_PASSWORD}"{{- end }} sentinel get-master-addr-by-name {{ .Values.sentinel.masterName }} 2>/dev/null | head -1 || echo "")
                   if [ -n "$EXISTING_MASTER" ] && [ "$EXISTING_MASTER" != "Could not connect" ]; then
                     MASTER_HOST="$EXISTING_MASTER"
                     SENTINEL_FOUND_MASTER=true
@@ -442,7 +454,17 @@ spec:
 
               # Create Sentinel config
               cat > /tmp/sentinel.conf << EOF
+              {{- if .Values.tls.enabled }}
+              port 0
+              tls-port {{ .Values.sentinel.port }}
+              tls-cert-file /etc/valkey/tls/{{ .Values.tls.certFilename }}
+              tls-key-file /etc/valkey/tls/{{ .Values.tls.certKeyFilename }}
+              tls-ca-cert-file /etc/valkey/tls/{{ .Values.tls.certCAFilename }}
+              tls-auth-clients {{ if .Values.tls.authClients }}yes{{ else }}no{{ end }}
+              tls-replication yes
+              {{- else }}
               port {{ .Values.sentinel.port }}
+              {{- end }}
               bind * -::*
               # Enable hostname resolution for Valkey Sentinel
               sentinel resolve-hostnames yes
@@ -499,9 +521,9 @@ spec:
                 - /bin/sh
                 - -c
                 {{- if eq .Values.ipFamily "ipv6" }}
-                - valkey-cli -h "::1" -p {{ .Values.sentinel.port }} {{- if .Values.auth.enabled }} -a "${VALKEY_PASSWORD}"{{- end }} ping | grep -q PONG
+                - valkey-cli -h "::1" -p {{ .Values.sentinel.port }}{{ include "valkey.sentinelTlsArgs" . }} {{- if .Values.auth.enabled }} -a "${VALKEY_PASSWORD}"{{- end }} ping | grep -q PONG
                 {{- else }}
-                - valkey-cli -h "127.0.0.1" -p {{ .Values.sentinel.port }} {{- if .Values.auth.enabled }} -a "${VALKEY_PASSWORD}"{{- end }} ping | grep -q PONG
+                - valkey-cli -h "127.0.0.1" -p {{ .Values.sentinel.port }}{{ include "valkey.sentinelTlsArgs" . }} {{- if .Values.auth.enabled }} -a "${VALKEY_PASSWORD}"{{- end }} ping | grep -q PONG
                 {{- end }}
             initialDelaySeconds: 5
             periodSeconds: 10
@@ -589,7 +611,9 @@ spec:
               backend valkey_master_strict
                   mode tcp
                   option tcp-check
-                  tcp-check connect
+                  {{- /* AnvilKit patch 4 (P0.6): an explicit connect rule ignores the server's
+                  check-ssl; "default" takes the server line's check-ssl, verify and check-sni. */}}
+                  tcp-check connect{{ if .Values.tls.enabled }} default{{ end }}
                   {{- if .Values.auth.enabled }}
                   tcp-check send "AUTH __VALKEY_PASSWORD__\r\n"
                   tcp-check expect string +OK
@@ -613,7 +637,9 @@ spec:
               backend valkey_master_any
                   mode tcp
                   option tcp-check
-                  tcp-check connect
+                  {{- /* AnvilKit patch 4 (P0.6): an explicit connect rule ignores the server's
+                  check-ssl; "default" takes the server line's check-ssl, verify and check-sni. */}}
+                  tcp-check connect{{ if .Values.tls.enabled }} default{{ end }}
                   {{- if .Values.auth.enabled }}
                   tcp-check send "AUTH __VALKEY_PASSWORD__\r\n"
                   tcp-check expect string +OK

@@ -21,6 +21,10 @@ spec:
     initdb:
       database: {{ $initdb.database }}
       owner: {{ $initdb.owner }}
+      {{- with index $.Values.ownerSecrets $name }}
+      secret:
+        name: {{ . }}
+      {{- end }}
   certificates:
     serverTLSSecret: {{ index $.Values.serverTLS $name }}
     serverCASecret: {{ index $.Values.serverTLS $name }}

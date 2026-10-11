@@ -29,7 +29,43 @@ test -x "$KYVERNO" || { echo "UNEXECUTED: kyverno CLI not found at $KYVERNO (dep
 # P0.7: the parser Job as Knowledge's launcher renders it.
 (cd "$ROOT/services/agent/knowledge" && ANVILKIT_RENDER_POLICY_FIXTURES="$POLICIES/tests/resources" npx vitest run test/parse.test.ts >/dev/null) \
   || { echo "UNEXECUTED: the parser fixtures did not render (services/agent/knowledge: pnpm install)" >&2; exit 2; }
-"$PY" "$POLICIES/tests/mutate.py" "$POLICIES/tests/resources" "$WORK/cases"
+# The launcher renders the fixtures with the development registry; a digest is
+# the identity and the registry the environment's placement, so another
+# environment's values (ANVILKIT_POLICY_VALUES) place the same digests in its
+# own registry: its first components prefix, its first parsing prefix for the
+# parser's objects. The placed copy feeds the cases and the cluster lifecycle
+# probe; foreign registries of the negative cases stay foreign.
+cat > "$WORK/place.py" <<'PLACE'
+import json, pathlib, sys
+import yaml
+values = yaml.safe_load(open(sys.argv[1])) or {}
+registries = values.get("registries") or {}
+def first(entries):
+    return next((e for e in entries or [] if e.endswith("/")), None)
+components, parsing = first(registries.get("components")), first(registries.get("parsing"))
+for f in pathlib.Path(sys.argv[2]).glob("*.yaml"):
+    text = f.read_text()
+    place = parsing if "anvilkit-parsing" in text else components
+    if place and "localhost:5001/" in text:
+        f.write_text(text.replace("localhost:5001/", place))
+# The development-state profile's valid cases pass only where the environment
+# lists that profile; elsewhere its admission refuses them.
+exp = pathlib.Path(sys.argv[2]) / "expectations.json"
+if exp.exists() and "validator-source-dev-v1" not in (values.get("developmentProfiles") or []):
+    e = json.loads(exp.read_text())
+    for case in ("valid-validator-source-dev-job", "valid-validator-source-dev-pod"):
+        if case in e:
+            e[case] = "fail"
+    exp.write_text(json.dumps(e))
+PLACE
+cp -R "$POLICIES/tests/resources" "$WORK/resources"
+if [ -n "${ANVILKIT_POLICY_VALUES:-}" ]; then
+  "$PY" "$WORK/place.py" "$ANVILKIT_POLICY_VALUES" "$WORK/resources"
+fi
+"$PY" "$POLICIES/tests/mutate.py" "$WORK/resources" "$WORK/cases"
+if [ -n "${ANVILKIT_POLICY_VALUES:-}" ]; then
+  "$PY" "$WORK/place.py" "$ANVILKIT_POLICY_VALUES" "$WORK/cases"
+fi
 # The policies are the Job-admission chart rendered with an environment's
 # values (the development foundation's unless ANVILKIT_POLICY_VALUES names
 # another environment's file).
@@ -132,7 +168,7 @@ if [ "${1:-}" = "--cluster" ]; then
       failures=$((failures+1))
     fi
   done
-  "$PY" "$POLICIES/tests/mutate.py" --cluster-lifecycle "$POLICIES/tests/resources" "$CTX" "$LAUNCHER" || failures=$((failures+1))
+  "$PY" "$POLICIES/tests/mutate.py" --cluster-lifecycle "$WORK/resources" "$CTX" "$LAUNCHER" || failures=$((failures+1))
 fi
 echo "policy checks: $total cases, $failures failures"
 [ "$failures" -eq 0 ]

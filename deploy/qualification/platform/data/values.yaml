@@ -15,11 +15,11 @@ backup:
   secret: anvilkit-dr-backup
   retention: 7d
   schedule: "0 0 3 * * *"
-# Login roles of the business cluster. P0.6: no Kubernetes Secret carries a
-# role password: the operator manages each role's existence and LOGIN, and
-# deploy/qualification/bootstrap.py sets (and drills.py rotates) the password
-# over the primary's local socket and writes it only to OpenBao, from where
-# the services' CSI volumes deliver their DSNs.
+# Login roles of the business cluster. P0.6: the operator manages each role's
+# existence and LOGIN, and deploy/qualification/bootstrap.py sets (and drills.py
+# rotates) the password over the primary's local socket and writes it only to
+# OpenBao, from where the services' CSI volumes deliver their DSNs. The database
+# owner (bootstrap.initdb.owner) is the exception, see ownerSecrets.
 businessRoles:
   - anvilkit_control_app
   - anvilkit_control_migrator
@@ -32,6 +32,15 @@ businessRoles:
   - anvilkit_mcp_app
   - anvilkit_mcp_migrator
   - anvilkit_mcp_relay
+# P0.6: each cluster's database owner takes its password from this basic-auth
+# Secret (username, password), which anvilkit-secrets syncs from OpenBao: the
+# operator re-applies an owner's password from bootstrap.initdb.secret whenever
+# its instance manager starts and whenever the Secret changes, so OpenBao stays
+# the owner password's only source (a generated <cluster>-app Secret would
+# overwrite bootstrap's password on every restart).
+ownerSecrets:
+  anvilkit-business: anvilkit-business-owner
+  anvilkit-temporal: anvilkit-temporal-owner
 # One database per owned domain, owned by its migrator role (the public schema
 # follows the database owner and PUBLIC has no CREATE on PostgreSQL 17).
 businessDatabases:

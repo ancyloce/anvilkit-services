@@ -46,7 +46,11 @@ servers:
     namespace: anvilkit-data
     # The peers present it to each other (p2p TLS).
     clientAuth: true
-    dnsNames: [anvilkit-qdrant, anvilkit-qdrant.anvilkit-data.svc, anvilkit-qdrant.anvilkit-data.svc.cluster.local, "*.anvilkit-qdrant-headless.anvilkit-data.svc.cluster.local"]
+    # The chart's peers address each other as <pod>.anvilkit-qdrant-headless (short form),
+    # named one by one: rustls refuses a wildcard over a single label (*.anvilkit-qdrant-headless).
+    dnsNames: [anvilkit-qdrant, anvilkit-qdrant.anvilkit-data.svc, anvilkit-qdrant.anvilkit-data.svc.cluster.local,
+               anvilkit-qdrant-0.anvilkit-qdrant-headless, anvilkit-qdrant-1.anvilkit-qdrant-headless, anvilkit-qdrant-2.anvilkit-qdrant-headless,
+               "*.anvilkit-qdrant-headless.anvilkit-data.svc.cluster.local"]
   - name: anvilkit-objects-tls
     namespace: anvilkit-data
     dnsNames: [anvilkit-objects, anvilkit-objects.anvilkit-data.svc, anvilkit-objects.anvilkit-data.svc.cluster.local]

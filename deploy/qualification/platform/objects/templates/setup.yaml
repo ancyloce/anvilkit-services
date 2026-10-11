@@ -9,6 +9,11 @@ data:
   mcImage: {{ .Values.mcImage | quote }}
   setup.sh: |
     set -eu
+    {{- if .Values.tls.enabled }}
+    # mc trusts the CA files under $MC_CONFIG_DIR/certs/CAs; the directory is created
+    # here, as the Job's user (a volume mounted under it would leave it root-owned).
+    mkdir -p "$MC_CONFIG_DIR/certs/CAs" && cp /etc/anvilkit/objects-ca/ca.crt "$MC_CONFIG_DIR/certs/CAs/ca.crt"
+    {{- end }}
     mc alias set store {{ if .Values.tls.enabled }}https{{ else }}http{{ end }}://anvilkit-objects:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null
     {{- range .Values.buckets }}
     mc mb --ignore-existing store/{{ .name }} >/dev/null
@@ -54,8 +59,7 @@ spec:
           volumeMounts:
             - {name: setup, mountPath: /setup}
             {{- if .Values.tls.enabled }}
-            # mc trusts the CA files under $MC_CONFIG_DIR/certs/CAs.
-            - {name: ca, mountPath: /tmp/.mc/certs/CAs, readOnly: true}
+            - {name: ca, mountPath: /etc/anvilkit/objects-ca, readOnly: true}
             {{- end }}
       volumes:
         - name: setup

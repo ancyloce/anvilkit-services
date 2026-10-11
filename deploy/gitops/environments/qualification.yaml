@@ -384,7 +384,10 @@ applications:
           ca_cert: /qdrant/tls/ca.crt
           cert_ttl: 3600
   - name: openbao
-    wave: -30
+    # Before anvilkit-secrets (-31), whose Secrets the -30 stateful charts read: in one
+    # wave with them a from-zero install never converges (they wait on Secrets nothing
+    # has synced yet, and the sync chart's wave waits on them).
+    wave: -32
     layer: stateful
     namespace: anvilkit-platform
     chart: {upstream: https://openbao.github.io/openbao-helm, name: openbao, version: 0.29.5}
@@ -455,10 +458,14 @@ applications:
   # P0.6: the Kubernetes Secrets the third-party charts read, synced from OpenBao by the
   # CSI driver (no Secret with credential material is created by hand).
   - name: anvilkit-secrets
-    wave: -29
+    wave: -31
     layer: stateful
     namespace: anvilkit-platform
     chart: {source: deploy/qualification/platform/secrets, name: anvilkit-secrets}
+    # The holder Pods run the release's signed copy of pause (tools/release-artifacts.py
+    # PLATFORM): anvilkit-apps admits only release-signed images of the registry.
+    imageRefs:
+      image: pause
     values:
       syncs:
         - name: anvilkit-secrets-data
@@ -466,6 +473,10 @@ applications:
           path: kv/data/anvilkit/sync/data
           secrets:
             - {name: anvilkit-dr-backup, data: {ACCESS_KEY_ID: dr-backup-access-key-id, ACCESS_SECRET_KEY: dr-backup-secret-access-key}}
+            # The database owners' credentials, CloudNativePG's bootstrap.initdb.secret
+            # (anvilkit-data ownerSecrets): OpenBao stays the owner password's only source.
+            - {name: anvilkit-business-owner, type: kubernetes.io/basic-auth, data: {username: business-owner-username, password: business-owner-password}}
+            - {name: anvilkit-temporal-owner, type: kubernetes.io/basic-auth, data: {username: temporal-owner-username, password: temporal-owner-password}}
             - {name: anvilkit-valkey-queue, data: {password: valkey-password}}
             - {name: anvilkit-qdrant-apikey, data: {apiKey: qdrant-api-key}}
             - {name: anvilkit-objects-root, data: {MINIO_ROOT_USER: objects-root-user, MINIO_ROOT_PASSWORD: objects-root-password}}

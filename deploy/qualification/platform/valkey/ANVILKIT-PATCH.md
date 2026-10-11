@@ -16,3 +16,20 @@ through to the servers' TLS port end to end; HAProxy holds no server certificate
 now run over TLS (`check-ssl verify required ca-file … check-sni <server FQDN>` against the
 mounted CA of the TLS Secret); the master-proxy Service renders with TLS too. The chart version
 carries the suffix `-anvilkit.2`.
+
+Change 3 (P0.6), in `templates/_helpers.tpl`, `templates/statefulset.yaml` and
+`templates/prestop-configmap.yaml`: upstream's Sentinel never speaks TLS (its container mounts no
+certificate and its configuration names no TLS file), so with `tls.enabled` it waits forever for
+the TLS-only server and the replication group never forms. With `tls.enabled` the Sentinel now
+listens on TLS only (`port 0`, `tls-port` = `sentinel.port`) and reaches the servers and the other
+Sentinels over TLS (`tls-replication yes`) with the server certificate of the TLS Secret, mounted in
+the Sentinel and init containers; every `valkey-cli` call to a Sentinel (init container, Sentinel
+start script, readiness probe, preStop scripts) passes the TLS options (`valkey.sentinelTlsArgs`).
+The chart version carries the suffix `-anvilkit.3`.
+
+Change 4 (P0.6), in `templates/statefulset.yaml`: Change 2's health checks still went out in
+plaintext. A `tcp-check connect` rule without options ignores the server line's `check-ssl`, so every
+check reached the servers' TLS port as plain RESP (the servers logged `packet length too long`), all
+servers read DOWN and the master endpoint refused its clients. With `tls.enabled` the rule is
+`tcp-check connect default`, which takes the server line's `check-ssl`, `verify required ca-file …`
+and `check-sni`. The chart version carries the suffix `-anvilkit.4`.

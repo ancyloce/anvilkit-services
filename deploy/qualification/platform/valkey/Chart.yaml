@@ -52,4 +52,4 @@ sources:
 - https://github.com/CloudPirates-io/helm-charts/tree/main/charts/valkey
 - https://github.com/valkey-io/valkey
 type: application
-version: 0.25.11-anvilkit.2
+version: 0.25.11-anvilkit.4

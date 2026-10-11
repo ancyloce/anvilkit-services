@@ -25,8 +25,10 @@ deploy/gitops/publish.py --environment qualification --run RUN:
      then waits until every child Application is Synced and Healthy or --wait expires,
      initializing OpenBao once and unsealing each member as it starts, and then
      (P0.6) configuring it: KV v2, Kubernetes auth, one read-only policy and role per
-     workload, the credentials of every workload path; the CNPG role passwords (over
-     the primary's local socket, no Secret), the NATS NKey users (anvilkit-nats-auth,
+     workload, the credentials of every workload path; the CNPG login role passwords
+     (over the primary's local socket, no Secret; each cluster's database owner takes
+     its password from OpenBao through anvilkit-secrets' basic-auth Secret, which
+     CloudNativePG applies as bootstrap.initdb.secret), the NATS NKey users (anvilkit-nats-auth,
      public keys only) and the CA bundle the clients verify the data plane against
      (anvilkit-trust, public). Seal custody (ENV-10, DEVELOPMENT_ONLY placement): the
      Shamir 3-of-5 shares stay in the custody directory (.local/qualification/openbao,
@@ -101,6 +103,13 @@ NAMESPACES = ["anvilkit-apps", "anvilkit-components", "anvilkit-parsing", "anvil
 ROLES = ["anvilkit_control_app", "anvilkit_control_migrator", "anvilkit_knowledge_app", "anvilkit_knowledge_migrator",
          "anvilkit_knowledge_relay", "anvilkit_knowledge_forwarder", "anvilkit_knowledge_store_migrator", "anvilkit_knowledge_store",
          "anvilkit_mcp_app", "anvilkit_mcp_migrator", "anvilkit_mcp_relay", "temporal"]
+# Each CloudNativePG cluster's database owner (bootstrap.initdb.owner). The operator
+# re-applies an owner's password from bootstrap.initdb.secret whenever its instance
+# manager starts and whenever that Secret changes, so the owners' passwords reach the
+# database only that way: OpenBao (kv/anvilkit/sync/data) -> anvilkit-secrets'
+# basic-auth Secret anvilkit-<cluster>-owner -> CloudNativePG. role_passwords never
+# sets them.
+OWNERS = {"anvilkit-business": "anvilkit_control_migrator", "anvilkit-temporal": "temporal"}
 OBJECT_USERS = ["ARTIFACTS", "MODEL_PROXY", "KNOWLEDGE"]
 DR_USERS = {"backup": "anvilkit-backups", "inventory": "anvilkit-inventory", "snapshots": "anvilkit-snapshots",
             "removals": "anvilkit-memory-removals"}
@@ -232,6 +241,9 @@ def kv_payloads(c: dict) -> dict[str, dict[str, str]]:
         "anvilkit/data/streams": {"nats-streams-nkey": n["streams"]["seed"]},
         "anvilkit/sync/data": {
             "dr-backup-access-key-id": dr["backup"]["id"], "dr-backup-secret-access-key": dr["backup"]["secret"],
+            # The database owners' credentials (OWNERS), synced as basic-auth Secrets.
+            **{k: v for cluster, role in OWNERS.items() for k, v in ((f"{cluster.removeprefix('anvilkit-')}-owner-username", role),
+                                                                   (f"{cluster.removeprefix('anvilkit-')}-owner-password", r[role]))},
             "valkey-password": c["queue"], "qdrant-api-key": c["qdrant"],
             "objects-root-user": c["objectsRoot"]["user"], "objects-root-password": c["objectsRoot"]["password"],
             **{f"objects-{u.lower().replace('_', '-')}-{k}": v for u, x in o.items() for k, v in (("access-key-id", x["id"]), ("secret-access-key", x["secret"]))}},
@@ -278,8 +290,11 @@ def nats_auth(c: dict) -> None:
 def role_passwords(c: dict) -> bool:
     """P0.6: the login roles' passwords, set over each CNPG primary's local socket
     (psql as postgres, the statements on standard input); the operator manages only
-    the roles' existence. Returns False until both primaries run."""
-    clusters = {"anvilkit-business": [r for r in ROLES if r != "temporal"], "anvilkit-temporal": ["temporal"]}
+    the roles' existence. The database owners (OWNERS) are left to the operator, which
+    applies their OpenBao password from bootstrap.initdb.secret. Returns False until
+    the primaries that hold such roles run."""
+    # The temporal cluster's only login role is its owner.
+    clusters = {"anvilkit-business": [r for r in ROLES if r not in OWNERS.values()]}
     for cluster, roles in clusters.items():
         pods = kubectl("-n", "anvilkit-data", "get", "pods", "-l", f"cnpg.io/cluster={cluster},cnpg.io/instanceRole=primary",
                        "-o", "jsonpath={.items[?(@.status.phase==\"Running\")].metadata.name}").split()

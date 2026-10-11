@@ -57,7 +57,7 @@ data:
 
     # Function to run Sentinel commands against the local Sentinel sidecar
     run_sentinel_command() {
-        valkey-cli -h "$VALKEY_LOOPBACK" -p "$SENTINEL_PORT" {{- if .Values.auth.enabled }} -a "${VALKEY_PASSWORD}"{{- end }} sentinel "$@"
+        valkey-cli -h "$VALKEY_LOOPBACK" -p "$SENTINEL_PORT"{{ include "valkey.sentinelTlsArgs" . }} {{- if .Values.auth.enabled }} -a "${VALKEY_PASSWORD}"{{- end }} sentinel "$@"
     }
 
     # Function to check if sentinel failover has finished
@@ -168,7 +168,7 @@ data:
 
     # Function to run Sentinel commands against the local Sentinel sidecar
     run_sentinel_command() {
-        valkey-cli -h "$VALKEY_LOOPBACK" -p "$SENTINEL_PORT" {{- if .Values.auth.enabled }} -a "${VALKEY_PASSWORD}"{{- end }} sentinel "$@"
+        valkey-cli -h "$VALKEY_LOOPBACK" -p "$SENTINEL_PORT"{{ include "valkey.sentinelTlsArgs" . }} {{- if .Values.auth.enabled }} -a "${VALKEY_PASSWORD}"{{- end }} sentinel "$@"
     }
 
     # Function to get full hostname for a pod

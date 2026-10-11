@@ -327,8 +327,10 @@ def task_states(owner: str, ids: list[str]) -> dict[str, str]:
 def drill_queue_writes(load: Load) -> dict:
     sentinel = "anvilkit-valkey-queue-0"
     master = k("-n", "anvilkit-data", "exec", sentinel, "-c", "sentinel", "--", "sh", "-c",
-               # the password is the container's own environment, never a command-line value
-               'REDISCLI_AUTH="$VALKEY_PASSWORD" valkey-cli -p 26379 SENTINEL get-master-addr-by-name mymaster').split()
+               # the password is the container's own environment, never a command-line value;
+               # P0.6: the Sentinel listens on TLS only (the chart's server certificate and CA)
+               'REDISCLI_AUTH="$VALKEY_PASSWORD" valkey-cli -p 26379 --tls --cert /etc/valkey/tls/tls.crt --key /etc/valkey/tls/tls.key '
+               '--cacert /etc/valkey/tls/ca.crt SENTINEL get-master-addr-by-name mymaster').split()
     tag = f"q{int(now())}"
     ids = {"knowledge": owner_request("knowledge", 5, tag), "mcp": owner_request("mcp", 5, tag)}
     master_pod = next(p for p in k("-n", "anvilkit-data", "get", "pods", "-o", "name").split() if master and master[0].split(".")[0] in p)

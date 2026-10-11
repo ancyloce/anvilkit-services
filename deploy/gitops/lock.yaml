@@ -225,5 +225,5 @@ platform:
   - name: certificates
     product: cert-manager 1.21.2
     target: workload mTLS issuance and rotation
-    qualification: {status: DEVELOPMENT_ONLY, topology: "cert-manager issues every workload certificate from the self-signed anvilkit-qualification-ca (anvilkit-pki chart, trust domain anvilkit.qualification); internal gRPC is mTLS with SPIFFE URI SAN authorization (P0.1, IT-IDENTITY); the data plane (Temporal, NATS, OTLP, Inference) stays plaintext under the development guard until P0.6; no production trust material (NR-IDENTITY)"}
+    qualification: {status: DEVELOPMENT_ONLY, topology: "cert-manager issues every workload certificate from the self-signed anvilkit-qualification-ca (anvilkit-pki chart, trust domain anvilkit.qualification); internal gRPC is mTLS with SPIFFE URI SAN authorization (P0.1, IT-IDENTITY); since P0.6 the data plane (PostgreSQL verify-full, NATS TLS with NKeys, Valkey TLS with ACL users, Temporal, Qdrant, objects, Inference HTTPS) is TLS-only with credentials from OpenBao through CSI, OTLP alone stays development-labelled (B-36); no production trust material (NR-IDENTITY)"}
     production: {status: REQUIRED, inputs: [ENV-03, ENV-07]}

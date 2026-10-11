@@ -52,6 +52,7 @@ SERVICES = {
     "anvilkit-agent-knowledge": ("services/agent/knowledge/deploy/chart", {"image.digest": DIGEST, "forwarder.image.digest": DIGEST, "relay.image.digest": DIGEST}),
     "anvilkit-agent-mcp": ("services/agent/mcp/deploy/chart", {"image.digest": DIGEST, "relay.image.digest": DIGEST}),
     "anvilkit-agent-background-worker": ("services/agent/background-worker/deploy/chart", {"image.digest": DIGEST}),
+    "anvilkit-agent-inference": ("services/agent/inference/deploy/chart", {"image.digest": DIGEST}),
 }
 # The development-labelled exceptions left in this environment, each with its reason.
 # A match is (source, regex over the matching line).
@@ -76,6 +77,9 @@ EXCEPTIONS = [
 # Secrets a platform component keeps for itself (never a workload credential).
 COMPONENT_OWNED = {
     ("anvilkit-platform", "openbao-csi-provider-hmac-key"): "the OpenBao CSI provider's own HMAC key (versions of the mounted secrets)",
+    # Argo CD creates these two at start without its part-of label.
+    ("anvilkit-platform", "argocd-initial-admin-secret"): "Argo CD's initial admin password, written by its server at first start",
+    ("anvilkit-platform", "argocd-redis"): "Argo CD's Redis password, written by its redis secret-init Job",
 }
 PATTERN = re.compile(r"http://[^\s\"'`,)]+|nats://[^\s\"'`,)]+|redis://[^\s\"'`,)]+|sslmode=[a-z-]+")
 

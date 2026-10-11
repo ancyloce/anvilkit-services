@@ -54,13 +54,18 @@ import json
 import os
 import pathlib
 import re
+import http.client
 import secrets
+import socket
+import ssl
 import subprocess
 import sys
 import tempfile
 import time
 import urllib.error
 import urllib.request
+
+import yaml
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 STATE = ROOT / ".local/qualification"
@@ -185,7 +190,15 @@ def recover(source: str, target_cluster: str, point: str, backup_id: str) -> tup
     def ready_yet() -> bool:
         nonlocal stop
         stop = stop or recovery_stop(target_cluster)
-        return json.loads(k("-n", "anvilkit-data", "get", "clusters.postgresql.cnpg.io", target_cluster, "-o", "json")).get("status", {}).get("readyInstances") == 1
+        st = json.loads(k("-n", "anvilkit-data", "get", "clusters.postgresql.cnpg.io", target_cluster, "-o", "json")).get("status", {})
+        if st.get("readyInstances") != 1 or st.get("phase") != "Cluster in healthy state":
+            return False
+        # The recovery ran with the Barman Cloud plugin's volume, which the target spec does
+        # not carry: the operator then restarts the primary without it ("original and
+        # target PodSpec differ in volumes: element plugins has been removed"). Ready means
+        # after that restart, or a query races the shutdown.
+        pod = json.loads(k("-n", "anvilkit-data", "get", "pod", st.get("currentPrimary", ""), "-o", "json"))
+        return not any(v.get("name") == "plugins" for v in pod["spec"].get("volumes", []))
 
     ready = wait_until(ready_yet, 1200, 5)
     if not ready:
@@ -244,6 +257,8 @@ def drill_postgres_temporal() -> dict:
 
 
 QDRANT_LOCAL_PORT = 0  # chosen by kubectl port-forward (a fixed port may already serve another Qdrant)
+# The forwarded peer's name in the Qdrant server certificate (anvilkit-pki).
+QDRANT_SERVER_NAME = "anvilkit-qdrant-0.anvilkit-qdrant-headless"
 
 
 class qdrant_forward:
@@ -270,15 +285,36 @@ class qdrant_forward:
         self.proc.wait(timeout=10)
 
 
+def trust_context() -> ssl.SSLContext:
+    """P0.6: the stores serve TLS only; the drill verifies them against the environment's
+    CA bundle (the public anvilkit-trust ConfigMap bootstrap.py publishes)."""
+    ca = k("-n", "anvilkit-data", "get", "configmap", "anvilkit-trust", "-o", "jsonpath={.data.ca\\.crt}")
+    if "BEGIN CERTIFICATE" not in ca:
+        raise RuntimeError("anvilkit-data/anvilkit-trust holds no CA bundle")
+    return ssl.create_default_context(cadata=ca)
+
+
+class _ForwardedTLS(http.client.HTTPSConnection):
+    """HTTPS to a local port-forward, verifying the certificate for the forwarded pod's name."""
+
+    def __init__(self, port: int, server_name: str, context: ssl.SSLContext, timeout: int) -> None:
+        super().__init__("127.0.0.1", port, context=context, timeout=timeout)
+        self.server_name = server_name
+
+    def connect(self) -> None:
+        sock = socket.create_connection((self.host, self.port), self.timeout)
+        self.sock = self._context.wrap_socket(sock, server_hostname=self.server_name)
+
+
 def qdrant_http(method: str, path: str, data: bytes | None = None, content_type: str = "application/json", timeout: int = 300) -> bytes:
+    """Qdrant's answer body whatever its status (e.g. 404 for a missing collection)."""
     key = json.loads((STATE / "credentials.json").read_text())["qdrant"]
-    req = urllib.request.Request(f"http://127.0.0.1:{QDRANT_LOCAL_PORT}{path}", data=data, method=method,
-                                 headers={"api-key": key, "content-type": content_type})
+    conn = _ForwardedTLS(QDRANT_LOCAL_PORT, QDRANT_SERVER_NAME, trust_context(), timeout)
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
-            return r.read()
-    except urllib.error.HTTPError as e:  # Qdrant's error body (e.g. 404 for a missing collection)
-        return e.read()
+        conn.request(method, path, body=data, headers={"api-key": key, "content-type": content_type})
+        return conn.getresponse().read()
+    finally:
+        conn.close()
 
 
 def qdrant(method: str, path: str, body: dict | None = None) -> dict:
@@ -426,9 +462,19 @@ def _drill_openbao() -> dict:
         bao("openbao-0", "operator", "raft", "snapshot", "save", "/tmp/raft.snap", token=root)
     finally:
         bao("openbao-0", "token", "revoke", "-self", token=root, check=False)
-    snap = subprocess.run([KUBECTL, "--kubeconfig", str(KUBECONFIG), "-n", "anvilkit-platform", "exec", "openbao-0", "--", "cat", "/tmp/raft.snap"],
-                          capture_output=True, timeout=120).stdout
-    digest = hashlib.sha256(snap).hexdigest()
+    # A stream through kubectl exec can arrive short with exit 0 (observed on this host):
+    # each copy, out of the member and back into the fresh one, is checked against the
+    # snapshot's digest inside the Pod before anything is destroyed or restored.
+    in_pod = lambda: k("-n", "anvilkit-platform", "exec", "openbao-0", "--", "sha256sum", "/tmp/raft.snap").split()[0]  # noqa: E731
+    expected = in_pod()
+    for _ in range(5):
+        snap = subprocess.run([KUBECTL, "--kubeconfig", str(KUBECONFIG), "-n", "anvilkit-platform", "exec", "openbao-0", "--", "cat", "/tmp/raft.snap"],
+                              capture_output=True, timeout=120).stdout
+        if hashlib.sha256(snap).hexdigest() == expected:
+            break
+    else:
+        raise RuntimeError("the Raft snapshot could not be read out intact")
+    digest = expected
     dr("mc cp /work/raft.snap dr/anvilkit-snapshots/openbao/raft.snap >/dev/null\n", {"raft.snap": snap})
     # Every member's storage is lost: a new, empty cluster under new keys.
     started = now()
@@ -442,10 +488,13 @@ def _drill_openbao() -> dict:
         raise RuntimeError("the fresh cluster did not unseal with its own key (another unsealer active?)")
     # bao 2.6 reports the active member as is_self (there is no ha_mode field).
     wait_until(lambda: json.loads(bao("openbao-0", "status", "-format=json", check=False) or "{}").get("is_self") is True, 120, 3)
-    copied = subprocess.run([KUBECTL, "--kubeconfig", str(KUBECONFIG), "-n", "anvilkit-platform", "exec", "-i", "openbao-0", "--", "sh", "-c", "cat > /tmp/raft.snap"],
-                            input=snap, capture_output=True, timeout=120)
-    if copied.returncode != 0:
-        raise RuntimeError(copied.stderr.decode()[-300:])
+    for _ in range(5):
+        copied = subprocess.run([KUBECTL, "--kubeconfig", str(KUBECONFIG), "-n", "anvilkit-platform", "exec", "-i", "openbao-0", "--", "sh", "-c", "cat > /tmp/raft.snap"],
+                                input=snap, capture_output=True, timeout=120)
+        if copied.returncode == 0 and in_pod() == digest:
+            break
+    else:
+        raise RuntimeError("the Raft snapshot could not be copied intact into the fresh member")
     bao("openbao-0", "operator", "raft", "snapshot", "restore", "-force", "/tmp/raft.snap", token=fresh["root_token"])
     time.sleep(10)
     # OpenBao 2.6 seals after a forced restore but keeps the fresh cluster's seal
@@ -492,7 +541,9 @@ def drill_objects() -> dict:
                                            "stringData": {"DR_ID": creds["dr"]["snapshots"]["id"], "DR_SECRET": creds["dr"]["snapshots"]["secret"]}}))
     script = "; ".join([
         "set -eu", "echo \"$BODY\" | base64 -d > /tmp/object",
-        'mc alias set store http://anvilkit-objects.anvilkit-data.svc.cluster.local:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null',
+        # P0.6: the store serves TLS only; mc trusts the CA files under $MC_CONFIG_DIR/certs/CAs.
+        'mkdir -p "$MC_CONFIG_DIR/certs/CAs"', 'cp /etc/anvilkit/trust/ca.crt "$MC_CONFIG_DIR/certs/CAs/ca.crt"',
+        'mc alias set store https://anvilkit-objects.anvilkit-data.svc.cluster.local:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null',
         'mc alias set dr http://anvilkit-qualification-dr:9000 "$DR_ID" "$DR_SECRET" >/dev/null',
         f"mc cp /tmp/object store/anvilkit-artifacts/{name} >/dev/null",
         f"mc cp store/anvilkit-artifacts/{name} dr/anvilkit-snapshots/objects/{name} >/dev/null",
@@ -507,7 +558,9 @@ def drill_objects() -> dict:
     manifest = {"apiVersion": "v1", "kind": "Pod", "metadata": {"name": pod, "namespace": "anvilkit-data", "labels": {"anvilkit.io/drill": "restore"}},
                 "spec": {"restartPolicy": "Never", "containers": [{"name": "mc", "image": MC_IN_CLUSTER, "command": ["sh", "-c", script],
                          "envFrom": [{"secretRef": {"name": "anvilkit-objects-root"}}, {"secretRef": {"name": pod}}],
-                         "env": [{"name": "HOME", "value": "/tmp"}, {"name": "MC_CONFIG_DIR", "value": "/tmp/.mc"}, {"name": "BODY", "value": base64.b64encode(body).decode()}]}]}}
+                         "env": [{"name": "HOME", "value": "/tmp"}, {"name": "MC_CONFIG_DIR", "value": "/tmp/.mc"}, {"name": "BODY", "value": base64.b64encode(body).decode()}],
+                         "volumeMounts": [{"name": "trust", "mountPath": "/etc/anvilkit/trust", "readOnly": True}]}],
+                         "volumes": [{"name": "trust", "configMap": {"name": "anvilkit-trust"}}]}}
     try:
         k("apply", "-f", "-", stdin=json.dumps(manifest))
         done = wait_until(lambda: k("-n", "anvilkit-data", "get", "pod", pod, "-o", "jsonpath={.status.phase}") in ("Succeeded", "Failed"), 300, 3)
@@ -597,28 +650,47 @@ def drill_memory_removals() -> dict:
     rp = primary(target_cluster)
     result["restored"] = {"revokedFactState": kdb(rp, f"SELECT state FROM memory_facts WHERE fact_id = '{revoked}'"),
                           "removalRows": kdb(rp, f"SELECT count(*) FROM memory_removals WHERE command_id = '{revoke_cmd}'")}
-    # A Knowledge with no placement but the removal inventory, on the restored copy.
+    # A Knowledge with no placement but the removal inventory, on the restored copy. P0.1/
+    # P0.6: the deployed Knowledge's own Pod shape - its ServiceAccount (so its OpenBao
+    # role's CSI credentials, the removal inventory's among them), workload identity,
+    # trust bundle and configuration - with every placement dropped (Control, objects,
+    # Inference, Qdrant, the PostgresStore, the parser launcher: no API token is mounted)
+    # and its database URL replaced by the restored copy's, from a Secret the drill owns.
+    # Nothing is granted that Knowledge does not already hold.
     name = f"anvilkit-drill-knowledge-{tag}"
     url = (f"postgres://anvilkit_knowledge_app:{c['roles']['anvilkit_knowledge_app']}@{target_cluster}-rw.anvilkit-data.svc.cluster.local:5432"
            "/anvilkit_knowledge?sslmode=no-verify")
+    deployed = json.loads(k("-n", "anvilkit-apps", "get", "deployment", "anvilkit-agent-knowledge", "-o", "json"))["spec"]["template"]["spec"]
+    container = next(x for x in deployed["containers"] if x["name"] == "knowledge")
+    config = yaml.safe_load(json.loads(k("-n", "anvilkit-apps", "get", "configmap", "anvilkit-agent-knowledge", "-o", "json"))["data"]["config.yaml"])
+    config.setdefault("parser", {})["profile"] = ""  # the parser launcher is a placement too
+    placements = {"ANVILKIT_KNOWLEDGE_CONTROL_ADDRESS", "ANVILKIT_KNOWLEDGE_OBJECTS_ENDPOINT", "ANVILKIT_KNOWLEDGE_OBJECTS_STAGE_ENDPOINT",
+                  "ANVILKIT_KNOWLEDGE_OBJECTS_CREDENTIALS_FILE", "ANVILKIT_KNOWLEDGE_INFERENCE_URL", "ANVILKIT_KNOWLEDGE_QDRANT_URL",
+                  "ANVILKIT_KNOWLEDGE_QDRANT_API_KEY_FILE", "ANVILKIT_KNOWLEDGE_STORE_DATABASE_URL_FILE", "ANVILKIT_KNOWLEDGE_IMAGE_REGISTRY",
+                  "ANVILKIT_KNOWLEDGE_KUBECONFIG"}
+    env = [dict(e, value="/var/run/secrets/anvilkit/database/url") if e["name"] == "ANVILKIT_KNOWLEDGE_DATABASE_URL_FILE" else e
+           for e in container.get("env", []) if e["name"] not in placements]
+    mounts = [m for m in container.get("volumeMounts", []) if m["name"] in ("config", "trust", "credentials", "identity", "inference-ca")]
+    volumes = [v for v in deployed.get("volumes", []) if v["name"] in {m["name"] for m in mounts}]
+    for v in volumes:
+        if v["name"] == "config":
+            v.clear()
+            v.update({"name": "config", "configMap": {"name": name}})
     k("apply", "-f", "-", stdin=json.dumps({"apiVersion": "v1", "kind": "Secret", "type": "Opaque",
                                             "metadata": {"name": name, "namespace": "anvilkit-apps", "labels": {"anvilkit.io/drill": "restore"}},
                                             "stringData": {"url": url}}))
-    security = {"runAsNonRoot": True, "runAsUser": 65532, "runAsGroup": 65532, "allowPrivilegeEscalation": False,
-                "readOnlyRootFilesystem": True, "capabilities": {"drop": ["ALL"]}, "seccompProfile": {"type": "RuntimeDefault"}}
+    k("apply", "-f", "-", stdin=json.dumps({"apiVersion": "v1", "kind": "ConfigMap",
+                                            "metadata": {"name": name, "namespace": "anvilkit-apps", "labels": {"anvilkit.io/drill": "restore"}},
+                                            "data": {"config.yaml": yaml.safe_dump(config, sort_keys=True)}}))
     k("apply", "-f", "-", stdin=json.dumps({
         "apiVersion": "v1", "kind": "Pod",
         "metadata": {"name": name, "namespace": "anvilkit-apps", "labels": {"app.kubernetes.io/name": "anvilkit-drill-knowledge", "anvilkit.io/drill": "restore"}},
-        "spec": {"restartPolicy": "Never", "automountServiceAccountToken": False,
-                 "containers": [{"name": "knowledge", "image": image, "securityContext": security,
-                                 "env": [{"name": "ANVILKIT_KNOWLEDGE_DATABASE_URL_FILE", "value": "/var/run/secrets/anvilkit/database/url"},
-                                         {"name": "ANVILKIT_KNOWLEDGE_REMOVALS_ENDPOINT", "value": "http://anvilkit-qualification-dr:9000"},
-                                         {"name": "ANVILKIT_KNOWLEDGE_REMOVALS_CREDENTIALS_FILE", "value": "/var/run/secrets/anvilkit/removals/credentials"}],
+        "spec": {"restartPolicy": "Never", "serviceAccountName": deployed["serviceAccountName"], "automountServiceAccountToken": False,
+                 "securityContext": deployed.get("securityContext", {}),
+                 "containers": [{"name": "knowledge", "image": image, "securityContext": container.get("securityContext", {}), "env": env,
                                  "resources": {"requests": {"cpu": "100m", "memory": "128Mi"}, "limits": {"cpu": "500m", "memory": "512Mi"}},
-                                 "volumeMounts": [{"name": "database", "mountPath": "/var/run/secrets/anvilkit/database", "readOnly": True},
-                                                  {"name": "removals", "mountPath": "/var/run/secrets/anvilkit/removals", "readOnly": True}]}],
-                 "volumes": [{"name": "database", "secret": {"secretName": name}},
-                             {"name": "removals", "secret": {"secretName": "anvilkit-agent-knowledge-removals"}}]}}))
+                                 "volumeMounts": mounts + [{"name": "database", "mountPath": "/var/run/secrets/anvilkit/database", "readOnly": True}]}],
+                 "volumes": volumes + [{"name": "database", "secret": {"secretName": name, "items": [{"key": "url", "path": "url"}]}}]}}))
     logs = ""
     try:
         def served() -> bool:
@@ -634,7 +706,7 @@ def drill_memory_removals() -> dict:
             "keptFactState": kdb(rp, f"SELECT state FROM memory_facts WHERE fact_id = '{kept}'")}
     finally:
         k("-n", "anvilkit-apps", "delete", "pod", name, "--ignore-not-found", "--wait=false", check=False)
-        k("-n", "anvilkit-apps", "delete", "secret", name, "--ignore-not-found", check=False)
+        k("-n", "anvilkit-apps", "delete", "secret,configmap", name, "--ignore-not-found", check=False)
         k("-n", "anvilkit-data", "delete", "clusters.postgresql.cnpg.io", target_cluster, "--wait=false", check=False)
     rk = result.get("restoredKnowledge", {})
     rec = result["record"]

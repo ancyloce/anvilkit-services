@@ -72,9 +72,25 @@ store:
 # it shares the host, so it is not an independent failure domain: ENV-02).
 removals:
   endpoint: http://anvilkit-qualification-dr:9000
+# P15/P0.7: the parser launcher, as on the development foundation: the chart's
+# least Role and RoleBinding in anvilkit-parsing for this ServiceAccount (Jobs:
+# create, get, delete; the per-launch stage Secret: create, get) and an expiring
+# API token in the knowledge container only. Its images come from the
+# environment registry (the parsing allowlist of anvilkit-job-admission).
+parser:
+  enabled: true
+  namespace: anvilkit-parsing
+  imageRegistry: anvilkit-dev-registry:5000
 # The three-peer Qdrant of this environment: every collection RF=3/WCF=2 with
 # strong write ordering (DD-10); the database pools the lock budgets.
 config:
+  # The launcher's profile: the development-state Docling profile
+  # (contracts/jobs/profiles.json; admitted under development.enabled, as on the
+  # foundation). The workers carry only the components pool label
+  # (deploy/qualification/bootstrap.py), so the parser Pods select that pool.
+  parser:
+    profile: parser-docling-dev-v1
+    node_pool: components
   qdrant:
     replication_factor: 3
     write_consistency_factor: 2
