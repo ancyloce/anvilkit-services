@@ -7,7 +7,8 @@ Owned service images (the eight services, the Knowledge forwarder sidecar and th
 knowledge/mcp migration Job) are built from the current working trees with each
 repository's own Dockerfile and pushed to the registry; the fixed Job images are taken
 at the exact digests their reviewed profiles pin (contracts/jobs/profiles.json), never
-rebuilt. For every image, by digest: a CycloneDX SBOM and a vulnerability and license
+rebuilt; the third-party platform images (PLATFORM) are copied into the registry by
+digest. For every image, by digest: a CycloneDX SBOM and a vulnerability and license
 scan (Trivy), a Cosign signature and a signed SBOM attestation, both verified with the
 public key. The eight service charts are packaged, pushed as OCI artifacts and signed.
 Everything is bound in outputs/qualification/<run>/release-manifest.json together with
@@ -63,6 +64,14 @@ OWNED = [
     ("anvilkit-migration", "jobs/migration", []),
 ]
 CHARTS = [f"services/agent/{s}/deploy/chart" for s in ("api", "control", "workflow", "model-proxy", "knowledge", "mcp", "background-worker", "inference")]
+# Third-party images the environment runs where only release-signed images are admitted
+# (anvilkit-apps: the anvilkit-secrets holder Pod of the CSI-synced Secrets, P0.6): copied
+# by digest (every platform of the index, the same digest) into the registry under
+# vendor/, then scanned, given an SBOM and signed like the owned images. (name, upstream
+# reference with digest, repository:tag in the registry)
+PLATFORM = [
+    ("pause", "registry.k8s.io/pause:3.10@sha256:ee6521f290b2168b6e0935a181d4cff9be1ac3f505666ef0e3c98fae8199917a", "vendor/pause:3.10"),
+]
 
 
 def sh(cmd: list[str], **kw) -> subprocess.CompletedProcess:
@@ -190,6 +199,21 @@ def build(name: str, context: str, extra: list[str], run_id: str, out: pathlib.P
     return m[1]
 
 
+def mirror(upstream: str, target: str) -> str:
+    """Copies an upstream image by digest into the registry and returns that digest once
+    the registry serves it unchanged."""
+    digest = upstream.split("@", 1)[1]
+    must(["docker", "buildx", "imagetools", "create", "--tag", f"{HOST_REGISTRY}/{target}", upstream])
+    repo = target.split(":", 1)[0]
+    req = urllib.request.Request(f"http://{HOST_REGISTRY}/v2/{repo}/manifests/{digest}", method="HEAD", headers={"Accept": ", ".join([
+        "application/vnd.oci.image.index.v1+json", "application/vnd.docker.distribution.manifest.list.v2+json",
+        "application/vnd.oci.image.manifest.v1+json", "application/vnd.docker.distribution.manifest.v2+json"])})
+    with urllib.request.urlopen(req, timeout=10) as r:
+        if r.headers.get("Docker-Content-Digest") != digest:
+            raise RuntimeError(f"the registry serves {repo} as {r.headers.get('Docker-Content-Digest')}, not {digest}")
+    return digest
+
+
 def yaml_version(chart_yaml: pathlib.Path) -> str:
     m = re.search(r"^version:\s*\"?([0-9A-Za-z.+-]+)\"?\s*$", chart_yaml.read_text(), re.M)
     if not m:
@@ -298,6 +322,24 @@ def main() -> int:
             print(f"signed {entry['signature']}, {entry['scan']['severities']}")
         except RuntimeError as e:
             findings.append(f"{key}: {e}")
+            print(f"FAILED {e}")
+    for name, upstream, target in PLATFORM:
+        if not selected(name):
+            if name in prior.get("images", {}):
+                manifest["images"][name] = carry(prior["images"][name])
+            continue
+        print(f"platform image {name}: ", end="", flush=True)
+        try:
+            digest = mirror(upstream, target)
+            ref = f"{REGISTRY}/{target.split(':', 1)[0]}@{digest}"
+            entry = {"kind": "third-party platform", "reference": ref, "digest": digest,
+                     "source": {"upstream": upstream, "mirroredAs": f"{REGISTRY}/{target}"}}
+            entry.update(scan(name, ref, out))
+            entry.update(sign_and_verify(ref, out, password, f"{name}.cdx.json"))
+            manifest["images"][name] = entry
+            print(f"{digest[:19]}… signed {entry['signature']}, attestation {entry['sbomAttestation']}, {entry['scan']['severities']}")
+        except (RuntimeError, OSError) as e:
+            findings.append(f"{name}: {e}")
             print(f"FAILED {e}")
     charts = out / "charts"
     charts.mkdir(exist_ok=True)
