@@ -13,6 +13,12 @@ spec:
   postgresql:
     parameters:
       max_connections: {{ $maxConnections | quote }}
+    # P0.6: no connection without TLS. The operator's own rules (local peer, replication
+    # and pooler by certificate) come first and its default `host all all all
+    # scram-sha-256` last; these take every TCP client before that default.
+    pg_hba:
+      - hostssl all all all scram-sha-256
+      - hostnossl all all all reject
     synchronous:
       method: any
       number: 1

@@ -18,6 +18,7 @@ A disposable environment for P23's drills, separate from the development foundat
 | `measure-residency.py` | P23-10: two replicas of the release's Inference image on Docker (the cluster cannot hold them beside the platform): cold start, resident memory, latency, a restart while the other serves. |
 | `record.py` | P23-11: the qualification record binding every piece of evidence with its digest; gates and ENV inputs as they stand. |
 | `check-telemetry.py` | P23-06: every raw anvilkit-* log and the Collector's exported logs, metrics and traces searched for every secret of the environment and for secret shapes. |
+| `check-dataplane.py` | P0.6 AC3: through one fresh port-forward per case, NATS, the Valkey master proxy, servers and Sentinel, and the business PostgreSQL primary: plaintext, credential-less, unlisted and wrong credentials refused, one deployed credential accepted as the positive control, an out-of-scope NATS publication refused; nothing written to a stream or queue key (`tests/integration` `TestQualificationDataPlane`). |
 
 ```sh
 sh deploy/qualification/cluster.sh up
@@ -31,9 +32,14 @@ sh deploy/qualification/cluster.sh up
 ```sh
 .local/verification-venv/bin/python deploy/qualification/check-waves.py --run RUN --revision N
 .local/verification-venv/bin/python deploy/qualification/check-telemetry.py --run RUN
+.local/verification-venv/bin/python deploy/qualification/check-dataplane.py --run RUN
 .local/verification-venv/bin/python deploy/qualification/restore-drills.py --run RUN postgres-business ...
 ```
 
-Operating notes. A StatefulSet whose Pod never became Ready (an unpullable image) keeps that Pod after its template is repaired: delete the Pod once the fixed revision is applied (Kubernetes' forced rollback). A restarted OpenBao member stays sealed until `bootstrap.py` (or an operator with three shares) unseals it; production unseals through ENV-10's KMS. Rotating the queue Valkey password restarts every member at once (a member started with the new password asks the old Sentinels for the primary and fails); production rotation needs ACL users with two passwords. `platform/valkey` is the upstream CloudPirates chart patched so the Sentinel no longer prints its password-bearing configuration (`ANVILKIT-PATCH.md`).
+Operating notes. A StatefulSet whose Pod never became Ready (an unpullable image) keeps that Pod after its template is repaired: delete the Pod once the fixed revision is applied (Kubernetes' forced rollback). A restarted OpenBao member stays sealed until `bootstrap.py` (or an operator with three shares) unseals it; production unseals through ENV-10's KMS. Rotating the queue Valkey password restarts every member at once (a member started with the new password asks the old Sentinels for the primary and fails); production rotation needs ACL users with two passwords. A host reboot restarts the nodes through Docker's restart policy, not `cluster.sh start`, and has these effects:
+- `fs.inotify.max_user_instances` is back at 128, and a kubelet fails on `inotify_init`.
+- A control plane can come back on a new address. Free its etcd peer certificate's address if another container took it, then reconnect the node on it.
+- OpenBao is sealed.
+- The Valkey master proxies can keep a resolution taken before cluster DNS was ready, with every server DOWN, until their `haproxy` containers restart. `platform/valkey` is the upstream CloudPirates chart patched so the Sentinel no longer prints its password-bearing configuration (`ANVILKIT-PATCH.md`).
 
 Evidence goes to `outputs/qualification/<RUN>/` (ignored by Git). Cleanup deletes only resources this environment owns, by exact name.

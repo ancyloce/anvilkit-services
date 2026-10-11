@@ -14,6 +14,9 @@ else their upstream repository), then fails on
   * any http://, nats://, redis:// or sslmode= other than verify-full in the rendered
     manifests, unless the occurrence matches one of the reasoned, development-labelled
     exceptions below,
+  * a CloudNativePG Cluster without the pg_hba rule `hostnossl all all all reject` (the
+    operator's default admits a client without TLS; the clients' verify-full alone does
+    not make the server refuse one),
 and checks the credentials bootstrap.py writes to OpenBao (kv_payloads on throwaway
 values): every DSN sslmode=verify-full with the trust bundle, every queue URL
 rediss://, no plaintext endpoint.
@@ -166,6 +169,11 @@ def scan(rendered: dict[str, str]) -> tuple[list[str], list[dict]]:
         for doc in yaml.safe_load_all(text):
             if isinstance(doc, dict) and doc.get("kind") == "Secret" and (doc.get("data") or doc.get("stringData")):
                 findings.append(f"{source}: Secret {doc['metadata'].get('name')} carries data in the rendered manifests")
+            # The servers refuse plaintext too: CloudNativePG's default rule ends with
+            # `host all all all scram-sha-256`, which admits a client without TLS.
+            if isinstance(doc, dict) and doc.get("kind") == "Cluster" and doc.get("apiVersion", "").startswith("postgresql.cnpg.io/") \
+                    and "hostnossl all all all reject" not in (doc.get("spec", {}).get("postgresql", {}).get("pg_hba") or []):
+                findings.append(f"{source}: CloudNativePG Cluster {doc['metadata'].get('name')} admits connections without TLS (no pg_hba hostnossl reject)")
         for n, line in enumerate(text.splitlines(), 1):
             if line.lstrip().startswith("#"):
                 continue
