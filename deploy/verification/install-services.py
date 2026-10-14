@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Deploy repaired business images with owned dependencies and one-container topology."""
+"""Deploy repaired business images with owned dependencies; the charts render the topology (P2.3: no post-renderer)."""
 import json,os,pathlib,secrets,subprocess,sys,yaml
 ROOT=pathlib.Path(__file__).resolve().parents[2];STATE=ROOT/'.local/repair-rke2';OUT=ROOT/'outputs/repairs-f01-f12';NS='anvilkit-verification'
 os.umask(0o077)
@@ -52,7 +52,12 @@ def image(service):
 valuesdir=ROOT/'deploy/verification/values';valuesdir.mkdir(exist_ok=True)
 for service in ['control','api','workflow','model-proxy','knowledge','mcp','background-worker']:
  if len(sys.argv)>1 and service not in sys.argv[1:]:continue
- v={'replicaCount':1,'image':image(service),'podDisruptionBudget':{'enabled':False},'podLabels':labels,'resources':{'requests':{'cpu':'50m','memory':'96Mi'},'limits':{'cpu':'1','memory':'512Mi'}}}
+ # P2.3: what the deleted post-renderer patched in is plain values now:
+ # one replica, no HPA, the application node pool and no injected sidecars.
+ v={'replicaCount':1,'autoscaling':{'enabled':False},'image':image(service),'podDisruptionBudget':{'enabled':False},'podLabels':labels,
+    'nodeSelector':{'anvilkit.io/workload':'application'},
+    'podAnnotations':{'sidecar.istio.io/inject':'false','linkerd.io/inject':'disabled','vault.hashicorp.com/agent-inject':'false'},
+    'resources':{'requests':{'cpu':'50m','memory':'96Mi'},'limits':{'cpu':'1','memory':'512Mi'}}}
  if service=='control':v.update({'database':{'secret':{'name':'control-app'}},'migration':{'secret':{'name':'control-migrator'}},'temporal':{'address':'temporal:7233'},'inventory':{'s3':{'endpoint':'http://minio:9000','bucket':'anvilkit-inventory','secret':{'name':'inventory'}}},'artifacts':{'enabled':True,'s3':{'endpoint':'http://minio:9000','bucket':'anvilkit-artifacts','secret':{'name':'artifacts'}}}})
  if service=='api':v.update({'control':{'address':'anvilkit-agent-control:9101'},'auth':{'principalsSecret':{'name':'api-principals'}}})
  if service=='workflow':v.update({'control':{'address':'anvilkit-agent-control:9101'},'temporal':{'address':'temporal:7233'},'launcher':{'namespace':'anvilkit-verification-sandbox','backend':'anvilkit-rke2-verification','imageRegistry':'10.203.0.12:30500','sidecarControlAddress':'anvilkit-agent-control.anvilkit-verification.svc:9101'},'config':{'kubernetes':{'enabled_profiles':['local-check-v1']}}})
@@ -64,7 +69,7 @@ for service in ['control','api','workflow','model-proxy','knowledge','mcp','back
  if service=='control':v['config']={'profiles':{'generation':{'capacity':1}}}
  vf=valuesdir/(service+'.yaml');vf.write_text(yaml.safe_dump(v,sort_keys=False));os.chmod(vf,0o644)
  chart=ROOT/'services/agent'/service/'deploy/chart';release='anvilkit-agent-'+service
- args=[release,str(chart),'-n',NS,'-f',str(vf),'--post-renderer',str(ROOT/'deploy/verification/post-render.sh')]
+ args=[release,str(chart),'-n',NS,'-f',str(vf)]
  with (OUT/(service+'-helm-lint.log')).open('wb') as f:subprocess.run(H+['lint',str(chart),'-f',str(vf)],stdout=f,stderr=subprocess.STDOUT,check=True)
  rendered=subprocess.check_output(H+['template']+args);(OUT/(service+'-rendered.yaml')).write_bytes(rendered)
  with (OUT/(service+'-dry-run.log')).open('wb') as f:subprocess.run(K[:-2]+['apply','--dry-run=server','--validate=strict','-f','-'],input=rendered,stdout=f,stderr=subprocess.STDOUT,check=True)

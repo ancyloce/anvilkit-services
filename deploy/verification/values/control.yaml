@@ -68,5 +68,11 @@ artifacts:
     bucket: anvilkit-artifacts
     secret:
       name: artifacts
-podAnnotations:
-  anvilkit.io/model-proxy-token-secret: model-proxy-clients
+# P2.3: the DEVELOPMENT_ONLY bearer token of the Model Proxy client, as
+# chart values (the post-renderer that injected it is gone).
+modelProxy:
+  address: http://anvilkit-agent-model-proxy:9103
+  identityMode: development
+  tokenSecret:
+    name: model-proxy-clients
+    key: control

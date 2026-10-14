@@ -38,5 +38,10 @@ config:
       call_timeout: 3m
       content_repair_allowance: 0
       max_input_bytes: 262144
-podAnnotations:
-  anvilkit.io/model-proxy-token-secret: model-proxy-clients
+# P2.3: the DEVELOPMENT_ONLY bearer token of the Model Proxy client, as
+# chart values (the post-renderer that injected it is gone).
+modelProxy:
+  address: http://anvilkit-agent-model-proxy:9103
+  tokenSecret:
+    name: model-proxy-clients
+    key: workflow

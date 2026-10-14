@@ -20,6 +20,7 @@ data:
     \ LOGIN PASSWORD '${ANVILKIT_DEV_PASSWORD}';\nSQL\n  fi\n  if [ \"$domain\" =\
     \ knowledge ]; then\n    psql -v ON_ERROR_STOP=1 -U \"$POSTGRES_USER\" -d postgres\
     \ <<SQL\nCREATE ROLE anvilkit_knowledge_forwarder LOGIN PASSWORD '${ANVILKIT_DEV_PASSWORD}';\n\
+    CREATE ROLE anvilkit_knowledge_cleanup LOGIN PASSWORD '${ANVILKIT_DEV_PASSWORD}';\n\
     SQL\n  fi\n  # The app role must not be able to create objects in the domain schema.\n\
     \  psql -v ON_ERROR_STOP=1 -U \"$POSTGRES_USER\" -d \"anvilkit_${domain}\" <<SQL\n\
     REVOKE CREATE ON SCHEMA public FROM PUBLIC;\nALTER SCHEMA public OWNER TO anvilkit_${domain}_migrator;\n\

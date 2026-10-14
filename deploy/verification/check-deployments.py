@@ -17,7 +17,7 @@ for service in ['api', 'control', 'workflow', 'model-proxy', 'knowledge', 'mcp',
     with (OUT / (service + '-helm-validation-final.log')).open('wb') as log:
         subprocess.run(H + ['lint', str(chart), '-f', str(values)], check=True, stdout=log, stderr=subprocess.STDOUT)
         rendered = subprocess.check_output(H + ['template', 'anvilkit-agent-' + service, str(chart), '-n', NS,
-            '-f', str(values), '--post-renderer', str(ROOT / 'deploy/verification/post-render.sh')])
+            '-f', str(values)])
         (OUT / (service + '-rendered.yaml')).write_bytes(rendered)
         subprocess.run(K + ['apply', '--dry-run=server', '--validate=strict', '-f', '-'], input=rendered,
                        check=True, stdout=log, stderr=subprocess.STDOUT)
@@ -33,7 +33,7 @@ assert not json.loads((OUT / 'rke2-hpa.json').read_text())['items'], 'Unexpected
 deployments = {d['metadata']['name']: d for d in json.loads((OUT / 'rke2-deployments.json').read_text())['items']}
 for service in ['api', 'control', 'workflow', 'model-proxy', 'knowledge', 'mcp', 'background-worker']:
     deployment = deployments['anvilkit-agent-' + service]
-    assert deployment['spec']['replicas'] == 1 and deployment['spec']['strategy']['type'] == 'Recreate'
+    assert deployment['spec']['replicas'] == 1
     assert deployment['status'].get('readyReplicas') == 1 and deployment['status'].get('updatedReplicas') == 1
     assert deployment['status']['observedGeneration'] == deployment['metadata']['generation']
 counts = {'business': 0, 'temporary_jobs': 0, 'verification_dependencies': 0, 'cluster_platform': 0}
@@ -44,16 +44,20 @@ for pod in pods:
     elif namespace == NS and pod['metadata']['name'].startswith('anvilkit-agent-'):
         counts['business'] += 1
         spec = pod['spec']
-        assert len(spec['containers']) == 1 and not spec.get('initContainers') and not spec.get('ephemeralContainers')
+        # P2.3: the charts' own topology (the owner with its forwarder or
+        # relay where the chart renders one); no init or ephemeral container.
+        assert not spec.get('initContainers') and not spec.get('ephemeralContainers')
         assert all(c['ready'] for c in pod['status']['containerStatuses'])
-        container = spec['containers'][0]
-        assert '@sha256:' in container['image']
-        for probe in ['readinessProbe', 'livenessProbe'] + (['startupProbe'] if 'startupProbe' in container else []):
-            config = container[probe]
-            if 'httpGet' in config:
-                assert config['httpGet']['path'] in ['/healthz', '/readyz'], (pod['metadata']['name'], probe)
-            else:
-                assert container['name'] == 'control' and config['grpc']['port'] == 9101
+        for container in spec['containers']:
+            assert '@sha256:' in container['image']
+            for probe in ['readinessProbe', 'livenessProbe'] + (['startupProbe'] if 'startupProbe' in container else []):
+                if probe not in container:
+                    continue
+                config = container[probe]
+                if 'httpGet' in config:
+                    assert config['httpGet']['path'] in ['/healthz', '/readyz'], (pod['metadata']['name'], probe)
+                else:
+                    assert container['name'] == 'control' and config['grpc']['port'] == 9101
         assert pod['status']['phase'] == 'Running'
     elif namespace in [NS, 'anvilkit-verification-platform']:
         counts['verification_dependencies'] += 1

@@ -35,7 +35,7 @@ Use `.local/verification-venv/bin/python` for these scripts, `.local/bin/kubectl
 
 The setup sequence is `provision-hyperv.py`, `configure-hyperv-network.py`, `configure-rke2.py`, `install-gvisor.py`, `install-registry.py`, then `install-services.py`. Initial provisioning reads the verified Ubuntu image and checksum file from `.local/repair-rke2/`. Windows SSH uses the protected copy of the generated key in the access directory above. Image build evidence and the resolved pushed digests are in `outputs/repairs-f01-f12/image-*.log`, `push-*.log`, and `images.json`; `values/*.yaml` pins each installed business image. The helper Dockerfiles under `images/` combine existing owner, forwarder, and Worker builds without adding a second business container. `supervise.mjs` starts the trusted processes, probes all of them, and bounds group shutdown to 20 seconds.
 
-`install-services.py` installs only into the owned namespace. The dependencies use exclusively owned databases, queues, buckets, streams, and VM storage. PostgreSQL app/migrator/relay/forwarder roles are separate. Temporal here is the existing development test server with persistent storage, not an HA deployment. The post-renderer sets one replica, Recreate, no HPA or injected sidecars; the actual Pod checks also reject init and ephemeral containers. Inference has no implementation and is not scaffolded.
+`install-services.py` installs only into the owned namespace. The dependencies use exclusively owned databases, queues, buckets, streams, and VM storage. PostgreSQL app/migrator/relay/forwarder roles are separate. Temporal here is the existing development test server with persistent storage, not an HA deployment. The values set one replica, no HPA and no injected sidecars (P2.3 removed the Helm post-renderer: the charts render the Model Proxy identity and placement themselves, and Knowledge and MCP run their chart topology — owner plus forwarder or relay — instead of the merged single container; a reinstall of this environment with that topology has not been run); the actual Pod checks also reject init and ephemeral containers. Inference has no implementation and is not scaffolded.
 
 ```sh
 .local/verification-venv/bin/python deploy/verification/check-deployments.py
@@ -89,13 +89,36 @@ The DeepSeek credential and its user-entered account/project association were ve
 
 RKE2 now uses the separate `kubernetes-rke2` OpenBao auth mount. Its dedicated cross-cluster reviewer has only TokenReview/create permission; its revocable local service-account token stays in platform storage, never a business Pod. The workload role binds only Model Proxy's ServiceAccount, namespace and `openbao` audience. The driver and provider run as platform DaemonSets on the application node. The real Model Proxy Pod mounts the credential file read-only through CSI; no credential is copied into a Kubernetes Secret. File mode 0444 permits the nonroot service to read its private CSI volume. Other business identities and unrelated secret paths were denied in runtime checks.
 
-The existing kind OpenBao serves RKE2 through a TLS-preserving port-forward on `10.203.0.1:18200`. The provider trusts the existing CA and verifies `openbao.anvilkit-secrets.svc`; no insecure TLS mode is used. The persistent WSL systemd unit is [anvilkit-verification-openbao-forward.service](openbao/anvilkit-verification-openbao-forward.service). The Windows Hyper-V inbound rule permits this port only from the three verification VM addresses. This local tunnel and single-member Bao remain development infrastructure, not production availability or custody qualification.
+The existing kind OpenBao serves RKE2 through a TLS-preserving port-forward on `10.203.0.1:18200`. The provider trusts the existing CA and verifies `openbao.anvilkit-secrets.svc`; no insecure TLS mode is used. The persistent WSL systemd unit is [anvilkit-verification-openbao-forward.service](openbao/anvilkit-verification-openbao-forward.service). It also binds `127.0.0.1:18200` for the local dashboard at **https://127.0.0.1:18200/ui/** and restarts after either a failed or clean forwarding-process exit. The Windows Hyper-V inbound rule permits the VM-facing port only from the three verification VM addresses; the localhost addition does not expose a LAN listener. This local tunnel and single-member Bao remain development infrastructure, not production availability or custody qualification.
+
+The browser must trust this installation's public `.local/openbao/ca.crt`. On Windows, import that certificate into the current user's Trusted Root Certification Authorities if local CA trust is desired; private keys and `init.json` are never imported. Sign in with an authorized operator token, then navigate to `kv/anvilkit/local/model-proxy/deepseek`. A token with exact-path read permission need not have permission to list folders. The dashboard remains authenticated.
+
+### Dashboard connection recovery (2026-10-12)
+
+The host reboot had reset `fs.inotify.max_user_instances` to 128. An `inotify_init1` probe returned `EMFILE`, and containerd's CRI plugin failed with `failed to create fsnotify watcher: too many open files`. The kind API could not run, so the forwarding unit repeatedly restarted without opening a listener. Its previous address list also omitted localhost. A systemd `active` result alone did not establish dashboard availability.
+
+The repair persisted the existing multi-node requirement of 512, restarted containerd only in `anvilkit-dev-control-plane`, installed the updated forwarding unit, and unsealed the existing OpenBao store. To install these host settings from the repository root on this owned WSL host:
+
+```sh
+sudo install -m 0644 deploy/verification/openbao/90-anvilkit-inotify.conf /etc/sysctl.d/90-anvilkit-inotify.conf
+sudo sysctl -p /etc/sysctl.d/90-anvilkit-inotify.conf
+# Needed if the CRI plugin already failed at startup from the exhausted limit:
+docker exec anvilkit-dev-control-plane systemctl restart containerd
+sudo install -m 0644 deploy/verification/openbao/anvilkit-verification-openbao-forward.service /etc/systemd/system/anvilkit-verification-openbao-forward.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now anvilkit-verification-openbao-forward.service
+sudo systemctl restart anvilkit-verification-openbao-forward.service
+```
+
+Verify Kubernetes `/readyz`, the actual `18200` listeners, and TLS-verified `/v1/sys/health` and `/ui/`. Allow OpenBao to finish startup before unsealing. The 2026-10-12 checks observed the existing PVC retained, OpenBao initialized and unsealed, Pod Ready, HTTP 200 health/dashboard, and HTTP 403 for an unauthenticated secret read. A Windows HTTPS request also returned 200 with the explicit local CA; Windows curl needed its per-request `--ssl-revoke-best-effort` option because the private CA has no available revocation distribution point. This [curl option](https://curl.se/docs/manpage.html#--ssl-revoke-best-effort) retains CA and hostname verification while allowing missing/offline revocation checks. Neither Windows root store contained this CA; no browser trust store was changed. Evidence is in `outputs/openbao-access-20261012/`. Host reboot and interactive browser login were not exercised; no provider request was made.
+
+Rollback: the previous installed forwarding unit is saved as `outputs/openbao-access-20261012/forward.service.before`; restoring it and restarting the unit removes localhost access. The new sysctl file can be removed to undo persistence, but returning the running host to 128 while these kind nodes are active can recreate the outage. No PVC, secret, credential, or schema migration needs rollback.
 
 ## Restore the existing installation
 
 Inspect actual Hyper-V state and verify `D:\AnvilKit\verification\owner.json`, VM Notes and disk/network paths before starting only the recorded existing VMs. The 2026-09-19 inspection found all three VMs **Off**; starting those VMs restored the API, registry and cluster dependencies without replacing disks or cluster state. Failed SSH banners alone were not used as proof of VM state.
 
-For OpenBao restoration, preserve its PVC and protected material. Do not rerun installation or initialization just because the service is sealed. Start the localhost TLS forward above, then:
+For OpenBao restoration, preserve its PVC and protected material. Do not rerun installation or initialization just because the service is sealed. Start the persistent forwarding unit (or the manual localhost forward above if no unit is installed), verify it is listening, then:
 
 ```sh
 .local/verification-venv/bin/python deploy/verification/openbao/restore-existing.py
