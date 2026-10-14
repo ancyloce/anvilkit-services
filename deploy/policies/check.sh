@@ -51,11 +51,16 @@ for f in pathlib.Path(sys.argv[2]).glob("*.yaml"):
 # The development-state profile's valid cases pass only where the environment
 # lists that profile; elsewhere its admission refuses them.
 exp = pathlib.Path(sys.argv[2]) / "expectations.json"
-if exp.exists() and "validator-source-dev-v1" not in (values.get("developmentProfiles") or []):
+listed = values.get("developmentProfiles") or []
+if exp.exists():
     e = json.loads(exp.read_text())
-    for case in ("valid-validator-source-dev-job", "valid-validator-source-dev-pod"):
-        if case in e:
-            e[case] = "fail"
+    unlisted = {"validator-source-dev-v1": ("valid-validator-source-dev-job", "valid-validator-source-dev-pod"),
+                "codegen-team-dev-v1": ("valid-team-dev-job", "valid-team-dev-pod", "placement-dropped")}
+    for profile, cases in unlisted.items():
+        if profile not in listed:
+            for case in cases:
+                if case in e:
+                    e[case] = "fail"
     exp.write_text(json.dumps(e))
 PLACE
 cp -R "$POLICIES/tests/resources" "$WORK/resources"

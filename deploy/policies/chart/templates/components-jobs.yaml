@@ -47,13 +47,25 @@ spec:
     - name: fixtureDigests
       expression: "['sha256:9db7b59979c38555a39def84a31fb98b5296952f9e3afd4f6f11f05b07adfab0']"
     - name: supervisorDigests
-      expression: "['sha256:262b46398818c5164c1eb7defa977cd5d9ae94092a819d28c8bf86f3878b4864', 'sha256:274076d0354f6ef691936578914bc748cd71a4ad1ccb1365ef3fc26ce5d51178']"
+      expression: "['sha256:262b46398818c5164c1eb7defa977cd5d9ae94092a819d28c8bf86f3878b4864', 'sha256:274076d0354f6ef691936578914bc748cd71a4ad1ccb1365ef3fc26ce5d51178', 'sha256:5f1326cc641442c9affd4b8c8f737545c00dc4bd09bdd5a7e79aae478128f717']"
     - name: sidecarDigests
       expression: "['sha256:4ba60660d7555b7140d55e9da1d03d0354b5aced7edaa406a1f139cba3e464fb']"
     - name: supervisorEnv
       expression: "['ANVILKIT_LAUNCH_ID', 'ANVILKIT_ATTEMPT_ID', 'ANVILKIT_LAUNCH_ENVELOPE']"
     - name: sidecarEnv
       expression: "['ANVILKIT_SIDECAR_CONTROL_ADDRESS', 'ANVILKIT_SIDECAR_IDENTITY_MODE', 'ANVILKIT_SIDECAR_BACKEND', 'ANVILKIT_SIDECAR_LAUNCH_KEY', 'ANVILKIT_SIDECAR_POD_UID', 'ANVILKIT_SIDECAR_LAUNCH_ENVELOPE']"
+    # P2.4 (B-32): the sidecar's relay placements, after the six launch
+    # variables in this order; each only with the value this environment
+    # declares (sidecarPlacements), so a launcher can point the sidecar at
+    # nothing else.
+    - name: placementOrder
+      expression: "['ANVILKIT_SIDECAR_MODEL_PROXY_URL', 'ANVILKIT_SIDECAR_MCP_ADDRESS', 'ANVILKIT_SIDECAR_KNOWLEDGE_ADDRESS']"
+    {{- $pl := dict }}
+    {{- with .Values.sidecarPlacements.modelProxyUrl }}{{ $_ := set $pl "ANVILKIT_SIDECAR_MODEL_PROXY_URL" . }}{{ end }}
+    {{- with .Values.sidecarPlacements.mcpAddress }}{{ $_ := set $pl "ANVILKIT_SIDECAR_MCP_ADDRESS" . }}{{ end }}
+    {{- with .Values.sidecarPlacements.knowledgeAddress }}{{ $_ := set $pl "ANVILKIT_SIDECAR_KNOWLEDGE_ADDRESS" . }}{{ end }}
+    - name: sidecarPlacements
+      expression: {{ $pl | toJson | quote }}
     - name: fixtureEnv
       expression: "['ANVILKIT_LAUNCH_ID', 'ANVILKIT_ATTEMPT_ID']"
     # The reviewed entrypoint of local-check-v1 (contracts/jobs/profiles.json),
@@ -69,7 +81,16 @@ spec:
     # same harness layout with the validator's trusted process as the
     # supervisor container.
     - name: validatorProfiles
-      expression: "['validator-fixture-v1', 'validator-source-v1', 'validator-source-dev-v1']"
+      expression: "['validator-fixture-v1', 'validator-source-v1', 'validator-source-dev-v1', 'preview-build-v1']"
+    # P2.4: the coding team (P12) as the supervisor's team mode: its own image
+    # and entrypoint, the production profile under gVisor and its
+    # development twin where the environment lists it.
+    - name: teamProfiles
+      expression: "['codegen-team-v1', 'codegen-team-dev-v1']"
+    - name: teamCommand
+      expression: "['/usr/local/bin/anvilkit-codegen-supervisor', 'team']"
+    - name: teamDigest
+      expression: "'sha256:5f1326cc641442c9affd4b8c8f737545c00dc4bd09bdd5a7e79aae478128f717'"
     # P0.8: the development-state candidate profiles this environment admits
     # without the gVisor RuntimeClass (DEVELOPMENT_ONLY; empty elsewhere).
     - name: developmentProfiles
@@ -118,7 +139,7 @@ spec:
         && has(object.metadata.annotations) && 'anvilkit.io/create-request' in object.metadata.annotations
     - message: "a Job Pod is the fixture layout (one container 'fixture', no init container) or the harness layout (the 'supervisor' container and the 'access-sidecar' native sidecar as its only init container), nothing else"
       expression: "variables.isFixture || variables.isHarness"
-    - message: "the profile id binds the layout, the candidate-code label and the RuntimeClass: local-check-v1 is the fixture layout without candidate code or RuntimeClass, harness-wiring-dev-v1 and validator-fixture-v1 the harness layout without candidate code or RuntimeClass, codegen-fixed-v1 and validator-source-v1 the harness layout with candidate code under the gvisor RuntimeClass, validator-source-dev-v1 with candidate code and no RuntimeClass where the environment lists it as a development profile; no other profile is admitted"
+    - message: "the profile id binds the layout, the candidate-code label and the RuntimeClass: local-check-v1 is the fixture layout without candidate code or RuntimeClass, harness-wiring-dev-v1 and validator-fixture-v1 the harness layout without candidate code or RuntimeClass, codegen-fixed-v1, validator-source-v1, preview-build-v1 and codegen-team-v1 the harness layout with candidate code under the gvisor RuntimeClass, validator-source-dev-v1 and codegen-team-dev-v1 with candidate code and no RuntimeClass where the environment lists them as development profiles; no other profile is admitted"
       expression: >-
         (variables.profileID == 'local-check-v1' && variables.isFixture && !variables.candidateCode && variables.runtimeClass == '')
         || (variables.profileID == 'harness-wiring-dev-v1' && variables.isHarness && !variables.candidateCode && variables.runtimeClass == '')
@@ -126,6 +147,10 @@ spec:
         || (variables.profileID == 'codegen-fixed-v1' && variables.isHarness && variables.candidateCode && variables.runtimeClass == 'gvisor')
         || (variables.profileID == 'validator-source-v1' && variables.isHarness && variables.candidateCode && variables.runtimeClass == 'gvisor')
         || (variables.profileID == 'validator-source-dev-v1' && variables.profileID in variables.developmentProfiles
+            && variables.isHarness && variables.candidateCode && variables.runtimeClass == '')
+        || (variables.profileID == 'preview-build-v1' && variables.isHarness && variables.candidateCode && variables.runtimeClass == 'gvisor')
+        || (variables.profileID == 'codegen-team-v1' && variables.isHarness && variables.candidateCode && variables.runtimeClass == 'gvisor')
+        || (variables.profileID == 'codegen-team-dev-v1' && variables.profileID in variables.developmentProfiles
             && variables.isHarness && variables.candidateCode && variables.runtimeClass == '')
     - message: "the access sidecar is a native sidecar (restartPolicy Always) and no other container restarts"
       expression: >-
@@ -196,7 +221,9 @@ spec:
           && c.resources.requests == (c.name == 'access-sidecar'
             ? {'cpu': '100m', 'memory': '64Mi'}
             : variables.profileID in variables.validatorProfiles
-              ? {'cpu': '1', 'memory': '1Gi'} : {'cpu': '500m', 'memory': '256Mi'})
+              ? {'cpu': '1', 'memory': '1Gi'}
+              : variables.profileID in variables.teamProfiles
+              ? {'cpu': '2', 'memory': '3Gi'} : {'cpu': '500m', 'memory': '256Mi'})
           && c.resources.limits == c.resources.requests)
     - message: "harness emptyDir size limits and media match the reviewed template"
       expression: >-
@@ -211,6 +238,8 @@ spec:
           && has(c.command)
           && (variables.profileID in variables.validatorProfiles
               ? (c.command == variables.validatorCommand && c.image.endsWith('@' + variables.validatorDigest))
+              : variables.profileID in variables.teamProfiles
+              ? (c.command == variables.teamCommand && c.image.endsWith('@' + variables.teamDigest))
               : c.command == variables.supervisorCommand)
           && has(c.securityContext.runAsUser) && c.securityContext.runAsUser == 0
           && has(c.securityContext.runAsGroup) && c.securityContext.runAsGroup == 0
@@ -218,7 +247,7 @@ spec:
           && c.securityContext.seccompProfile.type == 'Localhost' && has(c.securityContext.seccompProfile.localhostProfile) && c.securityContext.seccompProfile.localhostProfile == 'anvilkit/candidate.json'
           && has(c.env) && c.env.all(e, e.name in variables.supervisorEnv && !has(e.valueFrom)) && c.env.map(e, e.name) == variables.supervisorEnv
           && has(c.volumeMounts) && c.volumeMounts.map(m, m.name + ':' + m.mountPath + ':' + string(has(m.readOnly) && m.readOnly)) == ['workspace:/workspace:false', 'verdict:/anvilkit/verdict:false', 'sockets:/run/anvilkit:true'])
-    - message: "the access sidecar runs as UID 10002 without capabilities, RuntimeDefault seccomp, the sidecar environment only with the Pod UID from the downward API, and the sockets mount plus its read-only identity mount alone"
+    - message: "the access sidecar runs as UID 10002 without capabilities, RuntimeDefault seccomp, the sidecar environment only (the six launch variables, then only the relay placements this environment declares, with exactly their values) with the Pod UID from the downward API, and the sockets mount plus its read-only identity mount alone"
       expression: >-
         !variables.isHarness || variables.inits.exists(c, c.name == 'access-sidecar'
           && !has(c.command)
@@ -227,7 +256,10 @@ spec:
           && has(c.securityContext.runAsNonRoot) && c.securityContext.runAsNonRoot
           && (!has(c.securityContext.capabilities.add) || size(c.securityContext.capabilities.add) == 0)
           && c.securityContext.seccompProfile.type == 'RuntimeDefault'
-          && has(c.env) && c.env.map(e, e.name) == variables.sidecarEnv
+          && has(c.env) && c.env.map(e, e.name).filter(n, n in variables.sidecarEnv) == variables.sidecarEnv
+          && c.env.map(e, e.name).filter(n, !(n in variables.sidecarEnv)) == variables.placementOrder.filter(n, c.env.exists(e, e.name == n))
+          && c.env.all(e, e.name in variables.sidecarEnv
+              || (e.name in variables.sidecarPlacements && has(e.value) && e.value == variables.sidecarPlacements[e.name]))
           && c.env.all(e, e.name == 'ANVILKIT_SIDECAR_POD_UID'
               ? (has(e.valueFrom) && has(e.valueFrom.fieldRef) && e.valueFrom.fieldRef.fieldPath == 'metadata.uid')
               : !has(e.valueFrom))

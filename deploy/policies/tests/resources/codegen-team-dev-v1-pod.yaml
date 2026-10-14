@@ -1,0 +1,138 @@
+# Rendered by the launcher (TestRenderPolicyFixtures); do not edit.
+apiVersion: v1
+kind: Pod
+metadata:
+  annotations:
+    anvilkit.io/create-request: "1"
+  labels:
+    anvilkit.io/attempt-id: att_policy
+    anvilkit.io/candidate-code: "true"
+    anvilkit.io/launch-key: policy-codegen-team-dev-v1
+    anvilkit.io/profile-id: codegen-team-dev-v1
+  name: policy-codegen-team-dev-v1-x1
+  namespace: anvilkit-components
+spec:
+  automountServiceAccountToken: false
+  containers:
+  - command:
+    - /usr/local/bin/anvilkit-codegen-supervisor
+    - team
+    env:
+    - name: ANVILKIT_LAUNCH_ID
+      value: lch_policy
+    - name: ANVILKIT_ATTEMPT_ID
+      value: att_policy
+    - name: ANVILKIT_LAUNCH_ENVELOPE
+      value: '{"attemptId":"att_policy","component":{"componentId":"cmp_policy","packageName":"@anvilkit/hero-policy","puckType":"Hero","sourceRevision":"3"},"deadline":"2026-09-16T12:10:00Z","executionEpoch":"1","inputs":[{"digest":"sha256:5555555555555555555555555555555555555555555555555555555555555555","handle":"h_policy_source","name":"source"}],"jobKind":"codegen","launchEpoch":"1","launchId":"lch_policy","launchKey":"policy-codegen-team-dev-v1","operationId":"op_policy","profileId":"codegen-team-dev-v1","profileRevision":"7","schemaVersion":1}'
+    image: localhost:5001/anvilkit-codegen-team@sha256:5f1326cc641442c9affd4b8c8f737545c00dc4bd09bdd5a7e79aae478128f717
+    name: supervisor
+    resources:
+      limits:
+        cpu: "2"
+        memory: 3Gi
+      requests:
+        cpu: "2"
+        memory: 3Gi
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities:
+        add:
+        - SETUID
+        - SETGID
+        - SETPCAP
+        drop:
+        - ALL
+      privileged: false
+      readOnlyRootFilesystem: true
+      runAsGroup: 0
+      runAsNonRoot: false
+      runAsUser: 0
+      seccompProfile:
+        localhostProfile: anvilkit/candidate.json
+        type: Localhost
+    terminationMessagePolicy: File
+    volumeMounts:
+    - mountPath: /workspace
+      name: workspace
+    - mountPath: /anvilkit/verdict
+      name: verdict
+    - mountPath: /run/anvilkit
+      name: sockets
+      readOnly: true
+  enableServiceLinks: false
+  initContainers:
+  - env:
+    - name: ANVILKIT_SIDECAR_CONTROL_ADDRESS
+      value: 172.22.0.1:9101
+    - name: ANVILKIT_SIDECAR_IDENTITY_MODE
+      value: mtls
+    - name: ANVILKIT_SIDECAR_BACKEND
+      value: kind-anvilkit-dev
+    - name: ANVILKIT_SIDECAR_LAUNCH_KEY
+      value: policy-codegen-team-dev-v1
+    - name: ANVILKIT_SIDECAR_POD_UID
+      valueFrom:
+        fieldRef:
+          apiVersion: v1
+          fieldPath: metadata.uid
+    - name: ANVILKIT_SIDECAR_LAUNCH_ENVELOPE
+      value: '{"attemptId":"att_policy","component":{"componentId":"cmp_policy","packageName":"@anvilkit/hero-policy","puckType":"Hero","sourceRevision":"3"},"deadline":"2026-09-16T12:10:00Z","executionEpoch":"1","inputs":[{"digest":"sha256:5555555555555555555555555555555555555555555555555555555555555555","handle":"h_policy_source","name":"source"}],"jobKind":"codegen","launchEpoch":"1","launchId":"lch_policy","launchKey":"policy-codegen-team-dev-v1","operationId":"op_policy","profileId":"codegen-team-dev-v1","profileRevision":"7","schemaVersion":1}'
+    - name: ANVILKIT_SIDECAR_MODEL_PROXY_URL
+      value: https://anvilkit-agent-model-proxy.anvilkit-apps.svc.cluster.local:9103
+    - name: ANVILKIT_SIDECAR_MCP_ADDRESS
+      value: anvilkit-agent-mcp.anvilkit-apps.svc.cluster.local:9106
+    - name: ANVILKIT_SIDECAR_KNOWLEDGE_ADDRESS
+      value: anvilkit-agent-knowledge.anvilkit-apps.svc.cluster.local:9105
+    image: localhost:5001/anvilkit-job-access-sidecar@sha256:4ba60660d7555b7140d55e9da1d03d0354b5aced7edaa406a1f139cba3e464fb
+    name: access-sidecar
+    resources:
+      limits:
+        cpu: 100m
+        memory: 64Mi
+      requests:
+        cpu: 100m
+        memory: 64Mi
+    restartPolicy: Always
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop:
+        - ALL
+      privileged: false
+      readOnlyRootFilesystem: true
+      runAsGroup: 10002
+      runAsNonRoot: true
+      runAsUser: 10002
+      seccompProfile:
+        type: RuntimeDefault
+    terminationMessagePolicy: File
+    volumeMounts:
+    - mountPath: /run/anvilkit
+      name: sockets
+    - mountPath: /etc/anvilkit/identity
+      name: identity
+      readOnly: true
+  nodeSelector:
+    anvilkit.io/pool: components
+  restartPolicy: Never
+  securityContext:
+    supplementalGroups:
+    - 0
+    - 10001
+  shareProcessNamespace: false
+  volumes:
+  - emptyDir:
+      sizeLimit: 1Gi
+    name: workspace
+  - emptyDir:
+      sizeLimit: 256Mi
+    name: verdict
+  - emptyDir:
+      medium: Memory
+      sizeLimit: 1Mi
+    name: sockets
+  - name: identity
+    secret:
+      defaultMode: 288
+      secretName: anvilkit-job-access-sidecar-identity
+status: {}

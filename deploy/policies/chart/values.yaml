@@ -19,6 +19,16 @@ registries:
 # environment leaves it empty, so candidate code runs only under gVisor.
 developmentProfiles: []
 
+# P2.4 (B-32): the access sidecar's relay placements this environment's
+# launcher renders (the Workflow's kubernetes.sidecar.model_proxy_url,
+# mcp_address and knowledge_address): a harness Pod may carry exactly these
+# values and nothing else under those names; an empty one admits no
+# placement of that kind.
+sidecarPlacements:
+  modelProxyUrl: ""
+  mcpAddress: ""
+  knowledgeAddress: ""
+
 # The candidate syscall profile (files/anvilkit-candidate.json, regenerated
 # by deploy/policies/seccomp/generate.sh) placed at
 # <kubeletRoot>/seccomp/anvilkit/candidate.json on every node the Job pools

@@ -55,6 +55,12 @@ def cases(resources: pathlib.Path):
     source_job = load(resources / "validator-source-v1-job.yaml")
     source_dev = load(resources / "validator-source-dev-v1-pod.yaml")
     source_dev_job = load(resources / "validator-source-dev-v1-job.yaml")
+    # P2.4: the coding team (its production profile under gVisor and the
+    # development twin) and the production preview build.
+    team = load(resources / "codegen-team-v1-pod.yaml")
+    team_dev = load(resources / "codegen-team-dev-v1-pod.yaml")
+    team_dev_job = load(resources / "codegen-team-dev-v1-job.yaml")
+    preview = load(resources / "preview-build-v1-pod.yaml")
     # P0.7: the parser Job as Knowledge's launcher renders it (test/parse.test.ts).
     parser = load(resources / "parser-docling-dev-v1-pod.yaml")
     parser_job = load(resources / "parser-docling-dev-v1-job.yaml")
@@ -102,6 +108,32 @@ def cases(resources: pathlib.Path):
     add("validator-source-relabeled-no-candidate-code", source_dev, lambda o: o["metadata"]["labels"].__setitem__("anvilkit.io/candidate-code", "false"))
     add("validator-source-dev-claims-codegen", source_dev, lambda o: o["metadata"]["labels"].__setitem__("anvilkit.io/profile-id", "codegen-fixed-v1"))
     add("valid-candidate-job", candidate_job, lambda o: None, "pass")
+    # P2.4: the team runs its own image and entrypoint with its resources,
+    # under gVisor or (the twin) only where the environment lists it; the
+    # preview build is the validator under gVisor.
+    add("valid-team-pod", team, lambda o: None, "pass")
+    add("valid-team-dev-pod", team_dev, lambda o: None, "pass")
+    add("valid-team-dev-job", team_dev_job, lambda o: None, "pass")
+    add("valid-preview-build-pod", preview, lambda o: None, "pass")
+    add("team-without-runtimeclass", team, lambda o: o["spec"].pop("runtimeClassName"))
+    add("preview-build-without-runtimeclass", preview, lambda o: o["spec"].pop("runtimeClassName"))
+    add("team-with-codegen-fixed-command", team, lambda o: container(o, "supervisor").__setitem__("command", ["/usr/local/bin/anvilkit-codegen-supervisor"]))
+    add("team-with-validator-image", team, lambda o: container(o, "supervisor").__setitem__("image", container(source, "supervisor")["image"]))
+    add("team-claims-codegen-fixed", team, lambda o: o["metadata"]["labels"].__setitem__("anvilkit.io/profile-id", "codegen-fixed-v1"))
+    add("team-dev-claims-production", team_dev, lambda o: o["metadata"]["labels"].__setitem__("anvilkit.io/profile-id", "codegen-team-v1"))
+    add("team-resources-raised", team, lambda o: [c["resources"].__setitem__("limits", {"cpu": "8", "memory": "16Gi"}) for c in [container(o, "supervisor")]])
+    # P2.4 (B-32): the relay placements are the environment's values, in
+    # their order, never another name or target.
+    def placement(o, name):
+        return next(e for e in container(o, "access-sidecar")["env"] if e["name"] == name)
+    add("placement-value-swapped", team_dev, lambda o: placement(o, "ANVILKIT_SIDECAR_MODEL_PROXY_URL").__setitem__("value", "https://exfiltrate.example/v1"))
+    add("placement-unknown-name", team_dev, lambda o: container(o, "access-sidecar")["env"].append({"name": "ANVILKIT_SIDECAR_MODEL_PROXY_TOKEN", "value": "bearer"}))
+    add("placement-from-secret", team_dev, lambda o: placement(o, "ANVILKIT_SIDECAR_MCP_ADDRESS").update({"valueFrom": {"secretKeyRef": {"name": "s", "key": "k"}}}) or placement(o, "ANVILKIT_SIDECAR_MCP_ADDRESS").pop("value"))
+    add("placement-reordered", team_dev, lambda o: container(o, "access-sidecar")["env"].reverse())
+    add("placement-duplicated", team_dev, lambda o: container(o, "access-sidecar")["env"].append(dict(placement(o, "ANVILKIT_SIDECAR_KNOWLEDGE_ADDRESS"))))
+    add("placement-dropped", team_dev, lambda o: container(o, "access-sidecar").__setitem__("env", [e for e in container(o, "access-sidecar")["env"] if e["name"] != "ANVILKIT_SIDECAR_KNOWLEDGE_ADDRESS"]), "pass")
+    add("placement-in-supervisor", team_dev, lambda o: container(o, "supervisor")["env"].append({"name": "ANVILKIT_SIDECAR_MODEL_PROXY_URL", "value": "https://anvilkit-agent-model-proxy.anvilkit-apps.svc.cluster.local:9103"}))
+    add("team-identity-missing", team_dev, lambda o: (o["spec"].__setitem__("volumes", [v for v in o["spec"]["volumes"] if v["name"] != "identity"]), container(o, "access-sidecar").__setitem__("volumeMounts", [m for m in container(o, "access-sidecar")["volumeMounts"] if m["name"] != "identity"])))
 
     def sup(o):
         return container(o, "supervisor")
