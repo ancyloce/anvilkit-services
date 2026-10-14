@@ -21,7 +21,7 @@ import (
 const pgImage = "postgres:17-alpine"
 
 // latest is the migration version each domain reaches from an empty database.
-var latest = map[string]int64{"knowledge": 7, "mcp": 4}
+var latest = map[string]int64{"knowledge": 12, "mcp": 7}
 
 // TestInitialSchemas proves, on a real PostgreSQL, that every domain this Job
 // owns installs from an empty database with 00001_init.sql (plus its forward
@@ -65,7 +65,9 @@ func TestInitialSchemas(t *testing.T) {
 				// P17: the PostgresStore vendor migration identity that 00005 lets
 				// create its own schema.
 				stmts = append(stmts, "CREATE ROLE anvilkit_knowledge_forwarder LOGIN PASSWORD 'forwarder'",
-					"CREATE ROLE anvilkit_knowledge_store_migrator LOGIN PASSWORD 'store'")
+					"CREATE ROLE anvilkit_knowledge_store_migrator LOGIN PASSWORD 'store'",
+					// P2.7: the cleanup identity that 00011 grants to.
+					"CREATE ROLE anvilkit_knowledge_cleanup LOGIN PASSWORD 'cleanup'")
 			}
 			for _, stmt := range stmts {
 				_, err := admin.ExecContext(ctx, stmt)
@@ -292,8 +294,50 @@ func TestInitialSchemas(t *testing.T) {
 				require.Error(t, err, "the Store migrator has no domain-table access")
 				_, err = appDB.ExecContext(ctx, "CREATE SCHEMA forbidden")
 				require.Error(t, err, "the app role creates no schema")
+				// 00008 (P2.6): an upload capability binds its key to its
+				// tenant and id and is consumed once; the app role never
+				// deletes one.
+				upload := func(id, key string) string {
+					return "INSERT INTO source_uploads (upload_id, tenant_id, actor_id, command_id, request_digest, content_digest, size_bytes, media_type, object_key, expires_at) VALUES ('" + id + "', 't1', 'u1', 'cmd-" + id + "', '" + digest + "', '" + digest + "', 3, 'text/markdown', '" + key + "', now() + interval '15 minutes')"
+				}
+				id := "upl-" + strings.Repeat("0", 32)
+				_, err = appDB.ExecContext(ctx, upload(id, "uploads/t1/"+id))
+				require.NoError(t, err, "the app role records an upload capability")
+				for stmt, why := range map[string]string{
+					upload("upl-"+strings.Repeat("1", 32), "uploads/t2/upl-"+strings.Repeat("1", 32)): "the key is the tenant's and the upload's",
+					upload("upload-x", "uploads/t1/upload-x"):                                         "an upload id has its shape",
+					"UPDATE source_uploads SET consumed_at = now() WHERE upload_id = '" + id + "'":    "consumption names the source",
+					"DELETE FROM source_uploads":                                                      "the app role never deletes an upload",
+				} {
+					_, err = appDB.ExecContext(ctx, stmt)
+					require.Error(t, err, why)
+				}
+				_, err = appDB.ExecContext(ctx, "UPDATE source_uploads SET consumed_at = now(), source_id = 'src-m' WHERE upload_id = '"+id+"'")
+				require.NoError(t, err, "consumed by its source")
+				_, err = appDB.ExecContext(ctx, "UPDATE source_uploads SET consumed_at = NULL, source_id = NULL WHERE upload_id = '"+id+"'")
+				require.Error(t, err, "a consumed upload is never reused")
+				// 00011 (P2.7): the cleanup identity deletes delivery and
+				// content rows only; the app role still deletes nothing.
+				cleanDB, err := migrate.Open(dsn("anvilkit_knowledge_cleanup", "cleanup"))
+				require.NoError(t, err)
+				defer cleanDB.Close()
+				_, err = cleanDB.ExecContext(ctx, "DELETE FROM chunks WHERE source_id = 'src-none'")
+				require.NoError(t, err, "cleanup deletes chunk rows")
+				_, err = cleanDB.ExecContext(ctx, "DELETE FROM inbox WHERE accepted_at < now() - interval '30 days'")
+				require.NoError(t, err, "cleanup prunes the inbox")
+				for stmt, why := range map[string]string{
+					"DELETE FROM sources":              "cleanup never deletes a source",
+					"DELETE FROM memory_facts":         "cleanup never touches memory",
+					"UPDATE chunks SET locator = '{}'": "cleanup never rewrites content",
+					"INSERT INTO inbox (event_id, consumer) VALUES (gen_random_uuid(), 'x')": "cleanup never writes deliveries",
+				} {
+					_, err = cleanDB.ExecContext(ctx, stmt)
+					require.Error(t, err, why)
+				}
+				_, err = appDB.ExecContext(ctx, "DELETE FROM chunks")
+				require.Error(t, err, "the app role never deletes chunk rows")
 				// Clean the rows so Down can run.
-				for _, stmt := range []string{"memory_removals", "memory_projections", "background_requests", "memory_decisions", "memory_facts", "index_entries", "index_generations", "chunks", "ingest_requests", "source_commands", "source_acl_revisions", "source_revisions", "sources"} {
+				for _, stmt := range []string{"source_uploads", "memory_removals", "memory_projections", "background_requests", "memory_decisions", "memory_facts", "index_entries", "index_generations", "chunks", "ingest_requests", "source_commands", "source_acl_revisions", "source_revisions", "sources"} {
 					_, err = db.ExecContext(ctx, "DELETE FROM "+stmt)
 					require.NoError(t, err)
 				}
@@ -333,7 +377,73 @@ func TestInitialSchemas(t *testing.T) {
 					_, err = appDB.ExecContext(ctx, stmt)
 					require.Error(t, err, why)
 				}
-				for _, stmt := range []string{"tool_requests", "grants", "reviews", "catalog_commands", "descriptors", "servers"} {
+				// 00005 (P2.5 AC6): the production schema admits only the
+				// business kind; the DEVELOPMENT_ONLY fixture set re-admits
+				// local-check under its own version table, and rolls back first.
+				request := func(id, kind string) string {
+					return "INSERT INTO background_requests (task_id, generation, tenant_id, task_kind, input_digest, input, state, result_profile, authorization_ref, correlation_id) VALUES ('" + id + "', 1, 't1', '" + kind + "', '" + d + "', '{}', 'pending', 'p-v1', 'grant:g-m', 'c-" + id + "')"
+				}
+				_, err = appDB.ExecContext(ctx, request("lc-prod", "local-check"))
+				require.Error(t, err, "the production schema refuses the fixture kind")
+				_, err = appDB.ExecContext(ctx, request("refresh-1", "mcp-catalog-refresh"))
+				require.NoError(t, err, "the business kind")
+				// 00006: the owner's recorded refresh observation binds its
+				// drift to its digests and is append-only; a descriptor's input
+				// schemas are a JSON object.
+				refresh := func(live, drift, reason string) string {
+					return "INSERT INTO catalog_refreshes (task_id, generation, worker_id, server_id, revision, reviewed_digest, live_digest, drift, drift_reason, result_ref, result_digest) VALUES ('refresh-1', 1, 'w1', 'srv-m', 1, '" + d + "', " + live + ", " + drift + ", " + reason + ", 'mcp-catalog-refresh:refresh-1:1', '" + d + "')"
+				}
+				for stmt, why := range map[string]string{
+					refresh("'sha256:"+strings.Repeat("b", 64)+"'", "false", "NULL"):        "a changed live digest is a drift",
+					refresh("NULL", "true", "NULL"):                                         "a drift names its reason",
+					"UPDATE descriptors SET input_schemas = '[]' WHERE server_id = 'srv-m'": "input schemas are an object",
+				} {
+					_, err = appDB.ExecContext(ctx, stmt)
+					require.Error(t, err, why)
+				}
+				_, err = appDB.ExecContext(ctx, refresh("'"+d+"'", "false", "NULL"))
+				require.NoError(t, err, "an unchanged live read")
+				_, err = appDB.ExecContext(ctx, "UPDATE catalog_refreshes SET drift = true")
+				require.Error(t, err, "recorded refreshes are append-only for the app role")
+				var validated bool
+				require.NoError(t, db.QueryRowContext(ctx, "SELECT convalidated FROM pg_constraint WHERE conname = 'background_requests_task_kind_check'").Scan(&validated))
+				require.True(t, validated, "validated where no fixture row exists")
+				fixtures, err := migrate.UpFixtures(ctx, db, domain)
+				require.NoError(t, err)
+				require.Equal(t, int64(1), fixtures)
+				_, err = appDB.ExecContext(ctx, request("lc-dev", "local-check"))
+				require.NoError(t, err, "the development fixture set re-admits local-check")
+				version, err = migrate.Version(ctx, db, domain)
+				require.NoError(t, err)
+				require.Equal(t, latest[domain], version, "the fixture set keeps its own version table")
+				require.NoError(t, migrate.DownFixtures(ctx, db, domain))
+				_, err = appDB.ExecContext(ctx, request("lc-after", "local-check"))
+				require.Error(t, err, "rolled back: refused again (a fixture row already held stays)")
+				// 00007 (P2.8, MCP-14): re-applied over existing records, the
+				// event sequence starts at the highest revision an earlier event
+				// could carry; each event takes the next value as the app role.
+				version, err = migrate.DownTo(ctx, db, domain, 6)
+				require.NoError(t, err)
+				require.Equal(t, int64(6), version)
+				version, err = migrate.Up(ctx, db, domain)
+				require.NoError(t, err)
+				require.Equal(t, latest[domain], version)
+				var seeded int64
+				require.NoError(t, db.QueryRowContext(ctx, "SELECT revision FROM event_revisions WHERE aggregate_type = 'descriptor' AND aggregate_id = 'srv-m'").Scan(&seeded))
+				var maxRevision int64
+				require.NoError(t, db.QueryRowContext(ctx, "SELECT max(revision) FROM descriptors WHERE server_id = 'srv-m'").Scan(&maxRevision))
+				require.Equal(t, maxRevision, seeded, "the descriptor sequence continues above its published revisions")
+				require.NoError(t, db.QueryRowContext(ctx, "SELECT revision FROM event_revisions WHERE aggregate_type = 'grant' AND aggregate_id = 'g-m'").Scan(&seeded))
+				require.NoError(t, db.QueryRowContext(ctx, "SELECT revision FROM grants WHERE grant_id = 'g-m'").Scan(&maxRevision))
+				require.Equal(t, maxRevision, seeded)
+				next := "INSERT INTO event_revisions (aggregate_type, aggregate_id, revision) VALUES ('grant', 'g-new', 1) ON CONFLICT (aggregate_type, aggregate_id) DO UPDATE SET revision = event_revisions.revision + 1 RETURNING revision"
+				var r1, r2 int64
+				require.NoError(t, appDB.QueryRowContext(ctx, next).Scan(&r1))
+				require.NoError(t, appDB.QueryRowContext(ctx, next).Scan(&r2))
+				require.Equal(t, []int64{1, 2}, []int64{r1, r2}, "strictly increasing per aggregate")
+				_, err = appDB.ExecContext(ctx, "INSERT INTO event_revisions (aggregate_type, aggregate_id, revision) VALUES ('operation', 'x', 1)")
+				require.Error(t, err, "only the catalog and grant aggregates have a sequence here")
+				for _, stmt := range []string{"event_revisions", "catalog_refreshes", "background_requests", "tool_requests", "grants", "reviews", "catalog_commands", "descriptors", "servers"} {
 					_, err = db.ExecContext(ctx, "DELETE FROM "+stmt)
 					require.NoError(t, err)
 				}

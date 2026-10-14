@@ -56,9 +56,23 @@ func main() {
 	case *status:
 		version, err = migrate.Version(ctx, db, *domain)
 	case *to >= 0:
+		// The fixture set sits on top of the domain's migrations: it goes first.
+		if *development {
+			if err = migrate.DownFixtures(ctx, db, *domain); err != nil {
+				fail(err)
+			}
+		}
 		version, err = migrate.DownTo(ctx, db, *domain, *to)
 	default:
 		version, err = migrate.Up(ctx, db, *domain)
+		// DEVELOPMENT_ONLY (P2.5): the domain's fixture set (sql/<domain>-development)
+		// re-admits the fixture kinds the production schema refuses.
+		if err == nil && *development {
+			var fixtures int64
+			if fixtures, err = migrate.UpFixtures(ctx, db, *domain); err == nil && migrate.HasFixtures(*domain) {
+				fmt.Printf("domain=%s fixtures=%d\n", *domain, fixtures)
+			}
+		}
 	}
 	if err != nil {
 		fail(err)

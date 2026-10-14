@@ -70,6 +70,57 @@ func DownTo(ctx context.Context, db *sql.DB, domain string, version int64) (int6
 	return p.GetDBVersion(ctx)
 }
 
+// FixtureTable is the version table of a domain's DEVELOPMENT_ONLY fixture
+// set (sql/<domain>-development), kept apart from the domain's own.
+const FixtureTable = "goose_db_version_development"
+
+// HasFixtures reports whether the domain has a development fixture set.
+func HasFixtures(domain string) bool {
+	_, err := fs.Stat(sqlFS, "sql/"+domain+"-development")
+	return err == nil
+}
+
+func fixtureProvider(db *sql.DB, domain string) (*goose.Provider, error) {
+	sub, err := fs.Sub(sqlFS, "sql/"+domain+"-development")
+	if err != nil {
+		return nil, fmt.Errorf("migrate: domain %q has no fixture set", domain)
+	}
+	return goose.NewProvider(goose.DialectPostgres, db, sub, goose.WithVerbose(false), goose.WithTableName(FixtureTable))
+}
+
+// UpFixtures applies the domain's DEVELOPMENT_ONLY fixture set (P2.5) after
+// its own migrations; a domain without one is left as it is. Only the
+// Job's -development mode calls it.
+func UpFixtures(ctx context.Context, db *sql.DB, domain string) (int64, error) {
+	if !HasFixtures(domain) {
+		return 0, nil
+	}
+	p, err := fixtureProvider(db, domain)
+	if err != nil {
+		return 0, err
+	}
+	if _, err := p.Up(ctx); err != nil {
+		return 0, fmt.Errorf("migrate: fixtures %s: %w", domain, err)
+	}
+	return p.GetDBVersion(ctx)
+}
+
+// DownFixtures rolls the fixture set back completely (before any rollback
+// of the domain's own migrations it was applied over).
+func DownFixtures(ctx context.Context, db *sql.DB, domain string) error {
+	if !HasFixtures(domain) {
+		return nil
+	}
+	p, err := fixtureProvider(db, domain)
+	if err != nil {
+		return err
+	}
+	if _, err := p.DownTo(ctx, 0); err != nil {
+		return fmt.Errorf("migrate: fixtures down %s: %w", domain, err)
+	}
+	return nil
+}
+
 // Version reports the applied version without changing anything.
 func Version(ctx context.Context, db *sql.DB, domain string) (int64, error) {
 	p, err := provider(db, domain)
