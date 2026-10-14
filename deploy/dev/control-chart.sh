@@ -32,7 +32,7 @@ export KUBECONFIG=${ANVILKIT_DEV_ADMIN_KUBECONFIG:-$HOME/.kube/config}
 
 case "$ACTION" in
   install)
-    for v in ANVILKIT_DEV_CONTROL_DSN_CLUSTER ANVILKIT_DEV_CONTROL_MIGRATOR_DSN_CLUSTER ANVILKIT_DEV_TEMPORAL_ADDRESS_CLUSTER \
+    for v in ANVILKIT_DEV_CONTROL_DSN_CLUSTER ANVILKIT_DEV_CONTROL_MIGRATOR_DSN_CLUSTER ANVILKIT_DEV_TEMPORAL_ADDRESS_CLUSTER ANVILKIT_DEV_NATS_URL_CLUSTER \
              ANVILKIT_DEV_ARTIFACTS_ENDPOINT_CLUSTER ANVILKIT_CONTROL_ARTIFACTS_S3_ACCESS_KEY_ID ANVILKIT_CONTROL_ARTIFACTS_S3_SECRET_ACCESS_KEY \
              ANVILKIT_DEV_INVENTORY_BUCKET ANVILKIT_DEV_INVENTORY_ACCESS_KEY_ID ANVILKIT_DEV_INVENTORY_SECRET_ACCESS_KEY; do
       eval "val=\${$v:-}"
@@ -61,6 +61,7 @@ case "$ACTION" in
     helm --kube-context "$CTX" upgrade --install anvilkit-agent-control "$SVC/deploy/chart" -n "$NS" \
       -f "$ROOT/deploy/dev/values/anvilkit-agent-control.yaml" \
       --set "temporal.address=${ANVILKIT_DEV_TEMPORAL_ADDRESS_CLUSTER}" \
+      --set "events.nats.url=${ANVILKIT_DEV_NATS_URL_CLUSTER}" \
       --set "inventory.s3.endpoint=${ANVILKIT_DEV_ARTIFACTS_ENDPOINT_CLUSTER}" \
       --set "artifacts.s3.endpoint=${ANVILKIT_DEV_ARTIFACTS_ENDPOINT_CLUSTER}" \
       --set-string "podAnnotations.anvilkit\.io/image-id=${IMAGE_ID}" --wait --timeout 180s

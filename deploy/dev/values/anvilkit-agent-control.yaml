@@ -47,9 +47,25 @@ identity:
       group: cert-manager.io
 development:
   enabled: true
+# P2.1: the foundation runs the DEVELOPMENT_ONLY dispatch chain (fixture
+# prices, routes and unsigned evidence, none configured here: every paid
+# route is denied); a production deployment names authority, evidence,
+# prices and modelProxy instead.
+config:
+  dispatch:
+    development:
+      enabled: true
 temporal:
   tls:
     mode: development
+# P2.8: operation events reach the foundation's JetStream (ANVILKIT_CONTROL
+# stream, deploy/dev/nats) over its plaintext, unauthenticated listener on
+# the kind network; the URL is set by deploy/dev/control-chart.sh.
+events:
+  enabled: true
+  nats:
+    tls:
+      mode: development
 podDisruptionBudget:
   enabled: false
 resources:

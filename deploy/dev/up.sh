@@ -101,7 +101,7 @@ docker compose -f "$ROOT/deploy/dev/compose.yaml" run --rm --no-deps nats-setup 
 # P14: the owner queue relay identities and the Knowledge outbox forwarder
 # identity that migration 00002 grants to (postgres-init.sh creates them on a
 # fresh data directory; an existing foundation gets them here, idempotently).
-for role in anvilkit_knowledge_relay anvilkit_mcp_relay anvilkit_knowledge_forwarder anvilkit_knowledge_store_migrator anvilkit_knowledge_store; do
+for role in anvilkit_knowledge_relay anvilkit_mcp_relay anvilkit_knowledge_forwarder anvilkit_knowledge_store_migrator anvilkit_knowledge_store anvilkit_knowledge_cleanup; do
   docker compose -f "$ROOT/deploy/dev/compose.yaml" exec -T postgres psql -v ON_ERROR_STOP=1 -U postgres -d postgres -tAc \
     "SELECT 1 FROM pg_roles WHERE rolname = '$role'" | grep -qx 1 \
     || docker compose -f "$ROOT/deploy/dev/compose.yaml" exec -T postgres psql -v ON_ERROR_STOP=1 -U postgres -d postgres -c \
@@ -233,11 +233,11 @@ kubectl --context kind-anvilkit-dev -n kube-system rollout status ds/anvilkit-se
 # default deny and the egress rule generated below from this machine's
 # addresses (its Control and object store run outside the cluster).
 kubectl --context kind-anvilkit-dev apply -f "$ROOT/deploy/policies/network/anvilkit-components-egress.yaml" -f "$ROOT/deploy/policies/network/anvilkit-parsing-egress.yaml" >/dev/null
-# The foundation's PostgreSQL, Temporal and MinIO join the kind network so
-# the Control and Workflow releases in the cluster (and a Job's sidecar)
+# The foundation's PostgreSQL, Temporal, MinIO and NATS join the kind network
+# so the Control and Workflow releases in the cluster (and a Job's sidecar)
 # reach them by their kind-network addresses; the loopback-only published
 # ports stay the host side's entry.
-for c in anvilkit-dev-minio-1 anvilkit-dev-postgres-1 anvilkit-dev-temporal-1; do
+for c in anvilkit-dev-minio-1 anvilkit-dev-postgres-1 anvilkit-dev-temporal-1 anvilkit-dev-nats-1; do
   if ! docker network inspect kind --format '{{range .Containers}}{{.Name}}{{"\n"}}{{end}}' | grep -qx "$c"; then
     docker network connect kind "$c"
   fi
@@ -246,6 +246,7 @@ KIND_GATEWAY=$(docker network inspect kind --format '{{range .IPAM.Config}}{{if 
 MINIO_KIND_IP=$(docker inspect anvilkit-dev-minio-1 --format '{{(index .NetworkSettings.Networks "kind").IPAddress}}')
 POSTGRES_KIND_IP=$(docker inspect anvilkit-dev-postgres-1 --format '{{(index .NetworkSettings.Networks "kind").IPAddress}}')
 TEMPORAL_KIND_IP=$(docker inspect anvilkit-dev-temporal-1 --format '{{(index .NetworkSettings.Networks "kind").IPAddress}}')
+NATS_KIND_IP=$(docker inspect anvilkit-dev-nats-1 --format '{{(index .NetworkSettings.Networks "kind").IPAddress}}')
 # P15: the Knowledge parser launcher's identity for host-side runs: the
 # Knowledge chart's ServiceAccount, Role and RoleBinding rendered under the
 # release name anvilkit-agent-knowledge-host into anvilkit-parsing (the
@@ -399,6 +400,8 @@ export ANVILKIT_DEV_REGISTRY="localhost:5001"
 export ANVILKIT_DEV_CONTROL_DSN_CLUSTER="postgres://anvilkit_control_app:${PW}@${POSTGRES_KIND_IP}:5432/anvilkit_control?sslmode=disable"
 export ANVILKIT_DEV_CONTROL_MIGRATOR_DSN_CLUSTER="postgres://anvilkit_control_migrator:${PW}@${POSTGRES_KIND_IP}:5432/anvilkit_control?sslmode=disable"
 export ANVILKIT_DEV_TEMPORAL_ADDRESS_CLUSTER="${TEMPORAL_KIND_IP}:7233"
+# P2.8: the JetStream of the foundation as Control's release publishes to it.
+export ANVILKIT_DEV_NATS_URL_CLUSTER="nats://${NATS_KIND_IP}:4222"
 export ANVILKIT_DEV_INVENTORY_BUCKET="anvilkit-inventory"
 export ANVILKIT_DEV_INVENTORY_ACCESS_KEY_ID="${IUSER}"
 export ANVILKIT_DEV_INVENTORY_SECRET_ACCESS_KEY="${IPASS}"
@@ -439,6 +442,8 @@ export ANVILKIT_DEV_CACHE_URL="redis://127.0.0.1:26380"
 export ANVILKIT_DEV_KNOWLEDGE_DSN="postgres://anvilkit_knowledge_app:${PW}@127.0.0.1:25432/anvilkit_knowledge?sslmode=disable"
 export ANVILKIT_DEV_KNOWLEDGE_RELAY_DSN="postgres://anvilkit_knowledge_relay:${PW}@127.0.0.1:25432/anvilkit_knowledge?sslmode=disable"
 export ANVILKIT_DEV_KNOWLEDGE_FORWARDER_DSN="postgres://anvilkit_knowledge_forwarder:${PW}@127.0.0.1:25432/anvilkit_knowledge?sslmode=disable"
+# P2.7: the cleanup identity (purge of deleted sources, delivery retention).
+export ANVILKIT_KNOWLEDGE_CLEANUP_DATABASE_URL="postgres://anvilkit_knowledge_cleanup:${PW}@127.0.0.1:25432/anvilkit_knowledge?sslmode=disable"
 export ANVILKIT_DEV_KNOWLEDGE_MIGRATOR_DSN="postgres://anvilkit_knowledge_migrator:${PW}@127.0.0.1:25432/anvilkit_knowledge?sslmode=disable"
 export ANVILKIT_DEV_KNOWLEDGE_STORE_DSN="postgres://anvilkit_knowledge_store:${PW}@127.0.0.1:25432/anvilkit_knowledge?sslmode=disable"
 export ANVILKIT_DEV_KNOWLEDGE_STORE_MIGRATOR_DSN="postgres://anvilkit_knowledge_store_migrator:${PW}@127.0.0.1:25432/anvilkit_knowledge?sslmode=disable"

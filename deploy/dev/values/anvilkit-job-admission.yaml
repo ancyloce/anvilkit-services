@@ -5,5 +5,12 @@
 registries:
   components: ["localhost:5001/", "docker.io/library/busybox@"]
   parsing: ["localhost:5001/"]
-# P0.8 DEVELOPMENT_ONLY: the bound-source validator on the foundation's runtime.
-developmentProfiles: [validator-source-dev-v1]
+# P0.8 DEVELOPMENT_ONLY: the bound-source validator on the foundation's
+# runtime; P2.4: the coding team's development twin on the same runtime.
+developmentProfiles: [validator-source-dev-v1, codegen-team-dev-v1]
+# P2.4: the sidecar relay placements the foundation's launcher renders (the
+# in-cluster Model Proxy, MCP and Knowledge Services).
+sidecarPlacements:
+  modelProxyUrl: https://anvilkit-agent-model-proxy.anvilkit-apps.svc.cluster.local:9103
+  mcpAddress: anvilkit-agent-mcp.anvilkit-apps.svc.cluster.local:9106
+  knowledgeAddress: anvilkit-agent-knowledge.anvilkit-apps.svc.cluster.local:9105

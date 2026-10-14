@@ -27,6 +27,7 @@ SQL
   if [ "$domain" = knowledge ]; then
     psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d postgres <<SQL
 CREATE ROLE anvilkit_knowledge_forwarder LOGIN PASSWORD '${ANVILKIT_DEV_PASSWORD}';
+CREATE ROLE anvilkit_knowledge_cleanup LOGIN PASSWORD '${ANVILKIT_DEV_PASSWORD}';
 CREATE ROLE anvilkit_knowledge_store_migrator LOGIN PASSWORD '${ANVILKIT_DEV_PASSWORD}';
 CREATE ROLE anvilkit_knowledge_store LOGIN PASSWORD '${ANVILKIT_DEV_PASSWORD}';
 SQL
