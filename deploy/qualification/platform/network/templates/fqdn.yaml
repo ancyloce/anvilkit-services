@@ -1,0 +1,31 @@
+{{- /*
+P2.5: the reviewed MCP upstream names as Cilium FQDN egress rules (the
+target platform's enforcing CNI). The CIDR flows of policies.yaml stay the
+portable floor; these rules narrow a component's upstream egress to the
+reviewed names. Nothing renders unless fqdn.enabled and a name is listed.
+*/ -}}
+{{- $v := .Values -}}
+{{- if and $v.fqdn.enabled $v.fqdn.names }}
+{{- range $name := $v.fqdn.components }}
+{{- if not (hasKey $v.components $name) }}{{ fail (printf "fqdn names an unknown component %q" $name) }}{{ end }}
+{{- $c := index $v.components $name }}
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: anvilkit-network-{{ kebabcase $name }}-upstream-fqdn
+  namespace: {{ $c.namespace }}
+  labels: {app.kubernetes.io/name: anvilkit-network}
+spec:
+  endpointSelector: {matchLabels: {{ toJson ($c.selector | default dict) }}}
+  egress:
+    - toEndpoints:
+        - matchLabels: {"k8s:io.kubernetes.pod.namespace": {{ $v.dns.namespace }}, {{ range $k, $val := $v.dns.selector }}"k8s:{{ $k }}": {{ $val }}{{ end }}}
+      toPorts:
+        - ports: [{port: {{ $v.dns.port | quote }}, protocol: ANY}]
+          rules: {dns: [{{ range $i, $n := $v.fqdn.names }}{{ if $i }}, {{ end }}{matchPattern: {{ $n | quote }}}{{ end }}]}
+    - toFQDNs: [{{ range $i, $n := $v.fqdn.names }}{{ if $i }}, {{ end }}{{ if hasPrefix "*." $n }}{matchPattern: {{ $n | quote }}}{{ else }}{matchName: {{ $n | quote }}}{{ end }}{{ end }}]
+      toPorts:
+        - ports: [{{ range $i, $p := $v.fqdn.ports }}{{ if $i }}, {{ end }}{port: {{ $p | quote }}, protocol: TCP}{{ end }}]
+{{- end }}
+{{- end }}

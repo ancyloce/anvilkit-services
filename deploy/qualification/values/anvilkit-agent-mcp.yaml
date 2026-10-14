@@ -53,6 +53,26 @@ nats:
   url: tls://anvilkit-nats.anvilkit-data.svc.cluster.local:4222
 control:
   address: anvilkit-agent-control.anvilkit-apps.svc.cluster.local:9101
+# P2.5: the private catalog. ContextForge of the combination (anvilkit-contextforge,
+# anvilkit-platform) over TLS verified against the trust bundle; its API token
+# is the CSI key contextforge-token. The role bindings are a ConfigMap
+# bootstrap.py maintains (DEVELOPMENT_ONLY until the IdP's groups, ENV-02).
+# The reviewed upstreams (allowed_hosts), their credentials and the qualified
+# call routes are ENV-03/ENV-07 inputs: none are listed here.
+contextforge:
+  url: https://anvilkit-contextforge.anvilkit-platform.svc:4444
+  serverName: anvilkit-contextforge.anvilkit-platform.svc
+  caConfigMap:
+    name: anvilkit-trust
+roles:
+  configMap: anvilkit-mcp-roles
+config:
+  catalog:
+    contextforge:
+      timeout: 60s
+    allowed_hosts: []
+    private_hosts: []
+    refresh_interval: 6h
 relay:
   enabled: true
   image:

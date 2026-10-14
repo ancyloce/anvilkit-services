@@ -52,6 +52,8 @@ components:
   temporal: {namespace: anvilkit-platform, selector: {app.kubernetes.io/name: temporal}}
   openbao: {namespace: anvilkit-platform, selector: {app.kubernetes.io/name: openbao}}
   probes: {namespace: anvilkit-platform, selector: {app.kubernetes.io/name: anvilkit-probes}}
+  # P2.5: the MCP connection layer of discovery (deploy/qualification/platform/contextforge).
+  contextforge: {namespace: anvilkit-platform, selector: {app.kubernetes.io/name: contextforge}}
   collector: {namespace: anvilkit-observability, selector: {app.kubernetes.io/name: opentelemetry-collector}}
   cnpgOperator: {namespace: cnpg-system, selector: {app.kubernetes.io/name: cloudnative-pg}, external: true}
 
@@ -65,8 +67,9 @@ externals:
   nodes: {cidrs: [], ports: []}
   pagix: {cidrs: [], ports: [443]}
   providers: {cidrs: [], ports: [443]}
+  # The reviewed MCP upstreams and their authorization servers (the CIDRs of
+  # config.catalog.allowed_hosts of MCP's values); fqdn below pins the names.
   mcpUpstreams: {cidrs: [], ports: [443]}
-  contextForge: {cidrs: [], ports: [443]}
   # Control's obligation inventory in its independent failure domain.
   inventory: {cidrs: [], ports: [443]}
   # The DR object store of the database backups.
@@ -97,6 +100,8 @@ flows:
   - {from: control, to: temporal, ports: [7233]}
   - {from: control, to: objects, ports: [9000]}
   - {from: control, to: modelProxy, ports: [9103]}
+  # P2.8: the outbox forwarder and the operation event consumer.
+  - {from: control, to: nats, ports: [4222]}
   - {from: control, toExternal: inventory}
   # Model Proxy: per-call admission at Control, its store, the providers.
   - {from: modelProxy, to: control, ports: [9101]}
@@ -120,8 +125,12 @@ flows:
   - {from: mcp, to: postgresBusiness, ports: [5432]}
   - {from: mcp, to: nats, ports: [4222]}
   - {from: mcp, to: valkeyQueue, ports: [6379, 26379]}
-  - {from: mcp, toExternal: contextForge}
+  - {from: mcp, to: contextforge, ports: [4444]}
   - {from: mcp, toExternal: mcpUpstreams}
+  # P2.5: ContextForge, its own database role and the reviewed upstreams its
+  # handshake reads (SSRF protection on).
+  - {from: contextforge, to: postgresBusiness, ports: [5432]}
+  - {from: contextforge, toExternal: mcpUpstreams}
   # Background Worker: BullMQ and the task-owner APIs only.
   - {from: backgroundWorker, to: valkeyQueue, ports: [6379, 26379]}
   - {from: backgroundWorker, to: knowledge, ports: [9105]}
@@ -168,5 +177,18 @@ flows:
   - {fromExternal: nodes, to: modelProxy, ports: [9104]}
   - {fromExternal: nodes, to: knowledge, ports: [9115, 9125, 9126]}
   - {fromExternal: nodes, to: mcp, ports: [9116, 9126]}
+  - {fromExternal: nodes, to: contextforge, ports: [4444]}
   - {fromExternal: nodes, to: backgroundWorker, ports: [9127]}
   - {fromExternal: nodes, to: inference, ports: [9108]}
+
+# P2.5: host-level egress scoping of the reviewed MCP upstreams. A
+# NetworkPolicy admits CIDRs only; on a Cilium cluster (the target platform)
+# enabled renders a CiliumNetworkPolicy per component that admits exactly
+# the reviewed names (toFQDNs, with the DNS visibility rule Cilium needs),
+# the same list as MCP's config.catalog.allowed_hosts (exact names, or
+# "*.suffix" patterns). Off on kindnet (no CRD, no enforcement).
+fqdn:
+  enabled: false
+  ports: [443]
+  components: [mcp, contextforge]
+  names: []

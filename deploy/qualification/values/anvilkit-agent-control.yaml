@@ -52,6 +52,18 @@ temporal:
       name: anvilkit-agent-control-identity
       key: ca.crt
   address: anvilkit-temporal-frontend.anvilkit-platform.svc.cluster.local:7233
+# P2.8: operation events to JetStream (stream ANVILKIT_CONTROL) over TLS
+# verified against the CA of the workload identity bundle; the forwarder's
+# NKey seed is the CSI key nats-creds.
+events:
+  enabled: true
+  nats:
+    url: tls://anvilkit-nats.anvilkit-data.svc.cluster.local:4222
+    tls:
+      mode: tls
+      caSecret:
+        name: anvilkit-agent-control-identity
+        key: ca.crt
 # The obligation inventory lives in the DR object store outside the cluster
 # (a separate container, not a bucket of the in-cluster store; it shares the
 # host, so it is not an independent failure domain: ENV-02).
@@ -90,3 +102,16 @@ identity:
 # development).
 development:
   enabled: true
+# P2.3: model-dispatch outcomes are queried from the in-cluster Proxy with
+# the workload certificate. P2.1: the commercial authority source (ENV-07),
+# the price book (ENV-06) and the evidence issuers are not supplied for this
+# environment, so the dispatch chain stays the DEVELOPMENT_ONLY one (no
+# fixture configured: every paid route is denied); naming authority,
+# evidence and prices here and dropping config.dispatch.development is the
+# values change that enables the production chain.
+modelProxy:
+  address: https://anvilkit-agent-model-proxy.anvilkit-apps.svc.cluster.local:9103
+config:
+  dispatch:
+    development:
+      enabled: true

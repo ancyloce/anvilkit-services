@@ -67,6 +67,10 @@ qdrant:
   url: https://anvilkit-qdrant.anvilkit-data.svc.cluster.local:6333
 store:
   enabled: true
+# P2.7: the cleanup identity (erasure of deleted sources, delivery retention;
+# the CSI key cleanup-database-url bootstrap.py writes).
+cleanup:
+  enabled: true
 # P23: the removal inventory in the DR object store outside the cluster (its
 # own bucket and bucket-limited user beside Control's obligation inventory;
 # it shares the host, so it is not an independent failure domain: ENV-02).

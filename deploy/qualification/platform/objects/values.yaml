@@ -25,4 +25,5 @@ buckets:
     actions: ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:ListBucket", "s3:GetBucketLocation"]
   - name: anvilkit-knowledge
     user: KNOWLEDGE
-    actions: ["s3:GetObject", "s3:PutObject", "s3:ListBucket", "s3:GetBucketLocation"]
+    # P2.7: DeleteObject for the erasure of a deleted source (upload, unshared copy, parse results).
+    actions: ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:ListBucket", "s3:GetBucketLocation"]

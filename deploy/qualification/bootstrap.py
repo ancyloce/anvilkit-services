@@ -77,9 +77,15 @@ CUSTODY = pathlib.Path(os.environ.get("ANVILKIT_OPENBAO_CUSTODY", str(STATE / "o
 def _relay(stream: str) -> list[str]:
     return ["$JS.API.INFO", f"$JS.API.STREAM.INFO.{stream}", f"$JS.API.CONSUMER.*.{stream}", f"$JS.API.CONSUMER.*.{stream}.>",
             f"$JS.API.CONSUMER.MSG.NEXT.{stream}.>", f"$JS.API.CONSUMER.DURABLE.CREATE.{stream}.>", f"$JS.ACK.{stream}.>"]
+# P2.8: Control and MCP also consume their own events through an ordered
+# (ephemeral, unacknowledged) consumer per replica on their own stream.
+def _ordered(stream: str) -> list[str]:
+    return [f"$JS.API.CONSUMER.CREATE.{stream}", f"$JS.API.CONSUMER.CREATE.{stream}.>", f"$JS.API.CONSUMER.DELETE.{stream}.>",
+            f"$JS.API.CONSUMER.INFO.{stream}.>", f"$JS.API.CONSUMER.MSG.NEXT.{stream}.>"]
 NATS_USERS = {
     "knowledge-forwarder": ["anvilkit.knowledge.>", "$JS.API.INFO", "$JS.API.STREAM.INFO.ANVILKIT_KNOWLEDGE"],
-    "mcp-forwarder": ["anvilkit.mcp.>", "$JS.API.INFO", "$JS.API.STREAM.INFO.ANVILKIT_MCP"],
+    "mcp-forwarder": ["anvilkit.mcp.>", "$JS.API.INFO", "$JS.API.STREAM.INFO.ANVILKIT_MCP"] + _ordered("ANVILKIT_MCP"),
+    "control-forwarder": ["anvilkit.control.>", "$JS.API.INFO", "$JS.API.STREAM.INFO.ANVILKIT_CONTROL"] + _ordered("ANVILKIT_CONTROL"),
     "knowledge-relay": _relay("ANVILKIT_KNOWLEDGE"),
     "mcp-relay": _relay("ANVILKIT_MCP"),
     "streams": ["$JS.API.INFO"] + [f"$JS.API.STREAM.{op}.ANVILKIT_{s}" for op in ("INFO", "CREATE", "UPDATE") for s in ("KNOWLEDGE", "MCP", "CONTROL")],
@@ -101,7 +107,7 @@ OPENBAO_ROLES = [
 ]
 NAMESPACES = ["anvilkit-apps", "anvilkit-components", "anvilkit-parsing", "anvilkit-data", "anvilkit-platform", "anvilkit-observability"]
 ROLES = ["anvilkit_control_app", "anvilkit_control_migrator", "anvilkit_knowledge_app", "anvilkit_knowledge_migrator",
-         "anvilkit_knowledge_relay", "anvilkit_knowledge_forwarder", "anvilkit_knowledge_store_migrator", "anvilkit_knowledge_store",
+         "anvilkit_knowledge_relay", "anvilkit_knowledge_forwarder", "anvilkit_knowledge_cleanup", "anvilkit_knowledge_store_migrator", "anvilkit_knowledge_store",
          "anvilkit_mcp_app", "anvilkit_mcp_migrator", "anvilkit_mcp_relay", "temporal"]
 # Each CloudNativePG cluster's database owner (bootstrap.initdb.owner). The operator
 # re-applies an owner's password from bootstrap.initdb.secret whenever its instance
@@ -212,7 +218,9 @@ def kv_payloads(c: dict) -> dict[str, dict[str, str]]:
         "anvilkit/apps/anvilkit-agent-control": {
             "database-url": dsn("anvilkit_control_app", "anvilkit_control", r["anvilkit_control_app"]),
             "inventory-access-key-id": dr["inventory"]["id"], "inventory-secret-access-key": dr["inventory"]["secret"],
-            "artifacts-access-key-id": o["ARTIFACTS"]["id"], "artifacts-secret-access-key": o["ARTIFACTS"]["secret"]},
+            "artifacts-access-key-id": o["ARTIFACTS"]["id"], "artifacts-secret-access-key": o["ARTIFACTS"]["secret"],
+            # P2.8: the forwarder's NKey seed (operation events to JetStream).
+            "nats-creds": n["control-forwarder"]["seed"]},
         "anvilkit/apps/anvilkit-agent-control-migration": {
             "migration-dsn": dsn("anvilkit_control_migrator", "anvilkit_control", r["anvilkit_control_migrator"])},
         "anvilkit/apps/anvilkit-agent-knowledge": {
@@ -223,6 +231,8 @@ def kv_payloads(c: dict) -> dict[str, dict[str, str]]:
             "qdrant-api-key": c["qdrant"],
             "store-database-url": dsn("anvilkit_knowledge_store", "anvilkit_knowledge", r["anvilkit_knowledge_store"]),
             "forwarder-database-url": dsn("anvilkit_knowledge_forwarder", "anvilkit_knowledge", r["anvilkit_knowledge_forwarder"]),
+            # P2.7: the cleanup identity (purge of deleted sources, delivery retention).
+            "cleanup-database-url": dsn("anvilkit_knowledge_cleanup", "anvilkit_knowledge", r["anvilkit_knowledge_cleanup"]),
             "nats-creds": n["knowledge-forwarder"]["seed"],
             "relay-database-url": dsn("anvilkit_knowledge_relay", "anvilkit_knowledge", r["anvilkit_knowledge_relay"]),
             "relay-queue-url": queue, "relay-nats-creds": n["knowledge-relay"]["seed"]},

@@ -1,0 +1,72 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}
+  labels: {{- include "anvilkit-contextforge.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels: {{- include "anvilkit-contextforge.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "anvilkit-contextforge.labels" . | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      securityContext: {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: contextforge
+          image: {{ printf "%s:%s@%s" .Values.image.repository .Values.image.tag .Values.image.digest | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - {name: HOST, value: "0.0.0.0"}
+            - {name: PORT, value: {{ .Values.port | quote }}}
+            - {name: GUNICORN_WORKERS, value: {{ .Values.workers | quote }}}
+            # P2.5: ContextForge's own SSRF protection of its handshake probe.
+            - {name: SSRF_PROTECTION_ENABLED, value: {{ .Values.ssrfProtection | quote }}}
+            - {name: MCP_CLIENT_CONNECT_MODE, value: auto}
+            - {name: MCPGATEWAY_UI_ENABLED, value: "false"}
+            - {name: MCPGATEWAY_ADMIN_API_ENABLED, value: "false"}
+            - {name: CACHE_TYPE, value: {{ .Values.cacheType | quote }}}
+            # TLS of the gunicorn listener (run-gunicorn.sh SSL/CERT_FILE/KEY_FILE).
+            - {name: SSL, value: "true"}
+            - {name: CERT_FILE, value: /etc/contextforge/tls/tls.crt}
+            - {name: KEY_FILE, value: /etc/contextforge/tls/tls.key}
+            - {name: PLATFORM_ADMIN_EMAIL, value: {{ .Values.admin.email | quote }}}
+            - name: PLATFORM_ADMIN_PASSWORD
+              valueFrom: {secretKeyRef: {name: {{ .Values.admin.password.secret.name }}, key: {{ .Values.admin.password.secret.key }}}}
+            - name: DATABASE_URL
+              valueFrom: {secretKeyRef: {name: {{ .Values.database.secret.name }}, key: {{ .Values.database.secret.key }}}}
+            - name: JWT_SECRET_KEY
+              valueFrom: {secretKeyRef: {name: {{ .Values.jwt.secret.name }}, key: {{ .Values.jwt.secret.key }}}}
+            - name: AUTH_ENCRYPTION_SECRET
+              valueFrom: {secretKeyRef: {name: {{ .Values.encryption.secret.name }}, key: {{ .Values.encryption.secret.key }}}}
+          ports:
+            - {name: https, containerPort: {{ .Values.port }}, protocol: TCP}
+          readinessProbe:
+            httpGet: {path: /health, port: https, scheme: HTTPS}
+            periodSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            httpGet: {path: /health, port: https, scheme: HTTPS}
+            periodSeconds: 15
+            failureThreshold: 4
+          startupProbe:
+            httpGet: {path: /health, port: https, scheme: HTTPS}
+            periodSeconds: 5
+            failureThreshold: 60
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+          securityContext: {{- toYaml .Values.securityContext | nindent 12 }}
+          volumeMounts:
+            - {name: tls, mountPath: /etc/contextforge/tls, readOnly: true}
+      volumes:
+        - name: tls
+          secret: {secretName: {{ .Release.Name }}-tls, defaultMode: 0440}
+      {{- with .Values.topologySpreadConstraints }}
+      topologySpreadConstraints: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}

@@ -39,9 +39,23 @@ identity:
   certificate:
     issuerRef:
       name: anvilkit-qualification-ca
-  mode: development
-  principalsSecret:
-    name: anvilkit-agent-model-proxy-principals
+  # P2.3: the listener authenticates its callers by the SPIFFE URI SAN of
+  # their qualification certificates (no bearer principals); the Control
+  # client stays mtls (the chart default).
+  mode: mtls
+config:
+  identity:
+    mtls:
+      principals:
+        - spiffe_id: spiffe://anvilkit.qualification/ns/anvilkit-apps/sa/anvilkit-agent-workflow
+          principal_id: anvilkit-agent-workflow
+          kind: workflow
+        - spiffe_id: spiffe://anvilkit.qualification/ns/anvilkit-components/sa/anvilkit-job-access-sidecar
+          principal_id: anvilkit-job-access-sidecar
+          kind: sidecar
+        - spiffe_id: spiffe://anvilkit.qualification/ns/anvilkit-apps/sa/anvilkit-agent-control
+          principal_id: anvilkit-agent-control
+          kind: control
 secrets:
   provider: csi
   csi:

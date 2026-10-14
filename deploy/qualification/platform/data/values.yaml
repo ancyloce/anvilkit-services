@@ -27,6 +27,7 @@ businessRoles:
   - anvilkit_knowledge_migrator
   - anvilkit_knowledge_relay
   - anvilkit_knowledge_forwarder
+  - anvilkit_knowledge_cleanup
   - anvilkit_knowledge_store_migrator
   - anvilkit_knowledge_store
   - anvilkit_mcp_app

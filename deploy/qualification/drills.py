@@ -299,6 +299,18 @@ FIXTURES = {
 }
 
 
+# The owners whose background lane the queue and broker drills load with the
+# fixture kind. P2.5 removed MCP's local-check entry point from the
+# production binary and the fixture kind from its production schema
+# (DEVELOPMENT_ONLY fixture set only); MCP's lane is drilled through
+# mcp-catalog-refresh once ContextForge and a reviewed upstream exist in
+# this environment, and is recorded UNEXECUTED until then.
+LANE_OWNERS = ("knowledge",)
+LANE_UNEXECUTED = {"mcp": "UNEXECUTED: local-check is absent from MCP's production binary and schema since P2.5; "
+                          "the MCP lane needs mcp-catalog-refresh against a reviewed upstream (ContextForge not deployed here)"}
+OWNER_DB = {"knowledge": "anvilkit_knowledge", "mcp": "anvilkit_mcp"}
+
+
 def owner_request(owner: str, n: int, tag: str) -> list[str]:
     for db, statements in FIXTURES.items():
         for sql in statements:
@@ -332,14 +344,14 @@ def drill_queue_writes(load: Load) -> dict:
                'REDISCLI_AUTH="$VALKEY_PASSWORD" valkey-cli -p 26379 --tls --cert /etc/valkey/tls/tls.crt --key /etc/valkey/tls/tls.key '
                '--cacert /etc/valkey/tls/ca.crt SENTINEL get-master-addr-by-name mymaster').split()
     tag = f"q{int(now())}"
-    ids = {"knowledge": owner_request("knowledge", 5, tag), "mcp": owner_request("mcp", 5, tag)}
+    ids = {o: owner_request(o, 5, tag) for o in LANE_OWNERS}
     master_pod = next(p for p in k("-n", "anvilkit-data", "get", "pods", "-o", "name").split() if master and master[0].split(".")[0] in p)
     fault = now()
     k("-n", "anvilkit-data", "delete", master_pod, "--grace-period=0", "--force", "--wait=false")
     done = wait_until(lambda: all(s == "accepted" for o in ids for s in task_states(o, ids[o]).values())
                       and all(len(task_states(o, ids[o])) == len(ids[o]) for o in ids), 900, 10)
     final = {o: task_states(o, ids[o]) for o in ids}
-    return {"masterBefore": master[0] if master else None, "masterPod": master_pod, "faultAt": fault, "tasks": final,
+    return {"masterBefore": master[0] if master else None, "masterPod": master_pod, "faultAt": fault, "tasks": final, "unexecuted": LANE_UNEXECUTED,
             "allAcceptedAfter": round(done - fault, 1) if done else None, "window": load.window(fault),
             "checks": {"everyRequestAccepted": done is not None}}
 
@@ -359,10 +371,10 @@ def drill_broker(load: Load) -> dict:
     for pod in ("anvilkit-nats-1", "anvilkit-nats-2"):
         k("-n", "anvilkit-data", "delete", "pod", pod, "--grace-period=0", "--force", "--wait=false")
     tag = f"b{int(now())}"
-    ids = {"knowledge": owner_request("knowledge", 3, tag), "mcp": owner_request("mcp", 3, tag)}
-    peak = {"knowledge": (0, 0.0), "mcp": (0, 0.0)}
+    ids = {o: owner_request(o, 3, tag) for o in LANE_OWNERS}
+    peak = {o: (0, 0.0) for o in OWNER_DB}
     for _ in range(12):
-        for o, db in (("knowledge", "anvilkit_knowledge"), ("mcp", "anvilkit_mcp")):
+        for o, db in OWNER_DB.items():
             try:
                 n, age = outbox_backlog(db)
                 peak[o] = max(peak[o], (n, age))
@@ -374,7 +386,7 @@ def drill_broker(load: Load) -> dict:
     done = wait_until(lambda: all(s == "accepted" for o in ids for s in task_states(o, ids[o]).values()), 600, 10)
     return {"faultAt": fault, "peakBacklog": {o: {"messages": n, "oldestSeconds": round(a, 1)} for o, (n, a) in peak.items()},
             "quorumBackAfter": round(quorum - fault, 1) if quorum else None, "outboxDrainedAfter": round(drained - fault, 1) if drained else None,
-            "tasks": {o: task_states(o, ids[o]) for o in ids}, "window": load.window(fault),
+            "tasks": {o: task_states(o, ids[o]) for o in ids}, "unexecuted": LANE_UNEXECUTED, "window": load.window(fault),
             "checks": {"outboxDrained": drained is not None, "everyRequestAccepted": done is not None}}
 
 

@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}
+  labels: {{- include "anvilkit-contextforge.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector: {{- include "anvilkit-contextforge.selectorLabels" . | nindent 4 }}
+  ports:
+    - {name: https, port: {{ .Values.port }}, targetPort: https, protocol: TCP}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ .Release.Name }}
+  labels: {{- include "anvilkit-contextforge.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels: {{- include "anvilkit-contextforge.selectorLabels" . | nindent 6 }}

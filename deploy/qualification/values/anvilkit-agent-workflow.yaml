@@ -43,6 +43,10 @@ temporal:
   address: anvilkit-temporal-frontend.anvilkit-platform.svc.cluster.local:7233
 control:
   address: anvilkit-agent-control.anvilkit-apps.svc.cluster.local:9101
+# P2.3: the controlled model call Activities reach the in-cluster Proxy
+# with the workload certificate (identity.mode mtls).
+modelProxy:
+  address: https://anvilkit-agent-model-proxy.anvilkit-apps.svc.cluster.local:9103
 launcher:
   namespace: anvilkit-components
   backend: anvilkit-qualification

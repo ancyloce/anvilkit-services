@@ -1,0 +1,18 @@
+{{- include "anvilkit-contextforge.require" . }}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ .Release.Name }}-tls
+  labels: {{- include "anvilkit-contextforge.labels" . | nindent 4 }}
+spec:
+  secretName: {{ .Release.Name }}-tls
+  duration: {{ .Values.tls.duration }}
+  renewBefore: {{ .Values.tls.renewBefore }}
+  privateKey: {algorithm: ECDSA, size: 256, rotationPolicy: Always}
+  usages: [server auth]
+  dnsNames:
+    - {{ .Release.Name }}
+    - {{ printf "%s.%s.svc" .Release.Name .Release.Namespace }}
+    - {{ printf "%s.%s.svc.cluster.local" .Release.Name .Release.Namespace }}
+  issuerRef:
+    {{- toYaml .Values.tls.issuerRef | nindent 4 }}

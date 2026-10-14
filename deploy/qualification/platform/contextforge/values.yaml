@@ -1,0 +1,71 @@
+# P2.5: ContextForge v1.0.11, the connection layer MCP's discovery reads
+# unprotected servers through (DD-08 §1; deploy/gitops/lock.yaml row
+# contextforge). MCP reaches it over TLS (the platform issuer's certificate,
+# verified against the anvilkit-trust bundle) with an API token minted from
+# the JWT secret below; MCP never invokes tools through it (calls take MCP's
+# own guarded go-sdk route). Its UI and admin API are off.
+image:
+  repository: ghcr.io/ibm/mcp-context-forge
+  tag: v1.0.11
+  digest: sha256:e9639c030162d6cb2f9f188600dd69af8091ec62a7ce307d4a74f4d4f86873df
+  pullPolicy: IfNotPresent
+
+replicaCount: 2
+port: 4444
+workers: 2
+
+# SSRF protection of ContextForge's own handshake probe. false renders only
+# with development.enabled (the disposable instance of the integration test
+# turns it off because its probe refuses loopback fixtures).
+ssrfProtection: true
+development:
+  enabled: false
+
+# Credentials (P0.6 shape): existing Secrets in this namespace; nothing is
+# created here. database: ContextForge's own role of the business cluster
+# (lock.yaml connection budget "vendor"), sslmode=verify-full. jwt and
+# encryption: its signing and at-rest encryption secrets. admin: the
+# platform administrator whose token MCP presents (minted by the bootstrap
+# from the JWT secret into OpenBao, key contextforge-token of MCP's path).
+database:
+  secret: {name: "", key: url}
+jwt:
+  secret: {name: "", key: jwt-secret}
+encryption:
+  secret: {name: "", key: encryption-secret}
+admin:
+  email: platform-admin@anvilkit.invalid
+  password:
+    secret: {name: "", key: password}
+
+# The serving certificate: a cert-manager Certificate from the platform
+# issuer; MCP verifies it against the trust bundle and serverName.
+tls:
+  issuerRef:
+    name: ""
+    kind: ClusterIssuer
+    group: cert-manager.io
+  duration: 2160h
+  renewBefore: 720h
+
+# Shared state of the replicas: ContextForge's database-backed cache (no
+# separate cache product in this combination).
+cacheType: database
+
+resources:
+  requests: {cpu: 100m, memory: 384Mi}
+  limits: {cpu: "1", memory: 1Gi}
+
+podDisruptionBudget:
+  minAvailable: 1
+
+podSecurityContext:
+  runAsNonRoot: true
+  seccompProfile: {type: RuntimeDefault}
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities: {drop: ["ALL"]}
+
+nodeSelector: {}
+tolerations: []
+topologySpreadConstraints: []
