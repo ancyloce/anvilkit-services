@@ -175,7 +175,10 @@ platform:
   - name: contextforge
     product: ContextForge v1.0.11
     target: two replicas, qualified shared vendor database and cache
-    qualification: {status: DEVELOPMENT_ONLY, topology: "two replicas on its own database role of the business cluster"}
+    # P2.5: deployed by the combination (deploy/qualification/platform/contextforge,
+    # wave -9): two replicas, SSRF protection on, TLS from the platform issuer,
+    # its own database role, database-backed cache; MCP reaches it over TLS.
+    qualification: {status: DEVELOPMENT_ONLY, topology: "two replicas on its own database role of the business cluster, SSRF protection on, TLS from the qualification CA (deploy/qualification/platform/contextforge)"}
     production: {status: REQUIRED, inputs: [ENV-01, ENV-03]}
   - name: openbao
     product: OpenBao Raft

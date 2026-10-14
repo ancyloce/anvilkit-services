@@ -595,6 +595,26 @@ applications:
     imageRefs:
       migrationImage: anvilkit-migration
       knowledgeImage: anvilkit-agent-knowledge
+  # P2.5: the MCP connection layer of discovery: ContextForge v1.0.11 (lock row
+  # contextforge), two replicas on its own database role, SSRF protection on,
+  # TLS from the qualification CA. Its Secrets (database URL of the
+  # anvilkit_contextforge role, JWT and encryption secrets, the administrator
+  # password) are created by deploy/qualification/bootstrap.py, which also
+  # mints MCP's API token into OpenBao (contextforge-token of MCP's path).
+  - name: anvilkit-contextforge
+    wave: -9
+    layer: platform
+    namespace: anvilkit-platform
+    chart: {source: deploy/qualification/platform/contextforge, name: anvilkit-contextforge}
+    values:
+      image: {repository: ghcr.io/ibm/mcp-context-forge}
+      database: {secret: {name: anvilkit-contextforge-database}}
+      jwt: {secret: {name: anvilkit-contextforge-jwt}}
+      encryption: {secret: {name: anvilkit-contextforge-encryption}}
+      admin: {password: {secret: {name: anvilkit-contextforge-admin}}}
+      tls: {issuerRef: {name: anvilkit-qualification-ca}}
+      topologySpreadConstraints:
+        - {maxSkew: 1, topologyKey: kubernetes.io/hostname, whenUnsatisfiable: DoNotSchedule, labelSelector: {matchLabels: {app.kubernetes.io/name: contextforge}}}
   # --- applications ------------------------------------------------------------
   - name: anvilkit-agent-control
     wave: 0
