@@ -1,0 +1,90 @@
+# Promotion and rollback (P3.2, plan 0004): an environment combination names
+# the immutable release it runs (deploy/gitops/environments/<env>.yaml,
+# release: {run: <tag>, manifestSha256: sha256:...}). Promotion is a reviewed
+# change of that field merged to main; rollback is the revert of that change.
+# Either way this workflow fetches the named release manifest from the tag's
+# GitHub release, checks its digest against the combination, and runs
+# deploy/gitops/publish.py, which refuses anything but a SIGNED manifest
+# without findings and publishes the environment chart as a new version
+# (a published version is never overwritten). The environment's operator then
+# points the root Application at that version (root-application.yaml in the
+# evidence); with a declared rollback window Argo CD syncs automatically,
+# otherwise on the operator's command. Development combinations (qualification)
+# are published from their own runs and are skipped here.
+name: promote
+on:
+  push:
+    branches: [main]
+    paths: ["deploy/gitops/environments/*.yaml"]
+permissions:
+  contents: read
+concurrency:
+  group: promote
+  cancel-in-progress: false
+env:
+  HELM_VERSION: "v3.19.0"
+jobs:
+  promote:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+      - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
+        with:
+          version: ${{ env.HELM_VERSION }}
+      - name: Pinned Python environment
+        run: python3.12 -m venv .local/verification-venv && .local/verification-venv/bin/python -m pip install --quiet --require-hashes -r tools/requirements.txt
+      - name: Changed production combinations and their releases
+        id: changed
+        run: |
+          git diff --name-only HEAD^ HEAD -- 'deploy/gitops/environments/*.yaml' > changed.txt
+          .local/verification-venv/bin/python - <<'PY' > targets.txt
+          import yaml
+          for path in open("changed.txt").read().split():
+              if path.endswith(".inputs.yaml"):
+                  continue
+              c = yaml.safe_load(open(path))
+              if c.get("development") or not c.get("release"):
+                  continue
+              print(c["environment"], c["release"]["run"], c["release"]["manifestSha256"])
+          PY
+          cat targets.txt
+          echo "any=$([ -s targets.txt ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+      - name: Registry login
+        if: steps.changed.outputs.any == 'true'
+        env:
+          REGISTRY: ${{ vars.ANVILKIT_RELEASE_REGISTRY }}
+          REGISTRY_USER: ${{ secrets.ANVILKIT_RELEASE_REGISTRY_USER || github.actor }}
+          REGISTRY_PASSWORD: ${{ secrets.ANVILKIT_RELEASE_REGISTRY_PASSWORD || secrets.GITHUB_TOKEN }}
+        run: |
+          echo "$REGISTRY_PASSWORD" | docker login "${REGISTRY%%/*}" -u "$REGISTRY_USER" --password-stdin
+          echo "$REGISTRY_PASSWORD" | helm registry login "${REGISTRY%%/*}" -u "$REGISTRY_USER" --password-stdin
+      - name: Publish each promoted (or rolled-back) combination
+        if: steps.changed.outputs.any == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          while read -r env run sha; do
+            dir="outputs/qualification/$run/release"
+            mkdir -p "$dir"
+            gh release download "$run" --pattern release-manifest.json --dir "$dir" --clobber
+            got="sha256:$(sha256sum "$dir/release-manifest.json" | cut -d' ' -f1)"
+            test "$got" = "$sha" || { echo "::error::$env pins $sha, the release $run carries $got"; exit 1; }
+            .local/verification-venv/bin/python deploy/gitops/publish.py --environment "$env" --run "$run" --revision "${GITHUB_RUN_NUMBER}"
+          done < targets.txt
+      - name: Environment manifests and root Applications
+        if: steps.changed.outputs.any == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: promotion-${{ github.run_number }}
+          path: outputs/qualification/*/gitops

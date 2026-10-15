@@ -1,0 +1,114 @@
+# Verification of anvilkit-services from a clean recursive clone (P3.1, plan
+# 0004): the checkout below is the parent at the pushed commit with every
+# submodule at the gitlink it records, nothing else. Its jobs:
+#   static     sh tools/verification-env.sh --static (the chain's docs,
+#              generate, contracts, evals, deployment, handover, export, ts,
+#              validator, model-proxy, team, python, knowledge, background,
+#              profiles, parser, inference and go steps); the export step
+#              reads the committed trees, so an untracked or uncommitted input
+#              fails here exactly as on a fresh machine
+#   policies   the offline Kyverno suite (deploy/policies/check.sh) against
+#              the committed fixtures with the pinned CLI
+#   migration  the migration Job of the knowledge and mcp schemas (jobs/migration)
+#              against PostgreSQL 17 through Testcontainers
+# Every action is pinned by commit; the token can read the repository only.
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+env:
+  GO_VERSION: "1.27.0"
+  NODE_VERSION: "24.19.0"
+  PNPM_VERSION: "12.3.4"
+  HELM_VERSION: "v3.19.0"
+  KYVERNO_VERSION: v1.19.1
+jobs:
+  static:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
+        with:
+          version: ${{ env.HELM_VERSION }}
+      - run: npm install -g pnpm@${{ env.PNPM_VERSION }}
+      - name: Pinned generators (contracts/tools/generate.py and Control's sqlc)
+        run: |
+          go install github.com/bufbuild/buf/cmd/buf@v1.73.0
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.12
+          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.6.2
+          go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.8.0
+          go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.27.0
+      - name: Playwright's Chromium headless shell for the validator's browser host check
+        working-directory: jobs/validator
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm exec playwright install --with-deps chromium-headless-shell
+      - name: Static chain (clean clone; exit 2 for any step that is not a full PASS)
+        env:
+          ANVILKIT_PYTHON: python3.12
+        run: sh tools/verification-env.sh --static
+  policies:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - run: npm install -g pnpm@${{ env.PNPM_VERSION }}
+      - name: Pinned Kyverno CLI (checksum as deploy/dev/up.sh)
+        run: |
+          mkdir -p "$RUNNER_TEMP/kyverno"
+          curl -sSfL -o "$RUNNER_TEMP/kyverno/cli.tar.gz" "https://github.com/kyverno/kyverno/releases/download/$KYVERNO_VERSION/kyverno-cli_${KYVERNO_VERSION}_linux_x86_64.tar.gz"
+          echo "b38228f367fc0fdc2b08f4c83ea50ac5f16c60ff8d62d76a66157c33c47b70ae  $RUNNER_TEMP/kyverno/cli.tar.gz" | sha256sum -c --quiet
+          tar -xzf "$RUNNER_TEMP/kyverno/cli.tar.gz" -C "$RUNNER_TEMP/kyverno" kyverno
+      - name: Python environment of the mutation tool
+        run: python3.12 -m venv .local/verification-venv && .local/verification-venv/bin/python -m pip install --quiet --require-hashes -r tools/requirements.txt
+      - name: Knowledge renderer of the parser fixtures
+        working-directory: services/agent/knowledge
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Offline policy suite (rendered fixtures must equal the committed ones)
+        env:
+          ANVILKIT_KYVERNO_CLI: ${{ runner.temp }}/kyverno/kyverno
+        run: sh deploy/policies/check.sh
+  migration:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: Migration Job (PostgreSQL 17 through Testcontainers)
+        working-directory: jobs/migration
+        env:
+          GOWORK: "off"
+          GOFLAGS: "-mod=readonly"
+        run: go build ./... && go vet ./... && go test -count=1 ./...

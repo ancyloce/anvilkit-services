@@ -1,0 +1,94 @@
+# The release pipeline (P3.2, plan 0004): a tag on the parent builds every owned
+# image from that tagged commit (with every submodule at its recorded gitlink),
+# with BuildKit SLSA provenance, scans it (Trivy: a fixable CRITICAL or HIGH
+# finding blocks), attaches an SPDX SBOM attestation, signs it keylessly with
+# this workflow's OIDC identity (Sigstore, transparency log), pushes it to the
+# release registry by digest, packages and signs the eight service charts, and
+# writes the release manifest. tools/release-artifacts.py derives the status:
+# SIGNED only for a clean, tagged, provenance-bearing, keylessly signed build;
+# BLOCKED (and this job fails) on any finding. A SIGNED manifest and its
+# evidence are attached to the tag's GitHub release; deploy/gitops/publish.py
+# (promote.yml) publishes nothing from any other manifest. No workstation step
+# and no stored signing key are involved.
+#
+# Inputs (repository settings, not this file): the variable
+# ANVILKIT_RELEASE_REGISTRY (the ENV-10 registry path, e.g. harbor.example/anvilkit
+# or ghcr.io/<owner>) and, for a registry other than ghcr.io, the secrets
+# ANVILKIT_RELEASE_REGISTRY_USER and ANVILKIT_RELEASE_REGISTRY_PASSWORD.
+name: release
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+env:
+  GO_VERSION: "1.27.0"
+  HELM_VERSION: "v3.19.0"
+  ANVILKIT_RELEASE_REGISTRY: ${{ vars.ANVILKIT_RELEASE_REGISTRY }}
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    permissions:
+      contents: write   # attach the manifest to the tag's release
+      packages: write   # push to ghcr.io when it is the release registry
+      id-token: write   # keyless signing (Sigstore OIDC)
+    steps:
+      - name: The release registry is configured (ENV-10)
+        run: test -n "$ANVILKIT_RELEASE_REGISTRY" || { echo "::error::set the repository variable ANVILKIT_RELEASE_REGISTRY"; exit 1; }
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          submodules: recursive
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+      - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
+        with:
+          version: ${{ env.HELM_VERSION }}
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+      - name: Registry host
+        id: registry
+        run: echo "host=${ANVILKIT_RELEASE_REGISTRY%%/*}" >> "$GITHUB_OUTPUT"
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ${{ steps.registry.outputs.host }}
+          username: ${{ secrets.ANVILKIT_RELEASE_REGISTRY_USER || github.actor }}
+          password: ${{ secrets.ANVILKIT_RELEASE_REGISTRY_PASSWORD || secrets.GITHUB_TOKEN }}
+      - name: Helm registry login (chart push)
+        env:
+          REGISTRY_USER: ${{ secrets.ANVILKIT_RELEASE_REGISTRY_USER || github.actor }}
+          REGISTRY_PASSWORD: ${{ secrets.ANVILKIT_RELEASE_REGISTRY_PASSWORD || secrets.GITHUB_TOKEN }}
+        run: echo "$REGISTRY_PASSWORD" | helm registry login "${{ steps.registry.outputs.host }}" -u "$REGISTRY_USER" --password-stdin
+      - name: Pinned Python environment
+        run: python3.12 -m venv .local/verification-venv && .local/verification-venv/bin/python -m pip install --quiet --require-hashes -r tools/requirements.txt
+      - name: Build, scan, SBOM, sign and attest (refuses dirty inputs; BLOCKED on any finding)
+        env:
+          IDENTITY: https://github.com/${{ github.workflow_ref }}
+        run: >-
+          .local/verification-venv/bin/python tools/release-artifacts.py --run "$GITHUB_REF_NAME"
+          --registry-push "$ANVILKIT_RELEASE_REGISTRY" --registry "$ANVILKIT_RELEASE_REGISTRY" --network host
+          --signing keyless --certificate-identity "$IDENTITY"
+          --certificate-oidc-issuer https://token.actions.githubusercontent.com --provenance
+      - name: The manifest is SIGNED
+        run: |
+          status=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["status"])' "outputs/qualification/$GITHUB_REF_NAME/release/release-manifest.json")
+          test "$status" = SIGNED || { echo "::error::release manifest status $status"; exit 1; }
+      - name: Evidence of the run (also when it is BLOCKED)
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-${{ github.ref_name }}
+          path: outputs/qualification/${{ github.ref_name }}/release
+          if-no-files-found: warn
+      - name: Attach the SIGNED manifest to the tag's release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          dir="outputs/qualification/$GITHUB_REF_NAME/release"
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" --verify-tag --title "$GITHUB_REF_NAME" --notes "Release manifest of $GITHUB_REF_NAME (status SIGNED)."
+          gh release upload "$GITHUB_REF_NAME" "$dir/release-manifest.json" "$dir"/*.spdx.json "$dir"/*.trivy.json --clobber
