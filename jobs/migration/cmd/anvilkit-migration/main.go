@@ -4,7 +4,12 @@
 // applies one owned domain's schema with the domain's migrator role and
 // exits. It never reads legacy tables or runtime config.
 //
-//	anvilkit-migration -domain knowledge (-dsn "$ANVILKIT_MIGRATION_DSN" | -dsn-file "$ANVILKIT_MIGRATION_DSN_FILE") [-development] [-to N] [-status]
+//	anvilkit-migration -domain knowledge (-dsn "$ANVILKIT_MIGRATION_DSN" | -dsn-file "$ANVILKIT_MIGRATION_DSN_FILE") [-development] [-to N -destructive] [-status]
+//
+// A rollback (-to N) drops what later migrations created and is refused
+// without -destructive (P3.7). Every session runs under lock_timeout and
+// statement_timeout, serialized with any other runner of the domain on its
+// advisory lock (internal/migrate Options).
 //
 // The DSN comes from exactly one source: the value, or a mounted secret
 // file (the OpenBao CSI volume, P0.6) read once. Outside development it
@@ -31,8 +36,13 @@ func main() {
 		development = flag.Bool("development", os.Getenv("ANVILKIT_MIGRATION_DEVELOPMENT") == "true", "DEVELOPMENT_ONLY: admit a DSN without sslmode=verify-full (default $ANVILKIT_MIGRATION_DEVELOPMENT == true)")
 		to          = flag.Int64("to", -1, "roll back to this version instead of applying pending migrations")
 		status      = flag.Bool("status", false, "print the applied version and exit")
+		destructive = flag.Bool("destructive", false, "permit -to: a rollback drops what later migrations created")
 	)
 	flag.Parse()
+	if err := rollbackAllowed(*to, *destructive); err != nil {
+		fmt.Fprintln(os.Stderr, "anvilkit-migration:", err)
+		os.Exit(2)
+	}
 	if *domain == "" {
 		fmt.Fprintln(os.Stderr, "anvilkit-migration: -domain is required")
 		os.Exit(2)
@@ -78,6 +88,14 @@ func main() {
 		fail(err)
 	}
 	fmt.Printf("domain=%s version=%d\n", *domain, version)
+}
+
+// rollbackAllowed refuses a rollback that was not asked for as destructive.
+func rollbackAllowed(to int64, destructive bool) error {
+	if to >= 0 && !destructive {
+		return fmt.Errorf("-to %d rolls the schema back and drops data: refused without -destructive", to)
+	}
+	return nil
 }
 
 func fail(err error) {

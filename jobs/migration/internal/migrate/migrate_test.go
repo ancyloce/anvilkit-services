@@ -21,7 +21,7 @@ import (
 const pgImage = "postgres:17-alpine"
 
 // latest is the migration version each domain reaches from an empty database.
-var latest = map[string]int64{"knowledge": 12, "mcp": 7}
+var latest = map[string]int64{"knowledge": 13, "mcp": 9}
 
 // TestInitialSchemas proves, on a real PostgreSQL, that every domain this Job
 // owns installs from an empty database with 00001_init.sql (plus its forward
@@ -103,6 +103,11 @@ func TestInitialSchemas(t *testing.T) {
 				"app role may read (grants applied)")
 			_, err = appDB.ExecContext(ctx, "DELETE FROM goose_db_version")
 			require.Error(t, err, "app role has no DELETE on migration bookkeeping")
+			// P3.7 AC5 (knowledge 00013, mcp 00008): no write of the bookkeeping at all.
+			for _, stmt := range []string{"INSERT INTO goose_db_version (version_id, is_applied) VALUES (999, true)", "UPDATE goose_db_version SET is_applied = false"} {
+				_, err = appDB.ExecContext(ctx, stmt)
+				require.ErrorContains(t, err, "permission denied", stmt)
+			}
 
 			// 00002: the outbox physical schema of the pinned watermill-sql
 			// adapter is writable by the app role in a domain transaction; the
