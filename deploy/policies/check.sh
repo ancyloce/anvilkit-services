@@ -4,9 +4,14 @@
 #   sh deploy/policies/check.sh              # offline: kyverno apply (CLI) against the launcher's fixtures and their mutations
 #   sh deploy/policies/check.sh --cluster    # in addition: server-side dry-run admission against the development cluster
 #
-# The fixtures are rendered by the launcher (services/agent/workflow,
-# TestRenderPolicyFixtures) into deploy/policies/tests/resources; the negative
-# cases are derived from them by tests/mutate.py. Offline results are policy
+# The fixtures are the launcher's renders (services/agent/workflow,
+# TestRenderPolicyFixtures; the parser's by Knowledge) committed under
+# deploy/policies/tests/resources. Since P3.3 this script never rewrites them:
+# it renders into a scratch directory, fails on any difference from the
+# committed files (drift between the launchers and the tested fixtures), and
+# tests the committed files; the negative cases are derived from them by
+# tests/mutate.py. ANVILKIT_POLICY_FIXTURES names another fixture directory
+# (the drift negative of the self-check). Offline results are policy
 # evaluation by the pinned Kyverno CLI (1.19.1), not admission; --cluster asks the
 # development cluster's admission chain (Kyverno's webhook) with server-side dry
 # runs and records that separately: Pods with the cluster administrator's context
@@ -25,10 +30,22 @@ export PATH="$PATH:$(go env GOPATH)/bin"
 
 test -x "$KYVERNO" || { echo "UNEXECUTED: kyverno CLI not found at $KYVERNO (deploy/dev/up.sh downloads 1.19.1)" >&2; exit 2; }
 "$KYVERNO" version | head -1
-(cd "$ROOT/services/agent/workflow" && ANVILKIT_RENDER_POLICY_FIXTURES="$POLICIES/tests/resources" go test -count=1 -run TestRenderPolicyFixtures ./internal/adapters/kubernetes/ >/dev/null)
+FIXTURES=${ANVILKIT_POLICY_FIXTURES:-$POLICIES/tests/resources}
+mkdir -p "$WORK/rendered"
+(cd "$ROOT/services/agent/workflow" && ANVILKIT_RENDER_POLICY_FIXTURES="$WORK/rendered" go test -count=1 -run TestRenderPolicyFixtures ./internal/adapters/kubernetes/ >/dev/null)
 # P0.7: the parser Job as Knowledge's launcher renders it.
-(cd "$ROOT/services/agent/knowledge" && ANVILKIT_RENDER_POLICY_FIXTURES="$POLICIES/tests/resources" npx vitest run test/parse.test.ts >/dev/null) \
+(cd "$ROOT/services/agent/knowledge" && ANVILKIT_RENDER_POLICY_FIXTURES="$WORK/rendered" npx vitest run test/parse.test.ts >/dev/null) \
   || { echo "UNEXECUTED: the parser fixtures did not render (services/agent/knowledge: pnpm install)" >&2; exit 2; }
+failures=0
+total=1
+if diff -r -q "$WORK/rendered" "$FIXTURES" > "$WORK/drift.txt"; then
+  printf 'PASS fixtures %-35s %s\n' "rendered-equals-committed" "$(ls "$FIXTURES" | wc -l | tr -d ' ') files"
+else
+  printf 'FAIL fixtures %-35s the launchers render differently from the committed fixtures\n' "rendered-equals-committed"
+  sed 's/^/      | /' "$WORK/drift.txt"
+  diff -r -u "$FIXTURES" "$WORK/rendered" | head -n 40 | sed 's/^/      | /'
+  failures=$((failures+1))
+fi
 # The launcher renders the fixtures with the development registry; a digest is
 # the identity and the registry the environment's placement, so another
 # environment's values (ANVILKIT_POLICY_VALUES) place the same digests in its
@@ -63,7 +80,7 @@ if exp.exists():
                     e[case] = "fail"
     exp.write_text(json.dumps(e))
 PLACE
-cp -R "$POLICIES/tests/resources" "$WORK/resources"
+cp -R "$FIXTURES" "$WORK/resources"
 if [ -n "${ANVILKIT_POLICY_VALUES:-}" ]; then
   "$PY" "$WORK/place.py" "$ANVILKIT_POLICY_VALUES" "$WORK/resources"
 fi
@@ -92,8 +109,6 @@ namespaceSelector:
     labels:
       kubernetes.io/metadata.name: anvilkit-parsing
 VALUES
-failures=0
-total=0
 for f in "$WORK"/cases/*.yaml; do
   case=$(basename "$f" .yaml)
   expect=$("$PY" -c "import json,sys; print(json.load(open('$WORK/cases/expectations.json'))['$case'])")
