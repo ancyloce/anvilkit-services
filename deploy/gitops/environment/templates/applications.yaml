@@ -53,9 +53,14 @@ spec:
     {{- toYaml . | nindent 4 }}
   {{- end }}
   syncPolicy:
+    {{- /* P3.2: automated prune/self-heal only in a development combination or
+    with a declared rollback window; a production combination syncs on an
+    operator's command (promotion and rollback are reviewed combination changes). */}}
+    {{- if or $.Values.development (($.Values.automation | default dict).rollbackWindow) }}
     automated:
       prune: true
       selfHeal: true
+    {{- end }}
     syncOptions:
       - CreateNamespace=true
       {{- range .syncOptions }}

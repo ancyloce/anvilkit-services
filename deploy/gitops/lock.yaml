@@ -198,7 +198,7 @@ platform:
   - name: observability
     product: OpenTelemetry Collector Contrib, kube-prometheus-stack, Loki, Tempo 2.10.8
     target: redacted collection; metrics, logs and traces backends
-    qualification: {status: DEVELOPMENT_ONLY, topology: "OpenTelemetry Collector Contrib 0.161.0 (chart 0.174.1) as a DaemonSet on the worker pool, exporting to node files for the redaction probe; no Prometheus, Loki or Tempo backend"}
+    qualification: {status: DEVELOPMENT_ONLY, topology: "OpenTelemetry Collector Contrib 0.161.0 (chart 0.174.1) as a DaemonSet on the worker pool exporting traces to Tempo 2.10.8 (tempo-distributed 1.61.3, local backend, one replica per component) and logs to Loki (chart 7.3.0, single binary on a volume); kube-prometheus-stack 91.8.2 (one Prometheus, one Alertmanager, Grafana, kube-state-metrics) scraping the services through the anvilkit-observability chart's PodMonitors, with its SLO rules, alerts (development receivers) and dashboards (P3.6); in-namespace traffic plaintext (B-36)"}
     production: {status: REQUIRED, inputs: [ENV-01, ENV-05, ENV-10]}
   - name: gitops
     product: Argo CD 3.5.3 + Helm 4.3

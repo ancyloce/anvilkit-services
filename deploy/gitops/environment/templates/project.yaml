@@ -1,7 +1,17 @@
 {{- if not .Values.environment }}{{ fail "environment is required" }}{{ end }}
 # One project for the environment: sources only from the environment's registry,
-# destinations only in the cluster this Argo CD runs in. Cluster-scoped resources
-# are needed by the platform charts (CRDs, webhooks, ClusterRoles, policies).
+# destinations only the namespaces the combination's applications name (and Argo
+# CD's own), in the cluster this Argo CD runs in. Cluster-scoped resources are
+# limited to the kinds the combination declares (clusterResources: the platform
+# charts' CRDs, webhooks, ClusterRoles, policies, issuers); outside a development
+# combination the list is required (P3.2: scoped per namespace and kind).
+{{- $namespaces := list .Values.argocdNamespace }}
+{{- range .Values.applications }}
+{{- $namespaces = append $namespaces .namespace }}
+{{- end }}
+{{- if and (not .Values.clusterResources) (not .Values.development) }}
+{{- fail "clusterResources is required outside a development combination: the cluster-scoped kinds the platform charts create" }}
+{{- end }}
 apiVersion: argoproj.io/v1alpha1
 kind: AppProject
 metadata:
@@ -14,8 +24,14 @@ spec:
   sourceRepos:
     - {{ printf "%s/*" .Values.registry | quote }}
   destinations:
+    {{- range ($namespaces | uniq | sortAlpha) }}
     - server: https://kubernetes.default.svc
-      namespace: "*"
+      namespace: {{ . | quote }}
+    {{- end }}
   clusterResourceWhitelist:
+    {{- if .Values.clusterResources }}
+    {{- toYaml .Values.clusterResources | nindent 4 }}
+    {{- else }}
     - group: "*"
       kind: "*"
+    {{- end }}

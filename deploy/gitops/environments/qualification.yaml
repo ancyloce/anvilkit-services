@@ -22,6 +22,27 @@ environment: qualification
 registry: anvilkit-dev-registry:5000
 argocdNamespace: anvilkit-platform
 project: anvilkit
+# P3.2: a development combination: publish.py accepts SIGNED_DEVELOPMENT_ONLY
+# releases (the development key, plain-HTTP registry, no transparency log),
+# the Applications sync automatically (prune/self-heal) and the qualification
+# record derives DEVELOPMENT_ONLY, never QUALIFIED. A production combination
+# sets development: false, names its release (release: {run, manifestSha256}),
+# its signing (signing: {mode: keyless, ...}) and a rollback window or none.
+development: true
+# The cluster-scoped kinds the platform charts create (observed from the
+# Applications' managed resources on 2026-10-13); the AppProject admits only these.
+clusterResources:
+  - {group: "", kind: Namespace}
+  - {group: admissionregistration.k8s.io, kind: MutatingWebhookConfiguration}
+  - {group: admissionregistration.k8s.io, kind: ValidatingWebhookConfiguration}
+  - {group: apiextensions.k8s.io, kind: CustomResourceDefinition}
+  - {group: apiregistration.k8s.io, kind: APIService}
+  - {group: cert-manager.io, kind: ClusterIssuer}
+  - {group: policies.kyverno.io, kind: ImageValidatingPolicy}
+  - {group: policies.kyverno.io, kind: ValidatingPolicy}
+  - {group: rbac.authorization.k8s.io, kind: ClusterRole}
+  - {group: rbac.authorization.k8s.io, kind: ClusterRoleBinding}
+  - {group: storage.k8s.io, kind: CSIDriver}
 applications:
   # --- platform dependencies -------------------------------------------------
   - name: cert-manager
@@ -83,6 +104,16 @@ applications:
     chart: {source: deploy/qualification/platform/admission, name: anvilkit-admission}
     releaseFiles:
       publicKey: cosign.pub
+    # DEVELOPMENT_ONLY: the development key signs without a transparency log on a
+    # plain-HTTP registry, and the platform images are not yet mirrored and
+    # signed, so only anvilkit-apps is enforced here (production: the chart's
+    # default namespaces with the transparency log verified).
+    values:
+      development: true
+      insecureIgnoreTlog: true
+      insecureIgnoreSCT: true
+      allowInsecureRegistry: true
+      namespaces: [anvilkit-apps]
   # P0.5: the Job-boundary admission (deploy/policies/chart): the components and
   # parser template/digest policies, this environment's registry allowlist and
   # the DaemonSet that places the candidate seccomp profile on every node.
@@ -117,9 +148,11 @@ applications:
   # The redacted telemetry pipeline (P23-06): one Collector per worker node. It
   # reads the anvilkit-* container logs, scrapes the services' metrics ports and
   # receives their spans over OTLP; spans keep the allowlisted attributes only
-  # (security.md), log bodies lose secret shapes, and every signal is written to
-  # /var/lib/anvilkit-telemetry on the node for check-telemetry.py. No Prometheus,
-  # Loki or Tempo backend: those are ENV-01/05 production inputs.
+  # (security.md), log bodies lose secret shapes. Since P3.6 the Collector
+  # exports traces to Tempo and logs to Loki (OTLP, inside anvilkit-observability)
+  # instead of node files; Prometheus scrapes the services' metrics itself
+  # (anvilkit-observability chart's PodMonitors). check-telemetry.py --source
+  # backends reads what the backends kept.
   - name: anvilkit-telemetry
     wave: -45
     layer: platform
@@ -159,10 +192,8 @@ applications:
         zipkin: {enabled: false}
       extraVolumes:
         - {name: podlogs, hostPath: {path: /var/log/pods, type: Directory}}
-        - {name: telemetry, hostPath: {path: /var/lib/anvilkit-telemetry, type: DirectoryOrCreate}}
       extraVolumeMounts:
         - {name: podlogs, mountPath: /var/log/pods, readOnly: true}
-        - {name: telemetry, mountPath: /var/lib/anvilkit-telemetry}
       alternateConfig:
         extensions:
           health_check: {endpoint: "${env:MY_POD_IP}:13133"}
@@ -181,20 +212,6 @@ applications:
             include_file_path: true  # the container parser takes the pod, namespace and container from it
             operators:
               - {type: container, id: container-parser}
-          prometheus:
-            config:
-              scrape_configs:
-                - job_name: anvilkit
-                  scrape_interval: 15s
-                  kubernetes_sd_configs:
-                    - role: pod
-                      namespaces: {names: [anvilkit-apps]}
-                      selectors: [{role: pod, field: "spec.nodeName=${env:OTEL_K8S_NODE_NAME}"}]
-                  relabel_configs:
-                    - {source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape], action: keep, regex: "true"}
-                    - {source_labels: [__meta_kubernetes_pod_container_port_name], action: keep, regex: "metrics|health"}
-                    - {source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name], target_label: job}
-                    - {source_labels: [__meta_kubernetes_pod_name], target_label: pod}
         processors:
           memory_limiter: {check_interval: 1s, limit_percentage: 80, spike_limit_percentage: 25}
           batch: {}
@@ -220,6 +237,8 @@ applications:
               - temporalRunID
               - temporalActivityID
               - temporalUpdateID
+              # P3.6 (API-09): the API's opaque req_ identifier, on the API's and the owners' spans.
+              - anvilkit.request_id
             blocked_values:
               - "(?i)bearer\\s+[A-Za-z0-9._~+/-]{20,}"
               - "[a-z][a-z0-9+.-]*://[^\\s:/@]+:[^\\s@/]+@"
@@ -241,9 +260,10 @@ applications:
                   - 'replace_pattern(body, "\\bAKIA[0-9A-Z]{16}\\b", "[REDACTED]")'
                   - 'replace_pattern(body, "\\bsk-[A-Za-z0-9]{20,}", "[REDACTED]")'
         exporters:
-          file/traces: {path: /var/lib/anvilkit-telemetry/traces.jsonl, format: json, rotation: {max_megabytes: 64, max_backups: 2}}
-          file/metrics: {path: /var/lib/anvilkit-telemetry/metrics.jsonl, format: json, rotation: {max_megabytes: 64, max_backups: 2}}
-          file/logs: {path: /var/lib/anvilkit-telemetry/logs.jsonl, format: json, rotation: {max_megabytes: 64, max_backups: 2}}
+          # DEVELOPMENT_ONLY: plaintext inside the observability namespace (no
+          # workload certificate for the backends yet, B-36); production: TLS.
+          otlp/tempo: {endpoint: "anvilkit-traces-distributor.anvilkit-observability.svc:4317", tls: {insecure: true}}
+          otlphttp/loki: {endpoint: "http://anvilkit-logs.anvilkit-observability.svc:3100/otlp"}
         service:
           extensions: [health_check]
           telemetry:
@@ -251,9 +271,111 @@ applications:
               readers:
                 - pull: {exporter: {prometheus: {host: "${env:MY_POD_IP}", port: 8888}}}
           pipelines:
-            traces: {receivers: [otlp], processors: [memory_limiter, redaction, batch], exporters: [file/traces]}
-            metrics: {receivers: [prometheus], processors: [memory_limiter, batch], exporters: [file/metrics]}
-            logs: {receivers: [filelog], processors: [memory_limiter, transform/logs, batch], exporters: [file/logs]}
+            traces: {receivers: [otlp], processors: [memory_limiter, redaction, batch], exporters: [otlp/tempo]}
+            logs: {receivers: [filelog], processors: [memory_limiter, transform/logs, batch], exporters: [otlphttp/loki]}
+  # P3.6: the metrics, log and trace backends (E07 kube-prometheus-stack with
+  # Grafana, E08 Loki, E09 Tempo 2.10.8) and the AnvilKit signals on them
+  # (the anvilkit-observability chart: PodMonitors, the SLO recording rules and
+  # alerts, the dashboards). DEVELOPMENT_ONLY sizing: one replica each, Loki in
+  # single-binary mode on a volume and Tempo on its local backend; production
+  # takes ENV-01/05 (sizes, retention, object storage) and ENV-10 (alert routes).
+  - name: anvilkit-metrics
+    wave: -42
+    layer: platform
+    namespace: anvilkit-observability
+    chart: {upstream: https://prometheus-community.github.io/helm-charts, name: kube-prometheus-stack, version: 91.8.2}
+    syncOptions: [ServerSideApply=true]
+    values:
+      fullnameOverride: anvilkit-metrics
+      crds: {enabled: true}
+      defaultRules: {create: false}
+      nodeExporter: {enabled: false}
+      kubeEtcd: {enabled: false}
+      kubeScheduler: {enabled: false}
+      kubeControllerManager: {enabled: false}
+      kubeProxy: {enabled: false}
+      kubeStateMetrics: {enabled: true}
+      prometheus:
+        prometheusSpec:
+          replicas: 1
+          retention: 7d
+          ruleSelector: {matchLabels: {release: anvilkit-metrics}}
+          ruleNamespaceSelector: {}
+          podMonitorSelector: {matchLabels: {release: anvilkit-metrics}}
+          podMonitorNamespaceSelector: {}
+          resources:
+            requests: {cpu: 100m, memory: 512Mi}
+            limits: {memory: 2Gi}
+      alertmanager:
+        # The routing is the anvilkit-observability chart's AlertmanagerConfig
+        # (no configuration Secret); ENV-10 names the production receivers.
+        alertmanagerSpec:
+          replicas: 1
+          useExistingSecret: true
+          alertmanagerConfiguration: {name: anvilkit}
+      grafana:
+        # The admin credential is an OpenBao-synced Secret (anvilkit-secrets), never a chart value.
+        admin: {existingSecret: anvilkit-grafana-admin, userKey: admin-user, passwordKey: admin-password}
+        sidecar:
+          dashboards: {enabled: true, label: grafana_dashboard, searchNamespace: ALL}
+        additionalDataSources:
+          - {name: Loki, type: loki, uid: anvilkit-loki, url: "http://anvilkit-logs.anvilkit-observability.svc:3100", access: proxy}
+          - {name: Tempo, type: tempo, uid: anvilkit-tempo, url: "http://anvilkit-traces-query-frontend.anvilkit-observability.svc:3200", access: proxy}
+  - name: anvilkit-logs
+    wave: -42
+    layer: platform
+    namespace: anvilkit-observability
+    chart: {upstream: https://grafana.github.io/helm-charts, name: loki, version: 7.3.0}
+    values:
+      fullnameOverride: anvilkit-logs
+      deploymentMode: SingleBinary
+      loki:
+        auth_enabled: false
+        commonConfig: {replication_factor: 1}
+        storage: {type: filesystem}
+        schemaConfig:
+          configs:
+            - {from: "2026-01-01", store: tsdb, object_store: filesystem, schema: v13, index: {prefix: index_, period: 24h}}
+        limits_config: {allow_structured_metadata: true, retention_period: 168h}
+      singleBinary:
+        replicas: 1
+        persistence: {size: 10Gi}
+      read: {replicas: 0}
+      write: {replicas: 0}
+      backend: {replicas: 0}
+      gateway: {enabled: false}
+      chunksCache: {enabled: false}
+      resultsCache: {enabled: false}
+      lokiCanary: {enabled: false}
+      test: {enabled: false}
+  - name: anvilkit-traces
+    wave: -42
+    layer: platform
+    namespace: anvilkit-observability
+    chart: {upstream: https://grafana.github.io/helm-charts, name: tempo-distributed, version: 1.61.3}
+    values:
+      fullnameOverride: anvilkit-traces
+      # The matrix's Tempo 2.10.8 (E09), by digest.
+      tempo:
+        image: {repository: grafana/tempo, tag: "2.10.8@sha256:f0561deb1c68ec44d6e6e7e4487f30106c4e5e768642077695b37958b105812a"}
+      storage:
+        trace: {backend: local}
+      traces:
+        otlp:
+          grpc: {enabled: true}
+          http: {enabled: true}
+      ingester: {replicas: 1}
+      distributor: {replicas: 1}
+      querier: {replicas: 1}
+      queryFrontend: {replicas: 1}
+      compactor: {replicas: 1}
+  - name: anvilkit-observability
+    wave: -41
+    layer: platform
+    namespace: anvilkit-observability
+    chart: {source: deploy/qualification/platform/observability, name: anvilkit-observability}
+    values:
+      development: true
   # P0.6: the Secrets Store CSI driver (the OpenBao provider is the openbao chart's
   # DaemonSet). Secret sync only for the classes that declare secretObjects
   # (anvilkit-secrets); rotation polls every 2 minutes; the Pods' ServiceAccount
@@ -488,12 +610,20 @@ applications:
                 MODEL_PROXY_SECRET_ACCESS_KEY: objects-model-proxy-secret-access-key
                 KNOWLEDGE_ACCESS_KEY_ID: objects-knowledge-access-key-id
                 KNOWLEDGE_SECRET_ACCESS_KEY: objects-knowledge-secret-access-key
+                BACKUP_ACCESS_KEY_ID: objects-backup-access-key-id
+                BACKUP_SECRET_ACCESS_KEY: objects-backup-secret-access-key
         - name: anvilkit-secrets-platform
           namespace: anvilkit-platform
           path: kv/data/anvilkit/sync/platform
           secrets:
             - {name: anvilkit-temporal-db, data: {password: temporal-db-password}}
             - {name: anvilkit-probe-token, data: {token: probe-token}}
+        # P3.6: Grafana's admin login for the metrics stack (existingSecret).
+        - name: anvilkit-secrets-observability
+          namespace: anvilkit-observability
+          path: kv/data/anvilkit/sync/observability
+          secrets:
+            - {name: anvilkit-grafana-admin, data: {admin-user: grafana-admin-user, admin-password: grafana-admin-password}}
         - name: anvilkit-secrets-apps
           namespace: anvilkit-apps
           path: kv/data/anvilkit/sync/apps
@@ -503,6 +633,22 @@ applications:
             # DEVELOPMENT_ONLY: the Model Proxy's bearer principals (its listener's mtls mode
             # with the SPIFFE mapping is the next step; F-P0.1-1 landed in the service).
             - {name: anvilkit-agent-model-proxy-principals, data: {principals.json: model-proxy-principals}}
+  # P3.7: scheduled off-cluster backups of Qdrant (collection snapshots), OpenBao
+  # (raft snapshot) and the object store (a mirror into the versioned, locked
+  # replica bucket) to the DR store. The CronJobs log in to OpenBao themselves
+  # (role anvilkit-backups); their last successful run is AnvilKitBackupStale's.
+  - name: anvilkit-backups
+    wave: -20
+    layer: stateful
+    namespace: anvilkit-platform
+    chart: {source: deploy/qualification/platform/backups, name: anvilkit-backups}
+    values:
+      # DEVELOPMENT_ONLY: the DR store is a plaintext MinIO container on the host.
+      development: true
+      images:
+        curl: curlimages/curl:8.11.1@sha256:c1fe1679c34d9784c1b0d1e5f62ac0a79fca01fb6377cdd33e90473c6f9f9a69
+        mc: anvilkit-dev-registry:5000/vendor/minio/mc:a7fe349ef4bd@sha256:bdfae21c72b19fae5a005c56dddba25a873d75fac3dda60f55aea7e417382cbe
+      dr: {url: "http://anvilkit-qualification-dr:9000"}
   # --- platform services ------------------------------------------------------
   - name: anvilkit-temporal
     wave: -20

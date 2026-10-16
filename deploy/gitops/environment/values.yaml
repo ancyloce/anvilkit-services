@@ -6,3 +6,11 @@ registry: ""
 argocdNamespace: anvilkit-platform
 project: anvilkit
 applications: []
+# A development combination (the qualification environment): automated sync,
+# SIGNED_DEVELOPMENT_ONLY releases accepted by publish.py, unscoped cluster kinds.
+development: false
+# automation.rollbackWindow: the documented window within which a production
+# combination may sync automatically (prune/self-heal); absent, it syncs on command.
+automation: {}
+# Cluster-scoped kinds the project admits ({group, kind}); required outside development.
+clusterResources: []
