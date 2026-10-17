@@ -26,4 +26,5 @@ use (
 	./services/agent/workflow
 	./tests/contracts
 	./tests/integration
+	./tests/load
 )
