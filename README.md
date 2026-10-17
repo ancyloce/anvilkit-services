@@ -11,12 +11,55 @@ The architecture documents under [`docs/architecture/`](docs/architecture/archit
 | Architecture baseline | Architecture document edition **V4.0, revision 2** — document metadata only, never a service, database, directory or release suffix ([naming](docs/architecture/architecture.md#naming)) |
 | Decision | Rebuild the owned application implementation completely with the fixed technology selections ([ADR-001](docs/architecture/architecture.md#adr-001)); existing code in this checkout is outside the new build closure |
 | Design status | Detailed design: DD-01 through DD-10 and ADR-001 through ADR-004 are adopted design decisions, not implemented behavior |
-| Implementation status | R0 contract baseline (P01–P02), a DEVELOPMENT_ONLY foundation (P03), the LocalCheck control chain across API, Control and Workflow (P04–P05) and shared budgets with single-use dispatch admission (P06, corrected 2026-09-15), the obligation inventory, guarded effects and recovery reconciliation (P07, repaired 2026-09-16) and scoped artifact transfer with immutable stage acceptance (P08, 2026-09-16) exist and are locally verified; the fixed component certification chain (P10, 2026-09-16: `jobs/validator`, the `npm`/`browser`/`css` artifact classes and Control migration `00007`; its six review findings repaired in the twentieth pass — browser certification observed through Playwright outside the page, profile-mandatory checks, inventory-bound module loading, same-identity stop and confirmation, parsed CSS references, registry name and semver validation — with the image now running the browser check in the Pod; its SSR result-integrity and escaped-CSS review findings were repaired through the twenty-third and twenty-fifth passes (2026-09-17), the image rebuilt to `sha256:cc52643d…` at `validator-fixed-dev-v1` revision `6` with the admission policy realigned and applied to the cluster, and the four Go consumers bumped to the published contracts pseudo-version `v0.1.3-0.20260917133639-1e7cb5d5c537`) is implemented and verified on the host and through the launcher on the kind cluster with a DEVELOPMENT_ONLY Host ABI, and not complete while those consumer `go.mod` bumps stay uncommitted in their repositories; the contracts and the API live in their own repositories since 2026-09-15 and both are published (`anvilkit-agent-contracts` `main` `972e11c` — pushed; `go/v0.1.2` tagged at `532f680` on 2026-09-16, carrying `GetInstance` with its `operation` answer, `resultSizeBytes` and the `npm`/`browser`/`css` artifact classes beyond `go/v0.1.1` at `4025ff6`; `anvilkit-agent-api` `main` `83c0d9f`, which requires `go v0.1.2`, CI green); Control and Workflow were relocated into their own repositories on 2026-09-16 (sixteenth pass: `services/agent/{control,workflow}`, committed and pushed by the user as `c243540` / `9585920`, each with its `Dockerfile`, CI and chart, Control with its migrations and migration Job, both requiring the contracts pseudo-version of `a397fee` without a replace directive, verified alone and as two replicas each in the kind cluster; Control at `dd9c660` after the CI corrections and the runner-only S3 classification fix, CI green; the eighteenth pass's lifecycle and budget corrections — bounded Workflow shutdown, fatal-poller exit, Control PDB scope — are verified locally and uncommitted in those repositories); the parent's `main` `4dd7461` is pushed while `docs/`, `go.work`, `jobs/{codegen,migration}/` and `tests/` stay untracked ([Git inclusion](#git-inclusion)); the trusted Job boundary (P09, 2026-09-16: launcher templates, admission/syscall/network policies, the codegen harness and the access sidecar, verified locally; its gVisor candidate profile disabled) exists; the controlled Model Proxy (P11, twenty-first and twenty-second passes) exists; the bounded LangGraph/Pi coding team (P12, twenty-fourth pass, 2026-09-17: `jobs/codegen/team` with the ControlledModelPort over the sidecar relay, the one Pi source writer as the P09 candidate, the LangGraph TeamRunner with fixed roles and P06-style budgets, the joint StageStore over SqliteSaver with recovery against Control's accepted stage, the independent validation step through the validator's own chain with one bounded repair; the `stage` output class, the sidecar's accepted-stage read, the `anvilkit-codegen-team` image and the DISABLED profile `codegen-team-dev-v1`) is implemented and verified with real processes on the host against the development foundation, with a countable controlled upstream and no real model — its review findings repaired in the twenty-sixth and twenty-ninth passes (2026-09-17), the team image rebuilt from the repaired sources on the current validator and delivered to the development registry as `bbfdcf9c…` (`codegen-team-dev-v1` revision 2 in the contracts working copy, not yet published; [twenty-ninth-pass record](docs/architecture/delivery.md#verification-twenty-ninth-pass)); P13–P23 are recorded in the [unit status records](docs/architecture/delivery.md#unit-status-records); P24a, the handover rehearsal, ran on the DEVELOPMENT_ONLY qualification environment on 2026-10-03 and P24b, the live handover and retirement of the legacy `anvilkit-local` scope, is blocked ([forty-first-pass record](docs/architecture/delivery.md#verification-forty-first-pass)) |
+| Implementation status | Each unit's status is the first clause of its record in the [unit status records](docs/architecture/delivery.md#unit-status-records), reproduced in the generated [unit status](#unit-status) table below; the records carry the evidence, the open items and what stays uncommitted. Plan 0004 (P3: release engineering, evidence and operations) is recorded in [verification-p3](docs/architecture/delivery.md#verification-p3-release-evidence-operations). P24b, the live handover and retirement of the legacy `anvilkit-local` scope, is blocked ([forty-first-pass record](docs/architecture/delivery.md#verification-forty-first-pass)) |
 | Runtime qualification | All fourteen runtime gates G-01 through G-14 are `NOT_RUN`; the release qualification record is `NOT_VERIFIED` ([acceptance](docs/architecture/delivery.md#acceptance), [qualification lock](docs/architecture/platform.md#deployment-inputs)) |
 | Pending inputs | Environment inputs ENV-01 through ENV-10 (machines, failure domains, prices/caps, IdP/Pagix/Studio contracts, RPO/RTO, on-call) are required before release and do not reopen technology selection ([deployment inputs](docs/architecture/platform.md#deployment-inputs)) |
 | Initial versions | REST/SSE and Protobuf protocols begin at **v1**; the first stable application release target is **1.0.0** |
 
 Adopted design decisions, observed implementation state, pending inputs and runtime qualification evidence are four different things throughout this repository. Historical approvals and proofs under `docs/archive/` (ignored by Git, present only in the original working copy) belong to the previous architecture and do not qualify the replacement.
+
+<a id="unit-status"></a>
+
+### Unit status
+
+<!-- generated:units -->
+Generated by `tools/docs-status.py` from the [unit status records](docs/architecture/delivery.md#unit-status-records); the record is the authority, this is its first clause.
+
+| Unit | Status of its record |
+| --- | --- |
+| P01 | IMPLEMENTED |
+| P02 | IMPLEMENTED |
+| P03 | IMPLEMENTED |
+| P04 | VERIFIED locally |
+| P05 | VERIFIED locally |
+| P06 | VERIFIED locally |
+| P07 | IMPLEMENTED |
+| P08 | IMPLEMENTED |
+| P09 | IMPLEMENTED |
+| P10 | IMPLEMENTED |
+| P11 | IMPLEMENTED |
+| P12 | IMPLEMENTED |
+| P13 | IMPLEMENTED |
+| P14 | IMPLEMENTED |
+| P15 | IMPLEMENTED |
+| P16 | IMPLEMENTED |
+| P17 | IMPLEMENTED |
+| P18 | IMPLEMENTED |
+| P19 | IMPLEMENTED |
+| P20 | IMPLEMENTED |
+| P21 | IMPLEMENTED |
+| P22 | IMPLEMENTED |
+| P23 | IMPLEMENTED as DEVELOPMENT_ONLY qualification |
+| P0.1 | IMPLEMENTED on the development foundation |
+| P0.2 | IMPLEMENTED on the development foundation |
+| P0.3 | IMPLEMENTED on the development foundation |
+| P0.4 | IMPLEMENTED |
+| P0.5 | IMPLEMENTED on the development foundation |
+| P0.6 | IMPLEMENTED |
+| P0.7 | IMPLEMENTED |
+| P0.8 | IMPLEMENTED on the development foundation |
+| P24 | P24a REHEARSED as DEVELOPMENT_ONLY |
+<!-- /generated:units -->
 
 ## First milestone
 
@@ -60,11 +103,34 @@ Governing decisions the entry points must not contradict:
 
 ## Repository state
 
-Verified against the checkout on 2026-09-16 (eighteenth pass). Inspect the tree before relying on this table; it records observed state, not the target. Repository ownership (parent, contracts repository, service repositories) is defined in [architecture](docs/architecture/architecture.md#repositories).
+The path table below describes what each path holds; it is maintained by hand and describes content, not commits. Repository ownership (parent, contracts repository, service repositories) is defined in [architecture](docs/architecture/architecture.md#repositories).
 
 <a id="git-inclusion"></a>
 
-**Git inclusion (observed 2026-09-16, eighteenth pass, after `git fetch` of every remote; `git status --short` is the authority).** Observed again after the contracts tag and the bumps (`go/v0.1.2` at `532f680`, 2026-09-16): the parent's local `main` is `5e0c591`, five commits ahead of its pushed `4dd7461`, recording the gitlinks contracts `972e11c`, Control `1fbad8f`, API `83c0d9f`, Workflow `575fd38`, sidecar `402d423` and `jobs/validator` `d3760b9` — every one equal to its repository's pushed `main` — and tracking `go.work`, `go.work.sum` and `compose.yaml` since `aa6f0da`/`5e0c591`; still untracked: `docs/`, `jobs/codegen/`, `jobs/migration/`, `tests/`, `deploy/local/`; the concurrent P10 session's edits (`AGENTS.md`, `deploy/dev/`, `deploy/policies/`, `tools/`, `jobs/validator`, its entries in `delivery.md`) and this pass's `README.md`/`delivery.md` are uncommitted ([bump addendum](docs/architecture/delivery.md#verification-eighteenth-pass)). *(Earlier in the eighteenth pass.)* Every repository equals its remote: the parent's `main` `4dd7461` is pushed (the root documents, `tools/`, `deploy/dev/`, `deploy/policies/`, `pnpm-workspace.yaml` and the gitlinks: contracts `a6c2446`, API `f0b1145`, Control `dd9c660`, Workflow `9585920`, sidecar `b5e4d35`, `jobs/validator` `d3760b9` and the placeholder services); the service repositories are published with green CI at those commits. Still untracked in the parent and part of the reproducible composition: `docs/README.md`, `docs/architecture/` (11 documents), `go.work`, `go.work.sum`, `jobs/codegen/`, `jobs/migration/`, `tests/contracts/`, `tests/integration/`; untracked and deliberately left out (the never-tracked legacy environment definition, retained on disk until P24): `compose.yaml`, `deploy/local/`. Uncommitted from the eighteenth pass ([record](docs/architecture/delivery.md#verification-eighteenth-pass)): in `services/agent/workflow` the bounded shutdown and fatal-poller exit (`internal/bootstrap/{module,health}.go`, the lifecycle tests, `internal/config/config.go`, `config.yaml`, the chart's `shutdown.drainSeconds`, `README.md`); in `services/agent/control` the PodDisruptionBudget scope (`deploy/chart/templates/{deployment,pdb}.yaml`, `README.md`); in the parent this `README.md` and `docs/architecture/delivery.md`. A concurrent session's uncommitted P10 work (observed 13:12–13:18: `contracts/` sources and regenerated consumers, Control's domain, transport and a `00007` migration, the API's Control client, the sidecar's scope, Workflow's `policyfixtures_test.go`, the parent's `deploy/dev/images.sh`, the Kyverno Job policy and validator fixtures, `jobs/validator`) shares those working copies and is not part of the eighteenth pass. The grouped commit, push and clone operations that remain are listed at the end of that record; until the parent commits its untracked inputs and pins the two updated gitlinks, a recursive clone of the parent does not reproduce this checkout. The earlier observations that follow are kept as history and are superseded where they differ. *(Sixteenth pass.)* Control and Workflow now live in their repositories at `services/agent/{control,workflow}`: every legacy file was deleted in the worktrees (`.git`, `LICENSE` and `.gitignore` kept) and the replacement placed, and the user committed and pushed the result on each repository's `main` (`c243540`, `9585920`) and recorded the gitlinks in the parent (`4a78324`; contracts `a397fee` in `d5af5bf`); Control's CI corrections are pushed as `b83b6f9` and its runner-only S3 classification fix is still uncommitted in that repository; the source directories `services/anvilkit-agent-{control,workflow}` and the Control SQL under `jobs/migration` are removed; the concrete commit, tag and push operations that remain are listed in the [sixteenth-pass record](docs/architecture/delivery.md#verification-sixteenth-pass). The state before this pass, still accurate for everything else: The two extracted repositories are published: `anvilkit-agent-contracts` `main` `7806460` (tags `go/v0.1.0` at `c377f79` and `go/v0.1.1` at `4025ff6`; `7806460` is a README-only change over the tag; CI green) and `anvilkit-agent-api` `main` `f0b1145` (the requirement bump to `go v0.1.1` and the formatting rewrite; CI green, after the red run of `369ceb9`, which still required `v0.1.0`). The parent's local `main` (`e81c527`, eleven commits ahead of `origin/main` `85071e2`, **not pushed**) records the contracts gitlink `7806460` (`e81c527`) and the API gitlink `f0b1145` (`45b75be`), both current, the root documents (`1bf2c22`, `2e84f4b`, `fba5bf7`), `tools/`, `pnpm-workspace.yaml` and `deploy/dev/` (`df9a18c`). Still untracked at this pass and part of the export set: `docs/README.md`, `docs/architecture/`, `go.work`, `go.work.sum`, `jobs/migration/`, `services/anvilkit-agent-{control,workflow}/`, `tests/` and the retained legacy tooling `compose.yaml`, `deploy/local/`; modified and uncommitted: `.gitignore`, `deploy/dev/{README.md,compose.yaml,up.sh}` (the MinIO artifact store of P08), `tools/requirements.txt` and the legacy gitlinks of `services/agent/{control,workflow}` (user changes outside this extraction); untracked in addition: `deploy/dev/minio-setup.sh`. Until the remaining inputs are committed and the parent is pushed, a clean recursive clone of the parent does not reproduce this checkout; the [cleanup record](docs/architecture/delivery.md#cleanup-record) lists the proposed commit and the [tenth-pass verification](docs/architecture/delivery.md#verification-tenth-pass) what was verified from the source export instead.
+**Repositories and Git inclusion.** Only `docs/archive/`, `outputs/`, `logs/`, `.local/` and build caches are gitignored; inputs a task adds stay untracked until the user stages them, so a Git worktree can lack them (work in the primary checkout). `git status --short` in the parent and in each repository is the authority for the working trees; the parent's committed gitlinks are:
+
+<!-- generated:repositories -->
+Generated by `tools/docs-status.py` from `.gitmodules` and the parent's committed tree; the working tree may be ahead (`git status --short` and each repository's own `git log` are the authority).
+
+| Path | Repository | Gitlink in the parent's `HEAD` |
+| --- | --- | --- |
+| `contracts` | `anvilkit-agent-contracts` | `1c3ef95` |
+| `jobs/codegen/supervisor` | `anvilkit-job-codegen-supervisor` | `238e06c` |
+| `jobs/codegen/team` | `anvilkit-job-codegen-team` | `7c4b23e` |
+| `jobs/parser` | `anvilkit-job-parser` | `05bdb93` |
+| `jobs/shared/access-sidecar` | `anvilkit-job-access-sidecar` | `c9eda97` |
+| `jobs/validator` | `anvilkit-job-validator` | `8a2c319` |
+| `services/agent/api` | `anvilkit-agent-api` | `9b48a17` |
+| `services/agent/background-worker` | `anvilkit-agent-background-worker` | `b43ad6c` |
+| `services/agent/control` | `anvilkit-agent-control` | `8c22ab7` |
+| `services/agent/inference` | `anvilkit-agent-inference` | `3699a1e` |
+| `services/agent/knowledge` | `anvilkit-agent-knowledge` | `9afbedc` |
+| `services/agent/mcp` | `anvilkit-agent-mcp` | `e0f99df` |
+| `services/agent/model-proxy` | `anvilkit-agent-model-proxy` | `aaa001c` |
+| `services/agent/workflow` | `anvilkit-agent-workflow` | `20229e1` |
+
+Contract consumers pin: `go/v0.1.10` (`services/agent/api`, `services/agent/control`, `services/agent/workflow`, `services/agent/mcp`, `services/agent/knowledge`, `services/agent/model-proxy`, `services/agent/background-worker`, `jobs/shared/access-sidecar`).
+<!-- /generated:repositories -->
 
 | Path | Observed content | Relation to the V4.0 target |
 | --- | --- | --- |
@@ -86,10 +152,11 @@ Verified against the checkout on 2026-09-16 (eighteenth pass). Inspect the tree 
 | `services/agent/inference` | The `anvilkit-agent-inference` repository as a submodule (registered on 2026-10-04 at that repository's initial commit `1973865`; the migrated sources uncommitted in it): the Inference service of P15 — Python 3.12, FastAPI and FlagEmbedding over `contracts/openapi/inference.yaml`; fixed BGE-M3 (`5617a9f`, MIT) and bge-reranker-v2-m3 (`953dc6f`, Apache-2.0) weights pinned per file in `models.lock`, hash-locked dependencies, its image and chart ([README](services/agent/inference/README.md)) | Computation only: no database, Qdrant, secret or business identity; CPU only, ENV-04 open |
 | `jobs/parser` | The `anvilkit-job-parser` repository as a submodule (registered on 2026-10-04 at that repository's initial commit `d224034`; the migrated sources uncommitted in it; image and package keep the name `anvilkit-parser`): the Docling parser Job image of P15 (the fixed parser and its trusted stager, pinned layout weights, hash-locked dependencies; [README](jobs/parser/README.md)), launched only by Knowledge's parser launcher in `anvilkit-parsing` | `parser-docling-dev-v1` DEVELOPMENT_ONLY; `parser-docling-v1` (gVisor) DISABLED |
 | `packages/profile-schemas` | The shared configuration schemas (`apollo-snapshot`, `config-generation`), their cross-language fixtures and the executable Python consumer example for the Inference service | P14-06; consumed by the Go (MCP) and TypeScript (Knowledge) loaders' tests and the `profiles` step of the chain |
+| `deploy/gitops/`, `deploy/qualification/` | The GitOps environment chart, the environment combinations and the deployment lock (`deploy/gitops`); the DEVELOPMENT_ONLY qualification environment's platform charts, bootstrap, checks and drills (`deploy/qualification`, P23 and plan 0004) | Release, promotion and qualification tooling; production combination pending ENV-01..ENV-10 |
 | `deploy/local/`, `compose.yaml`, `tools/prepare-local-compose.py` | Docker Compose profile of the legacy local-check flow (PostgreSQL 18.6, Temporal 1.31.2), mounts repointed to `docs/archive/contracts/`; the legacy API, Control and Workflow services pinned to their own images (`legacy-20260915`, `legacy-20260916`) and the preserved legacy worktrees under `.local/legacy/` | Legacy environment; not handed over, not a startup procedure for the replacement |
 | `packages/biome-config`, `packages/typescript-config`, `apps/` | pnpm/Turborepo starter | Starter only; the Model Proxy is its own pnpm workspace root (as `contracts/` and `jobs/validator`), Knowledge arrives with P15 |
 
-Not present in any form: the `jobs/preview` class and `deploy/gitops`.
+Not present in any form: a `jobs/preview` directory.
 
 ## Reading route
 
