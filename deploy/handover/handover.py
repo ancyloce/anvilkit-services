@@ -32,6 +32,10 @@ The procedure, in order (delivery.md, P24 Work/Exit/Recovery):
                  no duplicate operation per command in the new Control, no legacy effect, no
                  silent page upgrade (every Studio page byte-identical to the frozen inputs).
 
+execute retires nothing unless the capture is verified, no old obligation is unresolved
+and the transfer is ready (DEP-13): an unmet one ends the run FAIL before any retire
+action. `handover.py --self-test` proves each refusal against fake steps.
+
 Exit 0 when every step that ran passed, 1 when a check failed, 2 when a gate refuses
 (execute) or an input is missing. Nothing the old scope holds is written by plan or
 rehearse; execute is a release action and never runs without its gates.
@@ -363,7 +367,13 @@ def procedure(a: argparse.Namespace, mode: str) -> int:
         steps["capture"] = capture(a, execute)
         steps["reconcile"] = reconcile(a)
         steps["transfer"] = transfer(a)
-    steps["retire"] = retire(execute, a)
+    unmet = retire_preconditions(steps) if execute else []
+    if unmet:
+        # DEP-13 (P3.7): nothing is retired unless the capture is verified, no
+        # old obligation is unresolved and the transfer is ready.
+        steps["retire"] = {"executed": False, "refusedBy": unmet}
+    else:
+        steps["retire"] = retire(execute, a)
     if mode in ("rehearse", "execute"):
         steps["final"] = final(a)
     doc["steps"] = steps
@@ -373,6 +383,8 @@ def procedure(a: argparse.Namespace, mode: str) -> int:
                    "noUnresolvedOldObligation": steps["reconcile"]["unresolvedObligations"] is False,
                    "transferReady": steps["transfer"].get("ok") is True,
                    "finalChecks": steps["final"]["ok"]}
+    if unmet:
+        checks["retirePreconditions"] = False
     doc["checks"] = checks
     doc["gatesForExecute"] = {"unmet": blockers}
     doc["result"] = "PASS" if all(checks.values()) else "FAIL"
@@ -386,7 +398,78 @@ def procedure(a: argparse.Namespace, mode: str) -> int:
     return 0 if doc["result"] == "PASS" else 1
 
 
+def retire_preconditions(steps: dict) -> list[str]:
+    """The checks execute requires before retire (DEP-13): a verified capture, no
+    unresolved old obligation, a ready transfer. Each unmet one is named."""
+    unmet = []
+    if (steps.get("capture") or {}).get("verified") is not True:
+        unmet.append("captureVerified")
+    if (steps.get("reconcile") or {}).get("unresolvedObligations") is not False:
+        unmet.append("noUnresolvedOldObligation")
+    if (steps.get("transfer") or {}).get("ok") is not True:
+        unmet.append("transferReady")
+    return unmet
+
+
+def self_test() -> int:
+    """execute against fake steps: a failed capture, an unresolved obligation or a
+    failed transfer each stop before retire with result FAIL and no destructive
+    step; with every precondition met, retire runs."""
+    global gates, close_old, capture, reconcile, transfer, retire, final
+    saved = (gates, close_old, capture, reconcile, transfer, retire, final, rh.write)
+    calls: list[str] = []
+    written: dict = {}
+    ok_gate = {"ok": True}
+
+    def scenario(capture_ok: bool, unresolved: bool, transfer_ok: bool) -> tuple[int, dict]:
+        global gates, close_old, capture, reconcile, transfer, retire, final
+        calls.clear()
+        gates = lambda a: {"p23Qualified": ok_gate, "p24aRehearsed": ok_gate, "authorization": ok_gate}  # noqa: E731
+        close_old = lambda execute: {"admissionClosed": True}  # noqa: E731
+        capture = lambda a, execute: {"verified": capture_ok}  # noqa: E731
+        reconcile = lambda a: {"unresolvedObligations": unresolved}  # noqa: E731
+        transfer = lambda a: {"ok": transfer_ok}  # noqa: E731
+
+        def fake_retire(execute: bool, a) -> dict:
+            calls.append(f"retire(execute={execute})")
+            return {"executed": execute, "actions": ["(fake)"]}
+        retire = fake_retire
+        final = lambda a: {"ok": True}  # noqa: E731
+        rh.write = lambda run, name, doc: written.update({name: doc}) or ROOT / "outputs/handover" / run / name  # type: ignore[assignment]
+        a = argparse.Namespace(run="SELFTEST", scope="anvilkit-local", authorized_by="self-test", authorization="none")
+        rc = procedure(a, "execute")
+        return rc, written.get("handover-execute.json", {})
+
+    cases = []
+    try:
+        import contextlib
+        import io
+        for name, args, want_retire in [("every precondition met", (True, False, True), True),
+                                        ("a failed capture", (False, False, True), False),
+                                        ("an unresolved obligation", (True, True, True), False),
+                                        ("a failed transfer", (True, False, False), False)]:
+            with contextlib.redirect_stdout(io.StringIO()):
+                rc, doc = scenario(*args)
+            retired = "retire(execute=True)" in calls
+            if want_retire:
+                ok = retired and rc == 0 and doc.get("result") == "PASS"
+            else:
+                ok = (not retired and rc == 1 and doc.get("result") == "FAIL"
+                      and doc["steps"]["retire"] == {"executed": False, "refusedBy": doc["steps"]["retire"]["refusedBy"]}
+                      and doc["checks"].get("retirePreconditions") is False)
+            cases.append((name, ok))
+    finally:
+        gates, close_old, capture, reconcile, transfer, retire, final, rh.write = saved
+    for name, ok in cases:
+        print(f"{'PASS' if ok else 'FAIL'}  self-test: execute with {name}: {'retire runs' if name.startswith('every') else 'stops before retire, FAIL, nothing destroyed'}")
+    failed = [n for n, ok in cases if not ok]
+    print(f"handover self-test: {len(cases) - len(failed)}/{len(cases)} PASS")
+    return 1 if failed else 0
+
+
 def main() -> int:
+    if sys.argv[1:] == ["--self-test"]:
+        return self_test()
     ap = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     sub = ap.add_subparsers(dest="mode", required=True)
     for mode in ("plan", "rehearse", "execute"):
