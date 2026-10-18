@@ -16,6 +16,13 @@ csi:
 # maintains, key ca.crt): the DSNs' sslrootcert names /etc/anvilkit/trust/ca.crt.
 trust:
   configMap: anvilkit-trust
+# P3.7: every migration Job is bounded. Retries cover a database that is
+# still starting in the same sync (each attempt's own lock waits are bounded
+# by the runner: lock_timeout 5 s retried 5 times, the advisory lock 5 min);
+# the deadline ends the Job whatever its attempts.
+job:
+  backoffLimit: 20
+  activeDeadlineSeconds: 1800
 domains:
   - {name: knowledge, secret: anvilkit-migration-knowledge}
   - {name: mcp, secret: anvilkit-migration-mcp}

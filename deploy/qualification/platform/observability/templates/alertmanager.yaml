@@ -1,0 +1,32 @@
+{{- /*
+The alert routing (P3.6): an AlertmanagerConfig the metrics stack's
+Alertmanager takes as its whole configuration (alertmanagerSpec.
+alertmanagerConfiguration), so no configuration Secret is rendered. ENV-10
+names the production receivers; their credentials are Secret references
+(OpenBao-synced), never values. Development receivers deliver nowhere: the
+alert-firing drill reads the routing from the Alertmanager API.
+*/ -}}
+{{- if not .Values.alerting.receivers }}{{ fail "alerting.receivers is required" }}{{ end }}
+apiVersion: monitoring.coreos.com/v1alpha1
+kind: AlertmanagerConfig
+metadata:
+  name: anvilkit
+  namespace: {{ .Values.alerting.namespace }}
+  labels:
+    release: {{ .Values.release }}
+    app.kubernetes.io/part-of: anvilkit
+spec:
+  route:
+    receiver: {{ .Values.alerting.defaultReceiver }}
+    groupBy: [alertname, severity]
+    groupWait: 30s
+    groupInterval: 5m
+    repeatInterval: 4h
+    routes:
+      {{- range .Values.alerting.routes }}
+      - receiver: {{ .receiver }}
+        matchers:
+          - {name: severity, value: {{ .severity | quote }}, matchType: "="}
+      {{- end }}
+  receivers:
+    {{- toYaml .Values.alerting.receivers | nindent 4 }}

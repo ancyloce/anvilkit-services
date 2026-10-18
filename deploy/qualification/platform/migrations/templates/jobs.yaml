@@ -72,7 +72,8 @@ metadata:
     argocd.argoproj.io/hook: Sync
     argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
 spec:
-  backoffLimit: 20
+  backoffLimit: {{ $.Values.job.backoffLimit }}
+  activeDeadlineSeconds: {{ $.Values.job.activeDeadlineSeconds }}
   template:
     spec:
       {{- include "anvilkit-migrations.pod" $ | nindent 6 }}
@@ -106,7 +107,8 @@ metadata:
     argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
     argocd.argoproj.io/sync-wave: "1"
 spec:
-  backoffLimit: 20
+  backoffLimit: {{ $.Values.job.backoffLimit }}
+  activeDeadlineSeconds: {{ $.Values.job.activeDeadlineSeconds }}
   template:
     spec:
       {{- include "anvilkit-migrations.pod" . | nindent 6 }}

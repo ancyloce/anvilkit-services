@@ -1,0 +1,51 @@
+# P3.7 (plan 0004): scheduled backups to the DR object store, one CronJob per
+# store, named anvilkit-backup-<store> and labelled anvilkit.io/backup=<store>
+# (the metrics stack's AnvilKitBackupStale reads their last successful run from
+# kube-state-metrics). PostgreSQL is backed up by CloudNativePG (the data
+# chart's ScheduledBackup and WAL archiving, its own age from the CNPG
+# collector); etcd by the distribution (RKE2's etcd-snapshot schedule with S3
+# upload on the target platform, ENV-01; the kind qualification cluster's etcd
+# only in restore-drills.py).
+#
+# Every credential comes from OpenBao at run time: the Job logs in with its own
+# ServiceAccount token (audience openbao) to the role anvilkit-backups, whose
+# policy reads kv/anvilkit/platform/backups and the raft snapshot endpoint and
+# nothing else (deploy/qualification/bootstrap.py OPENBAO_ROLES).
+
+# DEVELOPMENT_ONLY admits the plaintext DR endpoint of the qualification host
+# (outside development the chart refuses a DR URL that is not https).
+development: false
+schedules:
+  qdrant: "15 */6 * * *"
+  openbao: "30 */6 * * *"
+  objects: "45 */6 * * *"
+# Bounds of every run.
+job:
+  activeDeadlineSeconds: 3600
+  backoffLimit: 2
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+images:
+  curl: ""   # by digest (the probes chart's curl)
+  mc: ""     # by digest (the objects chart's mc)
+openbao:
+  address: https://openbao.anvilkit-platform.svc:8200
+  role: anvilkit-backups
+  kvPath: kv/data/anvilkit/platform/backups
+  audience: openbao
+qdrant:
+  url: https://anvilkit-qdrant.anvilkit-data.svc:6333
+objects:
+  url: https://anvilkit-objects.anvilkit-data.svc:9000
+  buckets: [anvilkit-artifacts, anvilkit-model-proxy, anvilkit-knowledge]
+dr:
+  url: ""
+  # Versioned and object-locked (deploy/qualification/bootstrap.py DR_BUCKETS):
+  # a writer's overwrite keeps the earlier version, a delete before the
+  # retention ends is refused.
+  snapshotsBucket: anvilkit-snapshots
+  objectsBucket: anvilkit-objects-replica
+# The data plane's CA bundle (key ca.crt): OpenBao, Qdrant and the object store
+# serve certificates of the environment's PKI.
+trust:
+  configMap: anvilkit-trust

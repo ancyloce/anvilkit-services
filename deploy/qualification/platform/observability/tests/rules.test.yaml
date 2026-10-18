@@ -1,0 +1,336 @@
+# promtool unit tests of the AnvilKit alerts (P3.6 AC2): each alert fires on its
+# injected condition with its labels, summary and runbook; healthy inputs raise
+# nothing. tests/check.sh renders the chart's rules and runs them.
+rule_files:
+- rules.yaml
+evaluation_interval: 1m
+tests:
+- name: API error ratio above the bound for 10 minutes
+  interval: 1m
+  input_series:
+  - series: anvilkit_api_requests_total{code="503",method="GET",route="/api/v1/operations"}
+    values: 0+10x40
+  - series: anvilkit_api_requests_total{code="200",method="GET",route="/api/v1/operations"}
+    values: 0+10x40
+  alert_rule_test:
+  - eval_time: 25m
+    alertname: AnvilKitAPIErrorRatioHigh
+    exp_alerts:
+    - exp_labels:
+        severity: critical
+      exp_annotations:
+        summary: More than 0.05 of public API responses are 5xx.
+        runbook_url: https://github.com/ancyloce/anvilkit-services/blob/main/docs/operations/runbooks/rollback.md
+- name: healthy traffic raises nothing
+  interval: 1m
+  input_series:
+  - series: anvilkit_api_requests_total{code="200",method="GET",route="/api/v1/operations"}
+    values: 0+10x40
+  - series: anvilkit_control_unresolved_obligation_oldest_seconds{class="dispatch",state="unknown"}
+    values: 100x40
+  - series: anvilkit_control_grpc_pool_in_use{pool="control"}
+    values: 2x40
+  - series: anvilkit_control_grpc_pool_limit{pool="control"}
+    values: 32x40
+  alert_rule_test:
+  - eval_time: 25m
+    alertname: AnvilKitAPIErrorRatioHigh
+    exp_alerts: []
+  - eval_time: 25m
+    alertname: AnvilKitUnresolvedObligationAgeHigh
+    exp_alerts: []
+  - eval_time: 25m
+    alertname: AnvilKitControlPoolSaturated
+    exp_alerts: []
+- name: API p95 above the bound
+  interval: 1m
+  input_series:
+  - series: anvilkit_api_request_duration_seconds_bucket{le="1",method="GET",route="/api/v1/operations/:operationId"}
+    values: 0+0x40
+  - series: anvilkit_api_request_duration_seconds_bucket{le="5",method="GET",route="/api/v1/operations/:operationId"}
+    values: 0+10x40
+  - series: anvilkit_api_request_duration_seconds_bucket{le="+Inf",method="GET",route="/api/v1/operations/:operationId"}
+    values: 0+10x40
+  alert_rule_test:
+  - eval_time: 25m
+    alertname: AnvilKitAPILatencyP95High
+    exp_alerts:
+    - exp_labels:
+        severity: warning
+      exp_annotations:
+        summary: The p95 of a public API route exceeds 2 s.
+        runbook_url: https://github.com/ancyloce/anvilkit-services/blob/main/docs/operations/runbooks/control-capacity.md
+- name: CAPACITY_EXHAUSTED refusals
+  interval: 1m
+  input_series:
+  - series: anvilkit_control_capacity_refusals_total{pool="control"}
+    values: 0+1x20
+  alert_rule_test:
+  - eval_time: 15m
+    alertname: AnvilKitControlCapacityExhausted
+    exp_alerts:
+    - exp_labels:
+        severity: warning
+        pool: control
+      exp_annotations:
+        summary: Control refuses RPCs with CAPACITY_EXHAUSTED in the control pool.
+        runbook_url: https://github.com/ancyloce/anvilkit-services/blob/main/docs/operations/runbooks/control-capacity.md
+- name: a saturated execution pool
+  interval: 1m
+  input_series:
+  - series: anvilkit_control_grpc_pool_in_use{pool="execution"}
+    values: 10x30
+  - series: anvilkit_control_grpc_pool_limit{pool="execution"}
+    values: 10x30
+  alert_rule_test:
+  - eval_time: 20m
+    alertname: AnvilKitControlPoolSaturated
+    exp_alerts:
+    - exp_labels:
+        severity: warning
+        pool: execution
+      exp_annotations:
+        summary: Control's execution pool is above 0.9 of its bound.
+        runbook_url: https://github.com/ancyloce/anvilkit-services/blob/main/docs/operations/runbooks/control-capacity.md
+- name: a relay lane backlog
+  interval: 1m
+  input_series:
+  - series: anvilkit_control_relay_backlog{lane="commands"}
+    values: 60x30
+  alert_rule_test:
+  - eval_time: 20m
+    alertname: AnvilKitRelayBacklog
+    exp_alerts:
+    - exp_labels:
+        severity: warning
+        lane: commands
+      exp_annotations:
+        summary: Control's commands relay lane holds 60 pending intents.
+        runbook_url: https://github.com/ancyloce/anvilkit-services/blob/main/docs/operations/runbooks/control-capacity.md
+- name: an old UNKNOWN dispatch
+  interval: 1m
+  input_series:
+  - series: anvilkit_control_unresolved_obligation_oldest_seconds{class="dispatch",state="unknown"}
+    values: 4000x20
+  alert_rule_test:
+  - eval_time: 10m
+    alertname: AnvilKitUnresolvedObligationAgeHigh
+    exp_alerts:
+    - exp_labels:
+        severity: critical
+        class: dispatch
+        state: unknown
+      exp_annotations:
+        summary: An unresolved dispatch obligation (unknown) is older than 3600 s.
+        runbook_url: https://github.com/ancyloce/anvilkit-services/blob/main/docs/operations/runbooks/unresolved-effect-age.md
+- name: PERMISSION_LOST and SENDER_LOST outcomes
+  interval: 1m
+  input_series:
+  - series: anvilkit_model_proxy_call_outcomes_total{outcome="unknown",error_code="PERMISSION_LOST"}
+    values: 0 1 1 1 1 1 1 1 1 1 1 1
+  - series: anvilkit_model_proxy_call_outcomes_total{outcome="unknown",error_code="SENDER_LOST"}
+    values: 0 2 2 2 2 2 2 2 2 2 2 2
+  alert_rule_test:
+  - eval_time: 10m
+    alertname: AnvilKitModelProxyUnknownOutcomes
+    exp_alerts:
+    - exp_labels:
+        severity: warning
+        error_code: PERMISSION_LOST
+      exp_annotations:
+        summary: Model calls ended UNKNOWN (PERMISSION_LOST) in the last 15 minutes.
+        runbook_url: https://github.com/ancyloce/anvilkit-services/blob/main/docs/operations/runbooks/unresolved-effect-age.md
+  - eval_time: 10m
+    alertname: AnvilKitModelProxySenderLost
+    exp_alerts:
+    - exp_labels:
+        severity: warning
+        error_code: SENDER_LOST
+      exp_annotations:
+        summary: Model Proxy sends were reclaimed as UNKNOWN/SENDER_LOST (a sender stopped mid-send).
+        runbook_url: https://github.com/ancyloce/anvilkit-services/blob/main/docs/operations/runbooks/proxy-fleet-restart.md
+- name: pending observations
+  interval: 1m
+  input_series:
+  - series: anvilkit_model_proxy_pending_observations
+    values: 3x60
+  alert_rule_test:
+  - eval_time: 40m
+    alertname: AnvilKitModelProxyPendingObservations
+    exp_alerts:
+    - exp_labels:
+        severity: warning
+      exp_annotations:
+        summary: Usage observations stay pending at Control for 30m.
+        runbook_url: https://github.com/ancyloce/anvilkit-services/blob/main/docs/operations/runbooks/proxy-fleet-restart.md
+- name: an old UNKNOWN tool call and a restriction
+  interval: 1m
+  input_series:
+  - series: anvilkit_mcp_tool_call_unknown_oldest_seconds
+    values: 4000x30
+  - series: anvilkit_mcp_recovery_restricted_servers
+    values: 2x30
+  alert_rule_test:
+  - eval_time: 20m
+    alertname: AnvilKitMCPUnknownCalls
+    exp_alerts:
+    - exp_labels:
+        severity: critical
+      exp_annotations:
+        summary: An MCP tool call has been UNKNOWN for more than 3600 s.
+        runbook_url: https://github.com/ancyloce/anvilkit-services/blob/main/docs/operations/runbooks/unresolved-effect-age.md
+  - eval_time: 20m
+    alertname: AnvilKitMCPRecoveryRestricted
+    exp_alerts:
+    - exp_labels:
+        severity: warning
+      exp_annotations:
+        summary: 2 (tenant, server) pairs refuse new tool calls (RECOVERY_RESTRICTED).
+        runbook_url: https://github.com/ancyloce/anvilkit-services/blob/main/docs/operations/runbooks/mcp-restriction.md
+- name: an old outbox row and an old queue job
+  interval: 1m
+  input_series:
+  - series: anvilkit_knowledge_outbox_oldest_unforwarded_seconds
+    values: 400x30
+  - series: anvilkit_background_queue_oldest_waiting_seconds{queue="anvilkit-knowledge"}
+    values: 700x30
+  alert_rule_test:
+  - eval_time: 20m
+    alertname: AnvilKitOutboxOldestAgeHigh
+    exp_alerts:
+    - exp_labels:
+        severity: warning
+        owner: knowledge
+      exp_annotations:
+        summary: knowledge's oldest unforwarded outbox row is older than 300 s.
+        runbook_url: https://github.com/ancyloce/anvilkit-services/blob/main/docs/operations/runbooks/async-backlog.md
+  - eval_time: 20m
+    alertname: AnvilKitQueueOldestAgeHigh
+    exp_alerts:
+    - exp_labels:
+        severity: warning
+        queue: anvilkit-knowledge
+      exp_annotations:
+        summary: The oldest waiting job of queue anvilkit-knowledge is older than 600 s.
+        runbook_url: https://github.com/ancyloce/anvilkit-services/blob/main/docs/operations/runbooks/async-backlog.md
+- name: overdue durable requests
+  interval: 1m
+  input_series:
+  - series: anvilkit_mcp_background_overdue_retries
+    values: 1x40
+  alert_rule_test:
+  - eval_time: 20m
+    alertname: AnvilKitDurableRequestDivergence
+    exp_alerts:
+    - exp_labels:
+        severity: warning
+      exp_annotations:
+        summary: Durable background requests and the queue disagree (overdue retries or inbox gaps).
+        runbook_url: https://github.com/ancyloce/anvilkit-services/blob/main/docs/operations/runbooks/async-backlog.md
+- name: failed index batches and projection lag
+  interval: 1m
+  input_series:
+  - series: anvilkit_knowledge_index_batches_total{outcome="failed"}
+    values: 0 1x30
+  - series: anvilkit_knowledge_memory_projection_lag_seconds
+    values: 1000x30
+  alert_rule_test:
+  - eval_time: 20m
+    alertname: AnvilKitKnowledgeIndexFailures
+    exp_alerts:
+    - exp_labels:
+        severity: warning
+      exp_annotations:
+        summary: Knowledge index batches failed or were quarantined in the last 30 minutes.
+        runbook_url: https://github.com/ancyloce/anvilkit-services/blob/main/docs/operations/runbooks/knowledge-rebuild.md
+  - eval_time: 20m
+    alertname: AnvilKitKnowledgeProjectionLag
+    exp_alerts:
+    - exp_labels:
+        severity: warning
+      exp_annotations:
+        summary: Memory projections lag or failed.
+        runbook_url: https://github.com/ancyloce/anvilkit-services/blob/main/docs/operations/runbooks/knowledge-rebuild.md
+- name: a rejected configuration generation and a forced stop
+  interval: 1m
+  input_series:
+  - series: anvilkit_mcp_config_rejections_total
+    values: 0 1x15
+  - series: anvilkit_mcp_shutdown_forced
+    values: 1x15
+  alert_rule_test:
+  - eval_time: 10m
+    alertname: AnvilKitConfigGenerationRejected
+    exp_alerts:
+    - exp_labels:
+        severity: warning
+      exp_annotations:
+        summary: A configuration generation (a rotated secret or snapshot) was rejected; the previous one stays active.
+        runbook_url: https://github.com/ancyloce/anvilkit-services/blob/main/docs/operations/runbooks/secret-rotation.md
+  - eval_time: 10m
+    alertname: AnvilKitForcedStop
+    exp_alerts:
+    - exp_labels:
+        severity: warning
+      exp_annotations:
+        summary: A replica's last shutdown had to force-stop in-flight work.
+        runbook_url: https://github.com/ancyloce/anvilkit-services/blob/main/docs/operations/runbooks/rollback.md
+- name: a target down
+  interval: 1m
+  input_series:
+  - series: up{namespace="anvilkit-apps",pod="anvilkit-agent-control-7d9f",job="anvilkit-apps/anvilkit-agent-control"}
+    values: '0x15'
+  alert_rule_test:
+  - eval_time: 8m
+    alertname: AnvilKitTargetDown
+    exp_alerts:
+    - exp_labels:
+        severity: critical
+        namespace: anvilkit-apps
+        pod: anvilkit-agent-control-7d9f
+        job: anvilkit-apps/anvilkit-agent-control
+      exp_annotations:
+        summary: anvilkit-agent-control-7d9f is not scraped.
+        runbook_url: https://github.com/ancyloce/anvilkit-services/blob/main/docs/operations/runbooks/rollback.md
+- name: a backup older than its bound and one that never succeeded
+  interval: 1m
+  input_series:
+  - series: kube_cronjob_status_last_successful_time{cronjob="anvilkit-backup-qdrant",namespace="anvilkit-data"}
+    values: '0x1700'
+  - series: kube_cronjob_status_last_schedule_time{cronjob="anvilkit-backup-qdrant",namespace="anvilkit-data"}
+    values: '0x1700'
+  - series: kube_cronjob_status_last_schedule_time{cronjob="anvilkit-backup-etcd",namespace="anvilkit-platform"}
+    values: 100x1700
+  alert_rule_test:
+  - eval_time: 27h
+    alertname: AnvilKitBackupStale
+    exp_alerts:
+    - exp_labels:
+        severity: critical
+        cronjob: anvilkit-backup-etcd
+      exp_annotations:
+        summary: The newest successful backup of anvilkit-backup-etcd is older than 93600 s, or it never succeeded.
+        runbook_url: https://github.com/ancyloce/anvilkit-services/blob/main/docs/operations/runbooks/recovery-epoch.md
+    - exp_labels:
+        severity: critical
+        cronjob: anvilkit-backup-qdrant
+      exp_annotations:
+        summary: The newest successful backup of anvilkit-backup-qdrant is older than 93600 s, or it never succeeded.
+        runbook_url: https://github.com/ancyloce/anvilkit-services/blob/main/docs/operations/runbooks/recovery-epoch.md
+- name: a PostgreSQL cluster whose newest base backup is older than the bound (P3.7)
+  interval: 1m
+  input_series:
+  - series: cnpg_collector_last_available_backup_timestamp{cluster="anvilkit-business",pod="anvilkit-business-1"}
+    values: '0x1700'
+  - series: cnpg_collector_last_available_backup_timestamp{cluster="anvilkit-temporal",pod="anvilkit-temporal-1"}
+    values: '0+60x1700'
+  alert_rule_test:
+  - eval_time: 27h
+    alertname: AnvilKitBackupStale
+    exp_alerts:
+    - exp_labels:
+        severity: critical
+        cronjob: anvilkit-backup-postgres-anvilkit-business
+      exp_annotations:
+        summary: The newest successful backup of anvilkit-backup-postgres-anvilkit-business is older than 93600 s, or it never succeeded.
+        runbook_url: https://github.com/ancyloce/anvilkit-services/blob/main/docs/operations/runbooks/recovery-epoch.md

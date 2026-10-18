@@ -1,0 +1,16 @@
+{{- /* The Grafana dashboards (P3.6): one ConfigMap each, discovered by the
+stack's dashboard sidecar through dashboardLabel. */ -}}
+{{- range $path, $_ := .Files.Glob "files/dashboards/*.json" }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ base $path | trimSuffix ".json" }}
+  namespace: {{ $.Values.alerting.namespace }}
+  labels:
+    {{ $.Values.dashboardLabel }}: "1"
+    app.kubernetes.io/part-of: anvilkit
+data:
+  {{ base $path }}: |
+    {{- $.Files.Get $path | nindent 4 }}
+{{- end }}

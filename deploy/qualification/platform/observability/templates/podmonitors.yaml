@@ -1,0 +1,68 @@
+{{- /* One PodMonitor per scraped endpoint of the eight services (P3.6). */ -}}
+{{- range .Values.scrape.targets }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: {{ printf "%s%s" .name (ternary (printf "-%s" .suffix) "" (not (empty .suffix))) }}
+  namespace: {{ $.Values.appsNamespace }}
+  labels:
+    release: {{ $.Values.release }}
+    app.kubernetes.io/part-of: anvilkit
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .name }}
+  podMetricsEndpoints:
+    - port: {{ .port }}
+      path: /metrics
+      interval: {{ $.Values.scrape.interval }}
+{{- end }}
+{{- if .Values.scrape.inference.enabled }}
+{{- if not .Values.scrape.inference.tlsSecret }}{{ fail "scrape.inference.tlsSecret is required: the monitoring client identity Inference accepts" }}{{ end }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: anvilkit-agent-inference
+  namespace: {{ .Values.appsNamespace }}
+  labels:
+    release: {{ .Values.release }}
+    app.kubernetes.io/part-of: anvilkit
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: anvilkit-agent-inference
+  podMetricsEndpoints:
+    - port: http
+      path: /metrics
+      scheme: https
+      interval: {{ .Values.scrape.interval }}
+      tlsConfig:
+        ca: {secret: {name: {{ .Values.scrape.inference.tlsSecret }}, key: ca.crt}}
+        cert: {secret: {name: {{ .Values.scrape.inference.tlsSecret }}, key: tls.crt}}
+        keySecret: {name: {{ .Values.scrape.inference.tlsSecret }}, key: tls.key}
+        serverName: anvilkit-agent-inference.{{ .Values.appsNamespace }}.svc
+{{- end }}
+{{- if .Values.scrape.postgres.enabled }}
+---
+# P3.7: CloudNativePG's instance metrics; the cluster label names the backup.
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: anvilkit-postgres
+  namespace: {{ .Values.scrape.postgres.namespace }}
+  labels:
+    release: {{ .Values.release }}
+    app.kubernetes.io/part-of: anvilkit
+spec:
+  selector:
+    matchExpressions:
+      - {key: cnpg.io/cluster, operator: In, values: {{ toJson .Values.scrape.postgres.clusters }}}
+  podMetricsEndpoints:
+    - port: metrics
+      path: /metrics
+      interval: {{ .Values.scrape.interval }}
+      relabelings:
+        - {sourceLabels: [__meta_kubernetes_pod_label_cnpg_io_cluster], targetLabel: cluster, action: replace}
+{{- end }}

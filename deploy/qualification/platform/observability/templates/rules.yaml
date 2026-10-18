@@ -1,0 +1,194 @@
+{{- /*
+The SLO recording rules and the alerts of P3.6 (platform.md "SLO inputs and
+measurements", DD-09 §6 handoff signals, the plan's operator signals). Every
+alert names its runbook (docs/operations/runbooks). The thresholds are the
+values' thresholds; outside development they must name their reviewed source.
+*/ -}}
+{{- if and (not .Values.development) (not .Values.thresholdsSource) }}
+{{- fail "thresholdsSource is required outside development: the ENV-05/ENV-09 input the alert thresholds come from (the defaults are DEVELOPMENT_ONLY)" }}
+{{- end }}
+{{- $t := .Values.thresholds }}
+{{- $rb := .Values.runbookBase }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: anvilkit
+  namespace: {{ .Values.appsNamespace }}
+  labels:
+    release: {{ .Values.release }}
+    app.kubernetes.io/part-of: anvilkit
+  annotations:
+    anvilkit.io/thresholds-source: {{ .Values.thresholdsSource | default "DEVELOPMENT_ONLY" | quote }}
+spec:
+  groups:
+    - name: anvilkit-slo
+      interval: 30s
+      rules:
+        # Admission/query availability and latency (SLO row 1): the public API.
+        - record: anvilkit:api_request_error_ratio:rate5m
+          expr: sum(rate(anvilkit_api_requests_total{code=~"5.."}[5m])) / clamp_min(sum(rate(anvilkit_api_requests_total[5m])), 1e-9)
+        - record: anvilkit:api_request_duration_seconds:p95_5m
+          expr: histogram_quantile(0.95, sum by (le, route) (rate(anvilkit_api_request_duration_seconds_bucket{route!~".*/events"}[5m])))
+        - record: anvilkit:control_rpc_duration_seconds:p95_5m
+          expr: histogram_quantile(0.95, sum by (le, method) (rate(anvilkit_control_rpc_duration_seconds_bucket[5m])))
+        # Capacity (DD-09 §6 pool utilization).
+        - record: anvilkit:control_grpc_pool_utilization
+          expr: max by (pool) (anvilkit_control_grpc_pool_in_use / clamp_min(anvilkit_control_grpc_pool_limit, 1))
+        - record: anvilkit:control_db_pool_utilization
+          expr: max(anvilkit_control_db_pool_acquired_connections / clamp_min(anvilkit_control_db_pool_max_connections, 1))
+        # Budget/cost consistency (SLO row 4): what Control has not settled yet;
+        # Prometheus is never the settlement authority.
+        - record: anvilkit:unresolved_obligation_oldest_seconds
+          expr: max by (class, state) (anvilkit_control_unresolved_obligation_oldest_seconds)
+        - record: anvilkit:model_proxy_unknown_outcomes:increase15m
+          expr: sum by (error_code) (increase(anvilkit_model_proxy_call_outcomes_total{outcome="unknown"}[15m]))
+        # Async/index freshness (SLO row 5).
+        - record: anvilkit:outbox_oldest_unforwarded_seconds
+          expr: max by (owner) (label_replace({__name__=~"anvilkit_(control|knowledge|mcp)_outbox_oldest_unforwarded_seconds"}, "owner", "$1", "__name__", "anvilkit_(control|knowledge|mcp)_outbox_oldest_unforwarded_seconds"))
+        - record: anvilkit:queue_oldest_waiting_seconds
+          expr: max by (queue) (anvilkit_background_queue_oldest_waiting_seconds)
+        - record: anvilkit:knowledge_projection_lag_seconds
+          expr: max(anvilkit_knowledge_memory_projection_lag_seconds)
+        # Recovery (SLO row 6): the age of the newest successful backup per store.
+        # PostgreSQL's base backups are CloudNativePG's (named anvilkit-backup-postgres-<cluster>).
+        - record: anvilkit:backup_age_seconds
+          expr: >-
+            max by (cronjob) (time() - kube_cronjob_status_last_successful_time{cronjob=~"anvilkit-backup-.*"})
+            or max by (cronjob) (label_replace(time() - cnpg_collector_last_available_backup_timestamp, "cronjob", "anvilkit-backup-postgres-$1", "cluster", "(.+)"))
+    - name: anvilkit-alerts
+      rules:
+        - alert: AnvilKitAPIErrorRatioHigh
+          expr: anvilkit:api_request_error_ratio:rate5m > {{ $t.apiErrorRatio }}
+          for: 10m
+          labels: {severity: critical}
+          annotations:
+            summary: "More than {{ $t.apiErrorRatio }} of public API responses are 5xx."
+            runbook_url: {{ printf "%s/rollback.md" $rb }}
+        - alert: AnvilKitAPILatencyP95High
+          expr: max(anvilkit:api_request_duration_seconds:p95_5m) > {{ $t.apiLatencyP95Seconds }}
+          for: 10m
+          labels: {severity: warning}
+          annotations:
+            summary: "The p95 of a public API route exceeds {{ $t.apiLatencyP95Seconds }} s."
+            runbook_url: {{ printf "%s/control-capacity.md" $rb }}
+        - alert: AnvilKitControlCapacityExhausted
+          expr: sum by (pool) (increase(anvilkit_control_capacity_refusals_total[5m])) > 0
+          for: 5m
+          labels: {severity: warning}
+          annotations:
+            summary: "Control refuses RPCs with CAPACITY_EXHAUSTED in the {{ "{{" }} $labels.pool {{ "}}" }} pool."
+            runbook_url: {{ printf "%s/control-capacity.md" $rb }}
+        - alert: AnvilKitControlPoolSaturated
+          expr: anvilkit:control_grpc_pool_utilization > {{ $t.controlPoolUtilization }} or label_replace(anvilkit:control_db_pool_utilization, "pool", "database", "", "") > {{ $t.controlPoolUtilization }}
+          for: 10m
+          labels: {severity: warning}
+          annotations:
+            summary: "Control's {{ "{{" }} $labels.pool {{ "}}" }} pool is above {{ $t.controlPoolUtilization }} of its bound."
+            runbook_url: {{ printf "%s/control-capacity.md" $rb }}
+        - alert: AnvilKitRelayBacklog
+          expr: max by (lane) (anvilkit_control_relay_backlog) >= {{ $t.relayBacklog }}
+          for: 10m
+          labels: {severity: warning}
+          annotations:
+            summary: "Control's {{ "{{" }} $labels.lane {{ "}}" }} relay lane holds {{ "{{" }} $value {{ "}}" }} pending intents."
+            runbook_url: {{ printf "%s/control-capacity.md" $rb }}
+        - alert: AnvilKitUnresolvedObligationAgeHigh
+          expr: anvilkit:unresolved_obligation_oldest_seconds > {{ $t.unresolvedObligationAgeSeconds }}
+          for: 5m
+          labels: {severity: critical}
+          annotations:
+            summary: "An unresolved {{ "{{" }} $labels.class {{ "}}" }} obligation ({{ "{{" }} $labels.state {{ "}}" }}) is older than {{ $t.unresolvedObligationAgeSeconds }} s."
+            runbook_url: {{ printf "%s/unresolved-effect-age.md" $rb }}
+        - alert: AnvilKitModelProxyUnknownOutcomes
+          expr: anvilkit:model_proxy_unknown_outcomes:increase15m{error_code!="SENDER_LOST"} > 0
+          labels: {severity: warning}
+          annotations:
+            summary: "Model calls ended UNKNOWN ({{ "{{" }} $labels.error_code {{ "}}" }}) in the last 15 minutes."
+            runbook_url: {{ printf "%s/unresolved-effect-age.md" $rb }}
+        - alert: AnvilKitModelProxySenderLost
+          expr: anvilkit:model_proxy_unknown_outcomes:increase15m{error_code="SENDER_LOST"} > 0
+          labels: {severity: warning}
+          annotations:
+            summary: "Model Proxy sends were reclaimed as UNKNOWN/SENDER_LOST (a sender stopped mid-send)."
+            runbook_url: {{ printf "%s/proxy-fleet-restart.md" $rb }}
+        - alert: AnvilKitModelProxyPendingObservations
+          expr: max(anvilkit_model_proxy_pending_observations) > 0
+          for: {{ $t.pendingObservationFor }}
+          labels: {severity: warning}
+          annotations:
+            summary: "Usage observations stay pending at Control for {{ $t.pendingObservationFor }}."
+            runbook_url: {{ printf "%s/proxy-fleet-restart.md" $rb }}
+        - alert: AnvilKitMCPUnknownCalls
+          expr: max(anvilkit_mcp_tool_call_unknown_oldest_seconds) > {{ $t.unresolvedObligationAgeSeconds }}
+          for: 5m
+          labels: {severity: critical}
+          annotations:
+            summary: "An MCP tool call has been UNKNOWN for more than {{ $t.unresolvedObligationAgeSeconds }} s."
+            runbook_url: {{ printf "%s/unresolved-effect-age.md" $rb }}
+        - alert: AnvilKitMCPRecoveryRestricted
+          expr: max(anvilkit_mcp_recovery_restricted_servers) > 0
+          for: 15m
+          labels: {severity: warning}
+          annotations:
+            summary: "{{ "{{" }} $value {{ "}}" }} (tenant, server) pairs refuse new tool calls (RECOVERY_RESTRICTED)."
+            runbook_url: {{ printf "%s/mcp-restriction.md" $rb }}
+        - alert: AnvilKitOutboxOldestAgeHigh
+          expr: anvilkit:outbox_oldest_unforwarded_seconds > {{ $t.outboxAgeSeconds }}
+          for: 5m
+          labels: {severity: warning}
+          annotations:
+            summary: "{{ "{{" }} $labels.owner {{ "}}" }}'s oldest unforwarded outbox row is older than {{ $t.outboxAgeSeconds }} s."
+            runbook_url: {{ printf "%s/async-backlog.md" $rb }}
+        - alert: AnvilKitQueueOldestAgeHigh
+          expr: anvilkit:queue_oldest_waiting_seconds > {{ $t.queueAgeSeconds }}
+          for: 10m
+          labels: {severity: warning}
+          annotations:
+            summary: "The oldest waiting job of queue {{ "{{" }} $labels.queue {{ "}}" }} is older than {{ $t.queueAgeSeconds }} s."
+            runbook_url: {{ printf "%s/async-backlog.md" $rb }}
+        - alert: AnvilKitDurableRequestDivergence
+          expr: max({__name__=~"anvilkit_(knowledge|mcp)_background_overdue_retries"}) > 0 or sum(increase(anvilkit_background_relay_inbox_gaps_total[15m])) > 0
+          for: 15m
+          labels: {severity: warning}
+          annotations:
+            summary: "Durable background requests and the queue disagree (overdue retries or inbox gaps)."
+            runbook_url: {{ printf "%s/async-backlog.md" $rb }}
+        - alert: AnvilKitKnowledgeIndexFailures
+          expr: sum(increase(anvilkit_knowledge_index_batches_total{outcome=~"failed|quarantined"}[30m])) > 0
+          labels: {severity: warning}
+          annotations:
+            summary: "Knowledge index batches failed or were quarantined in the last 30 minutes."
+            runbook_url: {{ printf "%s/knowledge-rebuild.md" $rb }}
+        - alert: AnvilKitKnowledgeProjectionLag
+          expr: anvilkit:knowledge_projection_lag_seconds > {{ $t.projectionLagSeconds }} or max(anvilkit_knowledge_memory_projections_failed) > 0
+          for: 10m
+          labels: {severity: warning}
+          annotations:
+            summary: "Memory projections lag or failed."
+            runbook_url: {{ printf "%s/knowledge-rebuild.md" $rb }}
+        - alert: AnvilKitConfigGenerationRejected
+          expr: sum(increase({__name__=~"anvilkit_(knowledge|mcp)_config_rejections_total"}[15m])) > 0
+          labels: {severity: warning}
+          annotations:
+            summary: "A configuration generation (a rotated secret or snapshot) was rejected; the previous one stays active."
+            runbook_url: {{ printf "%s/secret-rotation.md" $rb }}
+        - alert: AnvilKitForcedStop
+          expr: max({__name__=~"anvilkit_.*_shutdown_forced"}) == 1
+          labels: {severity: warning}
+          annotations:
+            summary: "A replica's last shutdown had to force-stop in-flight work."
+            runbook_url: {{ printf "%s/rollback.md" $rb }}
+        - alert: AnvilKitTargetDown
+          expr: up{namespace={{ .Values.appsNamespace | quote }}} == 0
+          for: 5m
+          labels: {severity: critical}
+          annotations:
+            summary: "{{ "{{" }} $labels.pod {{ "}}" }} is not scraped."
+            runbook_url: {{ printf "%s/rollback.md" $rb }}
+        - alert: AnvilKitBackupStale
+          expr: anvilkit:backup_age_seconds > {{ $t.backupMaxAgeSeconds }} or max by (cronjob) (kube_cronjob_status_last_schedule_time{cronjob=~"anvilkit-backup-.*"}) unless max by (cronjob) (kube_cronjob_status_last_successful_time{cronjob=~"anvilkit-backup-.*"})
+          for: 10m
+          labels: {severity: critical}
+          annotations:
+            summary: "The newest successful backup of {{ "{{" }} $labels.cronjob {{ "}}" }} is older than {{ $t.backupMaxAgeSeconds }} s, or it never succeeded."
+            runbook_url: {{ printf "%s/recovery-epoch.md" $rb }}

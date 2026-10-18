@@ -28,6 +28,15 @@ data:
     mc admin policy attach store {{ .name }} --user "${{ .user }}_ACCESS_KEY_ID" >/dev/null 2>&1 || true
     echo "bucket {{ .name }} ready"
     {{- end }}
+    {{- range .Values.readers }}
+    cat > /tmp/{{ .name }}.json <<'POLICY'
+    {"Version": "2012-10-17", "Statement": [{"Effect": "Allow", "Action": {{ toJson .actions }}, "Resource": [{{ range $i, $b := .buckets }}{{ if $i }}, {{ end }}"arn:aws:s3:::{{ $b }}", "arn:aws:s3:::{{ $b }}/*"{{ end }}]}]}
+    POLICY
+    mc admin policy create store {{ .name }} /tmp/{{ .name }}.json >/dev/null
+    mc admin user info store "${{ .user }}_ACCESS_KEY_ID" >/dev/null 2>&1 || mc admin user add store "${{ .user }}_ACCESS_KEY_ID" "${{ .user }}_SECRET_ACCESS_KEY" >/dev/null
+    mc admin policy attach store {{ .name }} --user "${{ .user }}_ACCESS_KEY_ID" >/dev/null 2>&1 || true
+    echo "reader {{ .name }} ready"
+    {{- end }}
 ---
 apiVersion: batch/v1
 kind: Job

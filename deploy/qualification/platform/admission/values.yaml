@@ -1,8 +1,21 @@
-# The registry every anvilkit-apps image must come from, by digest.
+# The registry every image of the listed namespaces must come from, by digest.
 registry: anvilkit-dev-registry:5000
+# The namespaces whose Pods run only release-signed images (P3.2): the
+# applications and, once their images are mirrored and signed (PLATFORM in
+# tools/release-artifacts.py), the platform, data and observability namespaces.
+namespaces: [anvilkit-apps, anvilkit-platform, anvilkit-data, anvilkit-observability]
 # The release signing key's public half (tools/release-artifacts.py writes it to the
-# release manifest's directory). Supplied by the environment; DEVELOPMENT_ONLY until
-# ENV-10 names the key custody.
+# release manifest's directory), or the release workflow's keyless identity
+# ({issuer, subject} of .github/workflows/release.yml on a tag).
 publicKey: ""
-# The development registry serves plain HTTP.
-allowInsecureRegistry: true
+keyless:
+  identities: []
+# The transparency log (Rekor) the signatures are verified against; empty: the
+# public Sigstore instance.
+rekorURL: ""
+# DEVELOPMENT_ONLY switches: a development key signs without a transparency log
+# and the development registry serves plain HTTP. Refused unless development.
+development: false
+insecureIgnoreTlog: false
+insecureIgnoreSCT: false
+allowInsecureRegistry: false

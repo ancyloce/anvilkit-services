@@ -1,0 +1,81 @@
+# The AnvilKit signals on kube-prometheus-stack (E07), P3.6 of plan 0004.
+# The stack itself (Prometheus Operator, Prometheus, Alertmanager, Grafana),
+# Loki (E08) and Tempo (E09) are upstream charts of the environment's
+# combination; this chart adds what is AnvilKit's: which Pods are scraped,
+# the recording rules and alerts, and the dashboards.
+
+# The namespace of the eight services' Pods.
+appsNamespace: anvilkit-apps
+# The label the kube-prometheus-stack instance selects rules and monitors by
+# (its ruleSelector / podMonitorSelector).
+release: anvilkit-metrics
+# Every alert links its runbook (docs/operations/runbooks/<name>.md) under
+# this base: the parent repository's tree at the environment's release.
+runbookBase: https://github.com/ancyloce/anvilkit-services/blob/main/docs/operations/runbooks
+
+# The alert thresholds. platform.md names the measurements, never invented
+# targets: the SLO and freshness bounds are ENV-05/ENV-09 inputs. The
+# defaults are DEVELOPMENT_ONLY placement values (each the order of magnitude
+# the development foundation and the qualification drills showed), and a
+# non-development render refuses them until thresholdsSource names the
+# reviewed input they came from.
+development: false
+thresholdsSource: ""
+thresholds:
+  apiErrorRatio: 0.05            # share of 5xx public responses over 5m
+  apiLatencyP95Seconds: 2        # p95 of the non-streaming public routes over 5m
+  controlPoolUtilization: 0.9    # held / bound of a gRPC capacity pool or the DB pool
+  relayBacklog: 50               # pending intents of one relay lane, sustained
+  unresolvedObligationAgeSeconds: 3600   # oldest UNKNOWN/permitted obligation (DD-02)
+  pendingObservationFor: 30m     # usage observations pending at Control
+  outboxAgeSeconds: 300          # oldest unforwarded outbox row
+  queueAgeSeconds: 600           # oldest waiting BullMQ job
+  projectionLagSeconds: 900      # oldest memory projection not yet accepted
+  backupMaxAgeSeconds: 93600     # 26 h: a daily backup missed (ENV-09)
+
+# Which endpoint of each service is scraped: the container port name and the
+# path (the services serve /metrics on their probe listener, Control and the
+# API on a separate metrics listener).
+scrape:
+  interval: 30s
+  # P3.7: the CloudNativePG instances' metrics (port metrics, 9187): the age of
+  # each cluster's newest base backup (cnpg_collector_last_available_backup_timestamp).
+  postgres:
+    enabled: true
+    namespace: anvilkit-data
+    clusters: [anvilkit-business, anvilkit-temporal]
+  targets:
+    - {name: anvilkit-agent-api, port: metrics}
+    - {name: anvilkit-agent-control, port: metrics}
+    - {name: anvilkit-agent-workflow, port: health}
+    - {name: anvilkit-agent-model-proxy, port: health}
+    - {name: anvilkit-agent-knowledge, port: health}
+    - {name: anvilkit-agent-knowledge, port: fwd-health, suffix: forwarder}
+    - {name: anvilkit-agent-knowledge, port: relay-health, suffix: relay}
+    - {name: anvilkit-agent-mcp, port: health}
+    - {name: anvilkit-agent-mcp, port: relay-health, suffix: relay}
+    - {name: anvilkit-agent-background-worker, port: health}
+  # Inference serves /metrics only on its TLS business listener with client
+  # certificates: scraping it needs a monitoring workload identity
+  # (inference.tlsSecret: a Secret with ca.crt, tls.crt, tls.key).
+  inference:
+    enabled: false
+    tlsSecret: ""
+
+# Grafana discovers the dashboards' ConfigMaps by this label (the stack's
+# grafana.sidecar.dashboards.label).
+dashboardLabel: grafana_dashboard
+
+# The alert routing (an AlertmanagerConfig in the metrics stack's namespace):
+# by severity to a receiver. ENV-10 supplies the production receivers (with
+# Secret references for their credentials); the development receivers below
+# deliver nowhere.
+alerting:
+  namespace: anvilkit-observability
+  defaultReceiver: anvilkit-development
+  routes:
+    - {severity: critical, receiver: anvilkit-development-critical}
+    - {severity: warning, receiver: anvilkit-development}
+  receivers:
+    - name: anvilkit-development
+    - name: anvilkit-development-critical

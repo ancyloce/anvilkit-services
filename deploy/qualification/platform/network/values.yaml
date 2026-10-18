@@ -55,6 +55,12 @@ components:
   # P2.5: the MCP connection layer of discovery (deploy/qualification/platform/contextforge).
   contextforge: {namespace: anvilkit-platform, selector: {app.kubernetes.io/name: contextforge}}
   collector: {namespace: anvilkit-observability, selector: {app.kubernetes.io/name: opentelemetry-collector}}
+  # P3.6: the metrics stack (kube-prometheus-stack): Prometheus scrapes the
+  # services' metrics listeners; kube-state-metrics reads the API server.
+  prometheus: {namespace: anvilkit-observability, selector: {app.kubernetes.io/name: prometheus}}
+  kubeStateMetrics: {namespace: anvilkit-observability, selector: {app.kubernetes.io/name: kube-state-metrics}}
+  # P3.7: the scheduled backup Jobs (deploy/qualification/platform/backups).
+  backupJobs: {namespace: anvilkit-platform, selector: {app.kubernetes.io/name: anvilkit-backups}}
   cnpgOperator: {namespace: cnpg-system, selector: {app.kubernetes.io/name: cloudnative-pg}, external: true}
 
 # Addresses outside the cluster, by CIDR (ENV-03). Empty admits nothing.
@@ -152,10 +158,18 @@ flows:
   - {from: cnpgOperator, to: postgresTemporal, ports: [8000, 5432]}
   - {from: postgresBusiness, toExternal: kubernetesAPI}
   - {from: postgresTemporal, toExternal: kubernetesAPI}
+  # P3.7: the scheduled backups read Qdrant's snapshots, OpenBao's raft
+  # snapshot (and log in there), the object store's buckets, and write the
+  # DR store.
+  - {from: backupJobs, to: qdrant, ports: [6333]}
+  - {from: backupJobs, to: openbao, ports: [8200]}
+  - {from: backupJobs, to: objects, ports: [9000]}
+  - {from: backupJobs, toExternal: backups}
   - {from: postgresBusiness, toExternal: backups}
   - {from: postgresTemporal, toExternal: backups}
-  # Telemetry: OTLP from the services to the Collector, its scrape of the
-  # metrics listeners and its Kubernetes attributes.
+  # Telemetry: OTLP from the services to the Collector and its Kubernetes
+  # attributes; since P3.6 Prometheus scrapes the metrics listeners (the
+  # Collector exports traces and logs to Tempo and Loki inside the namespace).
   - {from: api, to: collector, ports: [4317, 4318]}
   - {from: control, to: collector, ports: [4317, 4318]}
   - {from: workflow, to: collector, ports: [4317, 4318]}
@@ -164,9 +178,19 @@ flows:
   - {from: mcp, to: collector, ports: [4317, 4318]}
   - {from: backgroundWorker, to: collector, ports: [4317, 4318]}
   - {from: inference, to: collector, ports: [4317, 4318]}
-  - {from: collector, to: api, ports: [9464]}
-  - {from: collector, to: control, ports: [9464]}
   - {from: collector, toExternal: kubernetesAPI}
+  - {from: prometheus, to: api, ports: [9464]}
+  - {from: prometheus, to: control, ports: [9464]}
+  - {from: prometheus, to: workflow, ports: [9102]}
+  - {from: prometheus, to: modelProxy, ports: [9104]}
+  - {from: prometheus, to: knowledge, ports: [9115, 9125, 9126]}
+  - {from: prometheus, to: mcp, ports: [9116, 9126]}
+  - {from: prometheus, to: backgroundWorker, ports: [9127]}
+  # P3.7: CloudNativePG's instance metrics (backup age).
+  - {from: prometheus, to: postgresBusiness, ports: [9187]}
+  - {from: prometheus, to: postgresTemporal, ports: [9187]}
+  - {from: prometheus, toExternal: kubernetesAPI}
+  - {from: kubeStateMetrics, toExternal: kubernetesAPI}
   # P0.6: OpenBao's Kubernetes auth method reviews the CSI provider's
   # ServiceAccount tokens (TokenReview).
   - {from: openbao, toExternal: kubernetesAPI}

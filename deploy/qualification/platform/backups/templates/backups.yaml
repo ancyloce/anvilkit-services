@@ -1,0 +1,79 @@
+{{- include "anvilkit-backups.check" . }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: anvilkit-backups
+  labels:
+    {{- include "anvilkit-backups.labels" . | nindent 4 }}
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: anvilkit-backups-scripts
+  labels:
+    {{- include "anvilkit-backups.labels" . | nindent 4 }}
+data:
+  # The fetch step (curl): log in to OpenBao with the Pod's ServiceAccount token,
+  # read this run's credentials, and take the store's snapshot. Values are
+  # written to /work (memory) and never echoed.
+  fetch.sh: |
+    set -eu
+    umask 077
+    CA=/etc/anvilkit/trust/ca.crt
+    field() { sed -n "s/.*\"$1\":\"\([^\"]*\)\".*/\1/p"; }
+    JWT=$(cat /var/run/secrets/openbao/token)
+    TOKEN=$(curl -sSf --cacert "$CA" -X POST "$OPENBAO_ADDR/v1/auth/kubernetes/login" \
+      -d "{\"role\":\"$OPENBAO_ROLE\",\"jwt\":\"$JWT\"}" | field client_token)
+    [ -n "$TOKEN" ] || { echo "OpenBao login refused" >&2; exit 1; }
+    KV=$(curl -sSf --cacert "$CA" -H "X-Vault-Token: $TOKEN" "$OPENBAO_ADDR/v1/$OPENBAO_KV")
+    {
+      printf 'DR_ACCESS_KEY=%s\n' "$(printf '%s' "$KV" | field dr-access-key-id)"
+      printf 'DR_SECRET_KEY=%s\n' "$(printf '%s' "$KV" | field dr-secret-access-key)"
+      printf 'OBJECTS_ACCESS_KEY=%s\n' "$(printf '%s' "$KV" | field objects-access-key-id)"
+      printf 'OBJECTS_SECRET_KEY=%s\n' "$(printf '%s' "$KV" | field objects-secret-access-key)"
+    } > /work/creds.env
+    mkdir -p /work/snap
+    case "$1" in
+      qdrant)
+        KEY=$(printf '%s' "$KV" | field qdrant-api-key)
+        for c in $(curl -sSf --cacert "$CA" -H "api-key: $KEY" "$QDRANT_URL/collections" | sed 's/"name":"/\n/g' | sed -n '2,$s/".*//p'); do
+          SNAP=$(curl -sSf --cacert "$CA" -H "api-key: $KEY" -X POST "$QDRANT_URL/collections/$c/snapshots?wait=true" | field name)
+          curl -sSf --cacert "$CA" -H "api-key: $KEY" -o "/work/snap/$c--$SNAP" "$QDRANT_URL/collections/$c/snapshots/$SNAP"
+          curl -sSf --cacert "$CA" -H "api-key: $KEY" -X DELETE "$QDRANT_URL/collections/$c/snapshots/$SNAP" >/dev/null
+          echo "qdrant collection $c snapshotted"
+        done ;;
+      openbao)
+        curl -sSf --cacert "$CA" -H "X-Vault-Token: $TOKEN" -o /work/snap/openbao.snap "$OPENBAO_ADDR/v1/sys/storage/raft/snapshot"
+        echo "openbao raft snapshot taken" ;;
+      objects) : ;;
+      *) echo "unknown store $1" >&2; exit 2 ;;
+    esac
+    curl -sS --cacert "$CA" -H "X-Vault-Token: $TOKEN" -X POST "$OPENBAO_ADDR/v1/auth/token/revoke-self" >/dev/null || true
+  # The upload step (mc): snapshots under <store>/<UTC time>/ of the snapshots
+  # bucket; the object store's buckets mirrored into the replica bucket (no
+  # deletion is propagated; versions and object lock keep what was written).
+  upload.sh: |
+    set -eu
+    . /work/creds.env
+    mkdir -p "$MC_CONFIG_DIR/certs/CAs" && cp /etc/anvilkit/trust/ca.crt "$MC_CONFIG_DIR/certs/CAs/ca.crt"
+    mc alias set dr "$DR_URL" "$DR_ACCESS_KEY" "$DR_SECRET_KEY" >/dev/null
+    STAMP=$(date -u +%Y%m%dT%H%M%SZ)
+    case "$1" in
+      qdrant|openbao)
+        n=$(ls /work/snap | wc -l)
+        [ "$n" -gt 0 ] || { echo "no snapshot was taken" >&2; exit 1; }
+        mc cp --recursive /work/snap/ "dr/$DR_SNAPSHOTS/$1/$STAMP/" >/dev/null
+        echo "$1: $n snapshot file(s) uploaded to $DR_SNAPSHOTS/$1/$STAMP" ;;
+      objects)
+        mc alias set store "$OBJECTS_URL" "$OBJECTS_ACCESS_KEY" "$OBJECTS_SECRET_KEY" >/dev/null
+        for b in $OBJECTS_BUCKETS; do
+          mc mirror --preserve --quiet "store/$b" "dr/$DR_OBJECTS/$b" >/dev/null
+          echo "objects: $b mirrored"
+        done ;;
+    esac
+    rm -f /work/creds.env
+{{- range $store := list "qdrant" "openbao" "objects" }}
+---
+{{ include "anvilkit-backups.cronjob" (dict "root" $ "store" $store) }}
+{{- end }}
