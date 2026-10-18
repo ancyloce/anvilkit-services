@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """The P23 qualification record (P23-11): every piece of evidence bound in one file.
 
-  .local/verification-venv/bin/python deploy/qualification/record.py --run RUN [--earlier RUN ...]
+  .local/verification-venv/bin/python deploy/qualification/record.py --run RUN [--earlier RUN ...] [--environment NAME]
+  .local/verification-venv/bin/python deploy/qualification/record.py --self-test
 
 Reads the evidence the P23 tools wrote under outputs/qualification/<RUN>/ (and, for
 evidence not repeated there, under the --earlier runs, newest first): the release
@@ -17,6 +18,17 @@ SLO/RPO/RTO values of this placement, and the gates: G-13 and G-14 stay NOT_RUN 
 ENV-01..10 are absent, whatever the drills showed; G-13 binds P24a's newest handover
 rehearsal record (outputs/handover/<RUN>/handover-rehearsal.json) and carries its blockers. Exit 0 when the
 record was written (its content states what passed), 2 when RUN has no release manifest.
+
+Binding (P3.2): evidence counts for this record only when it was produced against this
+run's release and environment: a drill or restore whose environmentRevision differs from
+the environment chart this run published, or an admission/telemetry file of another run,
+is STALE (with the revision it names), never PASS, even when it is found under --earlier.
+Evidence that names no binding and was found only in an earlier run is STALE as well.
+The record's status is derived (P3.8): QUALIFIED only when the environment is not a
+development placement, every ENV-01..10 input is SUPPLIED and every gate G-01..G-14 is
+PASS; NOT_QUALIFIED with the failing or missing items otherwise (DEVELOPMENT_ONLY for a
+development placement). --self-test proves the binding and the derivation on synthetic
+runs.
 """
 from __future__ import annotations
 
@@ -29,6 +41,7 @@ import subprocess
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
+OUT_ROOT = ROOT / "outputs/qualification"
 PY = str(ROOT / ".local/verification-venv/bin/python")
 P22_INVENTORY = ROOT / "outputs/evaluations/20261001T051455Z/inventory.json"
 P22_REPORT = ROOT / "outputs/evaluations/20261001T051455Z/report.json"
@@ -53,22 +66,47 @@ def sha(path: pathlib.Path) -> str:
 
 
 def rel(path: pathlib.Path) -> str:
-    return str(path.relative_to(ROOT))
+    return str(path.relative_to(ROOT)) if path.is_relative_to(ROOT) else str(path)
 
 
 def find(runs: list[str], *parts: str) -> pathlib.Path | None:
     for run in runs:
-        p = ROOT / "outputs/qualification" / run / pathlib.Path(*parts)
+        p = OUT_ROOT / run / pathlib.Path(*parts)
         if p.exists():
             return p
     return None
+
+
+BINDING: dict = {"run": None, "environmentRevision": None}
+
+
+def staleness(doc: dict, found_in: str) -> str | None:
+    """Why evidence does not belong to this record's release and environment (P3.2)."""
+    rev, want_rev = doc.get("environmentRevision"), BINDING["environmentRevision"]
+    if rev is not None:
+        if want_rev is None:
+            return f"produced against environment {rev}; this run published no environment chart"
+        return None if rev == want_rev else f"produced against environment {rev}, this run's environment is {want_rev}"
+    if doc.get("run") is not None:
+        return None if doc["run"] == BINDING["run"] else f"produced by run {doc['run']}, not {BINDING['run']}"
+    return None if found_in == BINDING["run"] else f"found under run {found_in} and bound to no release or environment"
 
 
 def evidence(runs: list[str], *parts: str) -> tuple[dict | None, dict]:
     p = find(runs, *parts)
     if not p:
         return None, {"status": "NOT_RUN", "reason": f"no {'/'.join(parts)} in runs {runs}"}
-    return json.loads(p.read_text()), {"path": rel(p), "sha256": sha(p)}
+    doc = json.loads(p.read_text())
+    ref = {"path": rel(p), "sha256": sha(p)}
+    why = staleness(doc, p.relative_to(OUT_ROOT).parts[0]) if isinstance(doc, dict) else None
+    if why:
+        ref.update({"stale": why})
+    return doc, ref
+
+
+def bound(status: str, ref: dict) -> str:
+    """A result recorded against another release or environment is STALE, never PASS."""
+    return "STALE" if ref.get("stale") and status not in ("NOT_RUN",) else status
 
 
 def g13(record: dict) -> dict:
@@ -97,7 +135,7 @@ def pitr(runs: list[str]) -> dict:
     failures, so an intermittent past is never presented as a pass."""
     groups = []
     for run in runs:
-        base = ROOT / "outputs/qualification" / run
+        base = OUT_ROOT / run
         for d in sorted(base.glob("pitr*")) if base.exists() else []:
             if not d.is_dir():
                 continue
@@ -145,7 +183,7 @@ def memory_pitr(runs: list[str]) -> dict:
     (the clock-step fix). The status is the newest group's."""
     groups = []
     for run in runs:
-        base = ROOT / "outputs/qualification" / run
+        base = OUT_ROOT / run
         for d in sorted(base.glob("memory-pitr*")) if base.exists() else []:
             if not d.is_dir():
                 continue
@@ -184,24 +222,103 @@ def lock_check() -> dict:
             "summary": (p.stdout.strip().splitlines() or [""])[-1], "lock": rel(ROOT / "deploy/gitops/lock.yaml"), "lockSha256": sha(ROOT / "deploy/gitops/lock.yaml")}
 
 
+def derive_status(record: dict, development: bool) -> str:
+    """QUALIFIED only on a non-development placement with every ENV input SUPPLIED and
+    every gate PASS (P3.8); otherwise the reasons, never a hard-coded verdict."""
+    gates = record.get("gates") or {}
+    missing_gates = sorted(g for g in (f"G-{i:02d}" for i in range(1, 15)) if (gates.get(g) or {}).get("status") != "PASS")
+    missing_env = sorted(k for k, v in (record.get("envInputs") or {}).items() if v.get("status") != "SUPPLIED")
+    if not development and not missing_gates and not missing_env and len(record.get("envInputs") or {}) == 10:
+        return "QUALIFIED"
+    reasons = ([f"gates not PASS: {', '.join(missing_gates)}"] if missing_gates else []) + ([f"ENV inputs not SUPPLIED: {', '.join(missing_env)}"] if missing_env else [])
+    return f"{'DEVELOPMENT_ONLY' if development else 'NOT_QUALIFIED'} ({'; '.join(reasons) or 'development placement'})"
+
+
+def self_test() -> int:
+    """P3.2 AC3 and P3.8 AC6 on synthetic runs: evidence from another release or
+    environment is STALE, never PASS; the status derives from gates and ENV inputs."""
+    import tempfile
+    global OUT_ROOT
+    saved = OUT_ROOT
+    cases = []
+    with tempfile.TemporaryDirectory(prefix="record-selftest-") as tmp:
+        OUT_ROOT = pathlib.Path(tmp)
+        for run, revision in (("new", "0.1.0-qualification.new"), ("old", "0.1.0-qualification.old")):
+            (OUT_ROOT / run / "drills").mkdir(parents=True)
+            (OUT_ROOT / run / "drills" / "broker.json").write_text(json.dumps({"environmentRevision": revision, "checks": {"ok": True}}))
+        (OUT_ROOT / "old" / "drills" / "storage.json").write_text(json.dumps({"environmentRevision": "0.1.0-qualification.old", "checks": {"ok": True}}))
+        (OUT_ROOT / "old" / "admission").mkdir()
+        (OUT_ROOT / "old" / "admission" / "admission.json").write_text(json.dumps({"run": "old", "cases": [{"case": "x", "pass": True}]}))
+        (OUT_ROOT / "old" / "unbound.json").write_text(json.dumps({"checks": {"ok": True}}))
+        BINDING.update({"run": "new", "environmentRevision": "0.1.0-qualification.new"})
+        doc, ref = evidence(["new", "old"], "drills", "broker.json")
+        cases.append(("evidence of this run's environment is PASS", bound(checks_status(doc.get("checks")), ref) == "PASS"))
+        doc, ref = evidence(["new", "old"], "drills", "storage.json")
+        cases.append(("a drill of an earlier environment revision is STALE", bound(checks_status(doc.get("checks")), ref) == "STALE"))
+        doc, ref = evidence(["new", "old"], "admission", "admission.json")
+        cases.append(("admission evidence of another run is STALE", bound("PASS", ref) == "STALE"))
+        doc, ref = evidence(["new", "old"], "unbound.json")
+        cases.append(("unbound evidence found only in an earlier run is STALE", bound("PASS", ref) == "STALE"))
+        BINDING.update({"environmentRevision": None})
+        doc, ref = evidence(["new"], "drills", "broker.json")
+        cases.append(("a drill when this run published no environment is STALE", bound("PASS", ref) == "STALE"))
+    OUT_ROOT = saved
+    all_pass = {f"G-{i:02d}": {"status": "PASS"} for i in range(1, 15)}
+    supplied = {f"ENV-{i:02d}": {"status": "SUPPLIED"} for i in range(1, 11)}
+    cases.append(("every gate PASS and every input SUPPLIED on a production placement is QUALIFIED",
+                  derive_status({"gates": all_pass, "envInputs": supplied}, False) == "QUALIFIED"))
+    cases.append(("one gate NOT_RUN is NOT_QUALIFIED", derive_status({"gates": {**all_pass, "G-14": {"status": "NOT_RUN"}}, "envInputs": supplied}, False).startswith("NOT_QUALIFIED")))
+    cases.append(("one input REQUIRED is NOT_QUALIFIED", derive_status({"gates": all_pass, "envInputs": {**supplied, "ENV-10": {"status": "REQUIRED"}}}, False).startswith("NOT_QUALIFIED")))
+    cases.append(("a development placement is never QUALIFIED", derive_status({"gates": all_pass, "envInputs": supplied}, True).startswith("DEVELOPMENT_ONLY")))
+    failures = [n for n, ok in cases if not ok]
+    for n, ok in cases:
+        print(f"{'PASS' if ok else 'FAIL':<5} self-test: {n}")
+    print(f"record self-test: {len(cases) - len(failures)}/{len(cases)} PASS")
+    return 1 if failures else 0
+
+
+def env_inputs(environment: str) -> dict:
+    """ENV-01..10 as the environment's inputs file states them (deploy/gitops/environments/
+    <environment>.inputs.yaml: {ENV-nn: {status: SUPPLIED, evidence: ...}}), REQUIRED otherwise."""
+    supplied = {}
+    path = ROOT / "deploy/gitops/environments" / f"{environment}.inputs.yaml"
+    if path.exists():
+        import yaml
+        supplied = yaml.safe_load(path.read_text()) or {}
+    return {k: {"status": "SUPPLIED" if (supplied.get(k) or {}).get("status") == "SUPPLIED" and (supplied.get(k) or {}).get("evidence") else "REQUIRED",
+                "scope": v, **({"evidence": supplied[k]["evidence"]} if (supplied.get(k) or {}).get("evidence") else {})} for k, v in ENV_INPUTS.items()}
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--run", required=True)
+    ap.add_argument("--run")
     ap.add_argument("--earlier", action="append", default=[], help="earlier runs whose evidence this record also binds (newest first)")
+    ap.add_argument("--environment", default="qualification", help="the combination the run published (deploy/gitops/environments/<name>.yaml)")
+    ap.add_argument("--self-test", action="store_true", help="prove the binding and status rules on synthetic runs and exit")
     a = ap.parse_args()
+    if a.self_test:
+        return self_test()
+    if not a.run:
+        ap.error("--run is required")
     runs = [a.run, *a.earlier]
-    manifest_path = ROOT / "outputs/qualification" / a.run / "release/release-manifest.json"
+    manifest_path = OUT_ROOT / a.run / "release/release-manifest.json"
     if not manifest_path.exists():
         print(f"UNEXECUTED: {rel(manifest_path)} is missing")
         return 2
+    import yaml
+    combination = yaml.safe_load((ROOT / "deploy/gitops/environments" / f"{a.environment}.yaml").read_text())
+    development = bool(combination.get("development"))
+    published = OUT_ROOT / a.run / "gitops/environment-manifest.json"
+    BINDING.update({"run": a.run, "environmentRevision": json.loads(published.read_text()).get("environmentChart", {}).get("version") if published.exists() else None})
     record: dict = {"schemaVersion": 1, "recordedAt": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"), "run": a.run,
-                    "earlierRuns": a.earlier, "placement": "DEVELOPMENT_ONLY: kind anvilkit-qualification (3 control-plane + 3 workers) on one host; "
-                                                         "zones qa-a/b/c are labels; the DR store shares the host"}
+                    "earlierRuns": a.earlier, "environment": a.environment, "binding": dict(BINDING),
+                    "placement": combination.get("placement") or ("DEVELOPMENT_ONLY: kind anvilkit-qualification (3 control-plane + 3 workers) on one host; "
+                                                                  "zones qa-a/b/c are labels; the DR store shares the host" if development else "production")}
 
     # release candidate
     releases = []
     for run in runs:
-        p = ROOT / "outputs/qualification" / run / "release/release-manifest.json"
+        p = OUT_ROOT / run / "release/release-manifest.json"
         if p.exists():
             m = json.loads(p.read_text())
             releases.append({"run": run, "path": rel(p), "sha256": sha(p), "status": m.get("status"), "images": len(m.get("images", {})),
@@ -226,17 +343,17 @@ def main() -> int:
 
     # environment
     gitops, ref = evidence(runs, "gitops", "environment-manifest.json")
-    record["environment"] = {**ref, "environmentChart": (gitops or {}).get("environmentChart", {}).get("version"), "status": (gitops or {}).get("status", "NOT_RUN"),
+    record["environmentPublication"] = {**ref, "environmentChart": (gitops or {}).get("environmentChart", {}).get("version"), "status": (gitops or {}).get("status", "NOT_RUN"),
                              "applications": len((gitops or {}).get("applications", []))}
     waves, ref = evidence(runs, "waves", "waves.json")
-    record["waves"] = {**ref, "status": (waves or {}).get("status", "NOT_RUN"), "breakChecks": (waves or {}).get("breakChecks"),
+    record["waves"] = {**ref, "status": bound((waves or {}).get("status", "NOT_RUN"), ref), "breakChecks": (waves or {}).get("breakChecks"),
                        "repairChecks": (waves or {}).get("repairChecks"), "repairSeconds": (waves or {}).get("repairSeconds")}
     adm, ref = evidence(runs, "admission", "admission.json")
     cases = (adm or {}).get("cases") or []
-    record["admission"] = {**ref, "status": ("PASS" if all(c.get("pass") for c in cases) else "FAIL") if cases else "NOT_RUN",
+    record["admission"] = {**ref, "status": bound(("PASS" if all(c.get("pass") for c in cases) else "FAIL") if cases else "NOT_RUN", ref),
                            "cases": {c["case"]: f"expected {c['expected']}, observed {c['observed']}" for c in cases}}
     tel, ref = evidence(runs, "telemetry", "telemetry.json")
-    record["telemetry"] = {**ref, "status": ("PASS" if tel and not tel.get("findings") else "FAIL") if tel else "NOT_RUN",
+    record["telemetry"] = {**ref, "status": bound(("PASS" if tel and not tel.get("findings") else "FAIL") if tel else "NOT_RUN", ref),
                            "findings": (tel or {}).get("findings"), "counts": (tel or {}).get("counts"), "spanServices": (tel or {}).get("spanServices"),
                            "metricSources": (tel or {}).get("metricSources"), "attributesRemovedByCollector": (tel or {}).get("attributesRemovedByCollector")}
 
@@ -244,20 +361,20 @@ def main() -> int:
     record["drills"] = {}
     for d in DRILLS:
         r, ref = evidence(runs, "drills", f"{d}.json")
-        record["drills"][d] = {**ref, "status": checks_status((r or {}).get("checks")), "checks": (r or {}).get("checks"),
+        record["drills"][d] = {**ref, "status": bound(checks_status((r or {}).get("checks")), ref), "checks": (r or {}).get("checks"),
                                "window": (r or {}).get("window"), "durability": {k: v for k, v in ((r or {}).get("durability") or {}).items() if k != "lifecycles"},
                                "error": (r or {}).get("error")}
     record["restores"] = {}
     for d in RESTORES:
         r, ref = evidence(runs, "restores", f"{d}.json")
-        record["restores"][d] = {**ref, "status": checks_status((r or {}).get("checks")), "checks": (r or {}).get("checks"),
+        record["restores"][d] = {**ref, "status": bound(checks_status((r or {}).get("checks")), ref), "checks": (r or {}).get("checks"),
                                  "restoreSeconds": (r or {}).get("restoreSeconds"), "error": (r or {}).get("error")}
     record["restores"]["mysql-apollo"] = {"status": "NOT_RUN", "reason": "Apollo/MySQL is not deployed in this environment (ENV-07/ENV-10 inputs)"}
     record["restores"]["ceph-rgw"] = {"status": "NOT_RUN", "reason": "no Ceph/RGW here: the in-cluster object store is a MinIO stand-in (ENV-02)"}
     record["pitr"] = pitr(runs)
     record["memoryPitr"] = memory_pitr(runs)
     res, ref = evidence(runs, "residency", "residency.json")
-    record["residency"] = {**ref, "status": checks_status((res or {}).get("checks")), "coldStartToReadySeconds": (res or {}).get("coldStartToReadySeconds"),
+    record["residency"] = {**ref, "status": bound(checks_status((res or {}).get("checks")), ref), "coldStartToReadySeconds": (res or {}).get("coldStartToReadySeconds"),
                            "memoryAfterLoad": (res or {}).get("memoryAfterLoad"), "withinChartRequest6GiB": (res or {}).get("withinChartRequest6GiB"),
                            "latencyMs": ((res or {}).get("load") or {}).get("latencyMs"), "restart": (res or {}).get("restart")}
 
@@ -273,15 +390,15 @@ def main() -> int:
 
     # gates
     g = json.loads(P22_REPORT.read_text())["gates"] if P22_REPORT.exists() else {}
-    record["envInputs"] = {k: {"status": "REQUIRED", "scope": v} for k, v in ENV_INPUTS.items()}
+    record["envInputs"] = env_inputs(a.environment)
     record["gates"] = {
         **{k: {"status": v.get("status"), "source": "P22 report"} for k, v in g.items() if k not in ("G-13", "G-14")},
         "G-13": g13(record),
         "G-14": {"status": "NOT_RUN", "blockedBy": ["ENV-01..10 absent: no actual topology, failure domains or SLO targets",
                                                     "DEVELOPMENT_ONLY placement: every node and the DR store share one host"]},
     }
-    record["status"] = "DEVELOPMENT_ONLY (not qualified: G-13/G-14 NOT_RUN)"
-    out = ROOT / "outputs/qualification" / a.run
+    record["status"] = derive_status(record, development)
+    out = OUT_ROOT / a.run
     (out / "qualification-record.json").write_text(json.dumps(record, indent=2) + "\n")
 
     lines = [f"# P23 qualification record — run {a.run}", "", f"Status: **{record['status']}**. Placement: {record['placement']}.", "",
@@ -291,7 +408,7 @@ def main() -> int:
     for r in releases:
         lines.append(f"| release {r['run']} | {r['status']} ({r['images']} images, {r['charts']} charts, {len(r['blockingFindings'])} blocking findings) | `{r['path']}` |")
     row("deployment lock", {**record["deploymentLock"], "path": record["deploymentLock"]["lock"]})
-    row("environment (GitOps)", record["environment"])
+    row("environment (GitOps)", record["environmentPublication"])
     row("sync waves stop / fix forward", record["waves"])
     row("signed-image admission", record["admission"])
     row("redacted telemetry", record["telemetry"])
@@ -306,7 +423,7 @@ def main() -> int:
     lines.append(f"| PITR, memory deletion/revocation preservation | {mp.get('status')} ({mp.get('passed', 0)}/{mp.get('runs', 0)} runs of the current code) | {mhistory} |")
     row("model residency (two replicas)", record["residency"])
     lines += ["", "Gates: " + ", ".join(f"{k} {v['status']}" for k, v in sorted(record["gates"].items())),
-              "", "ENV-01..10: REQUIRED (none supplied)."]
+              "", "ENV-01..10: " + ", ".join(f"{k} {v['status']}" for k, v in record["envInputs"].items()) + "."]
     (out / "qualification-record.md").write_text("\n".join(lines) + "\n")
     print("\n".join(lines))
     print(f"\nrecord: {rel(out / 'qualification-record.json')} {sha(out / 'qualification-record.json')}")

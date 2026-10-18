@@ -104,7 +104,13 @@ OPENBAO_ROLES = [
     ("anvilkit-secrets-data", "anvilkit-data", "anvilkit/sync/data"),
     ("anvilkit-secrets-platform", "anvilkit-platform", "anvilkit/sync/platform"),
     ("anvilkit-secrets-apps", "anvilkit-apps", "anvilkit/sync/apps"),
+    ("anvilkit-secrets-observability", "anvilkit-observability", "anvilkit/sync/observability"),
+    # P3.7: the scheduled backups (deploy/qualification/platform/backups) log in
+    # with their own ServiceAccount; besides their path they read the raft snapshot.
+    ("anvilkit-backups", "anvilkit-platform", "anvilkit/platform/backups"),
 ]
+# Capabilities a role holds beyond reading its own KV path.
+OPENBAO_EXTRA = {"anvilkit-backups": 'path "sys/storage/raft/snapshot" { capabilities = ["read"] }\n'}
 NAMESPACES = ["anvilkit-apps", "anvilkit-components", "anvilkit-parsing", "anvilkit-data", "anvilkit-platform", "anvilkit-observability"]
 ROLES = ["anvilkit_control_app", "anvilkit_control_migrator", "anvilkit_knowledge_app", "anvilkit_knowledge_migrator",
          "anvilkit_knowledge_relay", "anvilkit_knowledge_forwarder", "anvilkit_knowledge_cleanup", "anvilkit_knowledge_store_migrator", "anvilkit_knowledge_store",
@@ -116,11 +122,55 @@ ROLES = ["anvilkit_control_app", "anvilkit_control_migrator", "anvilkit_knowledg
 # basic-auth Secret anvilkit-<cluster>-owner -> CloudNativePG. role_passwords never
 # sets them.
 OWNERS = {"anvilkit-business": "anvilkit_control_migrator", "anvilkit-temporal": "temporal"}
-OBJECT_USERS = ["ARTIFACTS", "MODEL_PROXY", "KNOWLEDGE"]
-DR_USERS = {"backup": "anvilkit-backups", "inventory": "anvilkit-inventory", "snapshots": "anvilkit-snapshots",
-            "removals": "anvilkit-memory-removals"}
-# Knowledge's removal records are immutable: its user lists, reads and creates, never deletes.
-DR_ACTIONS = {"removals": (["s3:ListBucket", "s3:GetBucketLocation"], ["s3:GetObject", "s3:PutObject"])}
+# BACKUP (P3.7): the scheduled mirror's read-only identity over the service buckets.
+OBJECT_USERS = ["ARTIFACTS", "MODEL_PROXY", "KNOWLEDGE", "BACKUP"]
+# P3.7: the DR store's buckets, each created versioned and object-locked with a
+# default GOVERNANCE retention in days (DEVELOPMENT_ONLY lengths; the
+# production lengths and COMPLIANCE mode are ENV-02/ENV-09 inputs). An
+# overwrite keeps the earlier version and nothing is deleted before its
+# retention ends. Object lock is set at creation only: a bucket created before
+# P3.7 keeps working unlocked and is reported.
+DR_BUCKETS = {"anvilkit-backups": 7, "anvilkit-inventory": 30, "anvilkit-snapshots": 7, "anvilkit-objects-replica": 7,
+              "anvilkit-memory-removals": 30}
+_DR_LIST = ["s3:ListBucket", "s3:GetBucketLocation"]
+# P3.7: each DR user's buckets and actions (least privilege). The obligation
+# inventory and Knowledge's removal records are create-only (list, read,
+# create; never delete); the scheduled snapshots write without delete; their
+# expiry is the separate prune identity's, which the lock still refuses
+# within the retention. CloudNativePG's barman user archives and applies its
+# own retention policy (7d, the same as the lock), so it keeps DeleteObject.
+DR_USERS = {
+    "backup": {"buckets": ["anvilkit-backups"], "bucket": _DR_LIST, "objects": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]},
+    "inventory": {"buckets": ["anvilkit-inventory"], "bucket": _DR_LIST, "objects": ["s3:GetObject", "s3:PutObject"]},
+    "snapshots": {"buckets": ["anvilkit-snapshots", "anvilkit-objects-replica"], "bucket": _DR_LIST, "objects": ["s3:GetObject", "s3:PutObject"]},
+    "removals": {"buckets": ["anvilkit-memory-removals"], "bucket": _DR_LIST, "objects": ["s3:GetObject", "s3:PutObject"]},
+    "prune": {"buckets": ["anvilkit-snapshots", "anvilkit-objects-replica"], "bucket": _DR_LIST + ["s3:ListBucketVersions"],
+              "objects": ["s3:DeleteObject", "s3:DeleteObjectVersion"]},
+}
+
+
+def dr_policy(user: str) -> dict:
+    """The bucket-limited policy document of one DR user."""
+    u = DR_USERS[user]
+    return {"Version": "2012-10-17", "Statement": [
+        {"Effect": "Allow", "Action": u["bucket"], "Resource": [f"arn:aws:s3:::{b}" for b in u["buckets"]]},
+        {"Effect": "Allow", "Action": u["objects"], "Resource": [f"arn:aws:s3:::{b}/*" for b in u["buckets"]]}]}
+
+
+def dr_script() -> list[str]:
+    """The mc commands that create the DR buckets (locked, default retention)
+    and the users with their policies; credentials come from the environment."""
+    script = ["set -eu", 'mc alias set dr http://anvilkit-qualification-dr:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null']
+    for bucket, days in DR_BUCKETS.items():
+        script += [f"mc mb --ignore-existing --with-lock dr/{bucket} >/dev/null",
+                   f"mc retention set --default GOVERNANCE {days}d dr/{bucket} >/dev/null 2>&1 "
+                   f"|| echo 'WARNING: dr/{bucket} predates object lock (created unlocked); recreate it to lock it' >&2"]
+    for user in DR_USERS:
+        script += [f"printf '%s' '{json.dumps(dr_policy(user))}' > /tmp/dr-{user}.json",
+                   f"mc admin policy create dr anvilkit-dr-{user} /tmp/dr-{user}.json >/dev/null",
+                   f'mc admin user info dr "$DR_{user.upper()}_ID" >/dev/null 2>&1 || mc admin user add dr "$DR_{user.upper()}_ID" "$DR_{user.upper()}_SECRET" >/dev/null',
+                   f'mc admin policy attach dr anvilkit-dr-{user} --user "$DR_{user.upper()}_ID" >/dev/null 2>&1 || true']
+    return script
 # A child Application counts as healthy only once it is Synced, its last sync
 # operation Succeeded and its own resources are Healthy. A freshly created child
 # briefly reports Healthy before its first sync, and a child whose hook Job keeps
@@ -171,9 +221,16 @@ def credentials() -> dict:
         if "qdrant" not in c:  # added after the first environment: generated once, kept
             c["qdrant"] = token()
             added = True
+        if "grafana" not in c:  # P3.6: Grafana's admin credential, likewise
+            c["grafana"] = token()
+            added = True
         for user in NATS_USERS:  # P0.6: the NKey users, likewise
             if user not in c.setdefault("nats", {}):
                 c["nats"][user] = nkey()
+                added = True
+        for u in OBJECT_USERS:  # P3.7: the backup reader arrived later, likewise
+            if u not in c["objects"]:
+                c["objects"][u] = {"id": f"anvilkit-{u.lower().replace('_', '-')}", "secret": token()}
                 added = True
         for u in DR_USERS:  # Knowledge's removal inventory user (P23) arrived later, likewise
             if u not in c["dr"]:
@@ -188,6 +245,7 @@ def credentials() -> dict:
          "dr": {u: {"id": f"anvilkit-dr-{u}", "secret": token()} for u in DR_USERS},
          "queue": token(),
          "qdrant": token(),
+         "grafana": token(),
          "principals": {"probe": token(32), "tenantA": token(32), "tenantB": token(32), "modelProxyWorkflow": token(32)},
          "nats": {user: nkey() for user in NATS_USERS}}
     old = os.umask(0o077)
@@ -258,6 +316,12 @@ def kv_payloads(c: dict) -> dict[str, dict[str, str]]:
             "objects-root-user": c["objectsRoot"]["user"], "objects-root-password": c["objectsRoot"]["password"],
             **{f"objects-{u.lower().replace('_', '-')}-{k}": v for u, x in o.items() for k, v in (("access-key-id", x["id"]), ("secret-access-key", x["secret"]))}},
         "anvilkit/sync/platform": {"temporal-db-password": r["temporal"], "probe-token": p["probe"]},
+        # P3.7: the scheduled backups' run-time credentials (read by the Job itself).
+        "anvilkit/platform/backups": {"dr-access-key-id": dr["snapshots"]["id"], "dr-secret-access-key": dr["snapshots"]["secret"],
+                                      "objects-access-key-id": o["BACKUP"]["id"], "objects-secret-access-key": o["BACKUP"]["secret"],
+                                      "qdrant-api-key": c["qdrant"]},
+        # P3.6: Grafana's admin login (the metrics stack reads it as an existing Secret).
+        "anvilkit/sync/observability": {"grafana-admin-user": "anvilkit-admin", "grafana-admin-password": c["grafana"]},
         "anvilkit/sync/apps": {
             "api-principals": json.dumps(principals),
             "model-proxy-principals": json.dumps({p["modelProxyWorkflow"]: {"principalId": "anvilkit-agent-workflow", "kind": "workflow"}})},
@@ -321,20 +385,7 @@ def role_passwords(c: dict) -> bool:
 
 def dr_store(c: dict) -> None:
     env = dict(line.split("=", 1) for line in (STATE / "dr.env").read_text().split())
-    script = ["set -eu", 'mc alias set dr http://anvilkit-qualification-dr:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null']
-    for user, bucket in DR_USERS.items():
-        if user in DR_ACTIONS:
-            on_bucket, on_objects = DR_ACTIONS[user]
-            statements = [{"Effect": "Allow", "Action": on_bucket, "Resource": [f"arn:aws:s3:::{bucket}"]},
-                          {"Effect": "Allow", "Action": on_objects, "Resource": [f"arn:aws:s3:::{bucket}/*"]}]
-        else:
-            statements = [{"Effect": "Allow", "Action": ["s3:*"], "Resource": [f"arn:aws:s3:::{bucket}", f"arn:aws:s3:::{bucket}/*"]}]
-        policy = json.dumps({"Version": "2012-10-17", "Statement": statements})
-        script += [f"mc mb --ignore-existing dr/{bucket} >/dev/null",
-                   f"printf '%s' '{policy}' > /tmp/{bucket}.json",
-                   f"mc admin policy create dr {bucket} /tmp/{bucket}.json >/dev/null",
-                   f'mc admin user info dr "$DR_{user.upper()}_ID" >/dev/null 2>&1 || mc admin user add dr "$DR_{user.upper()}_ID" "$DR_{user.upper()}_SECRET" >/dev/null',
-                   f'mc admin policy attach dr {bucket} --user "$DR_{user.upper()}_ID" >/dev/null 2>&1 || true']
+    script = dr_script()
     envs = {**env, **{f"DR_{u.upper()}_ID": v["id"] for u, v in c["dr"].items()}, **{f"DR_{u.upper()}_SECRET": v["secret"] for u, v in c["dr"].items()}}
     cmd = ["docker", "run", "--rm", "-i", "--network", "kind", "-e", "HOME=/tmp", "-e", "MC_CONFIG_DIR=/tmp/.mc"]
     for k in envs:
@@ -426,7 +477,7 @@ def configure_openbao(pod: str, c: dict) -> None:
             call("auth", "enable", "kubernetes")
         call("write", "auth/kubernetes/config", "kubernetes_host=https://kubernetes.default.svc:443")
         for role, namespace, path in OPENBAO_ROLES:
-            call("policy", "write", role, "-", stdin=f'path "kv/data/{path}" {{ capabilities = ["read"] }}\n')
+            call("policy", "write", role, "-", stdin=f'path "kv/data/{path}" {{ capabilities = ["read"] }}\n' + OPENBAO_EXTRA.get(role, ""))
             call("write", f"auth/kubernetes/role/{role}", f"bound_service_account_names={role}", f"bound_service_account_namespaces={namespace}",
                  "audience=openbao", f"token_policies={role}", "token_ttl=10m", "token_max_ttl=20m", "token_no_default_policy=true")
         for path, data in payloads.items():

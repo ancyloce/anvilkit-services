@@ -65,6 +65,9 @@ EXCEPTIONS = [
     ("*", r"http://127\.0\.0\.1|http://localhost|http://0\.0\.0\.0", "a Pod-local health or metrics listener (no network peer)"),
     ("*", r"\bhttp://\[::\]|http_port|\"http_port\"", "a Pod-local listener definition"),
     ("anvilkit-telemetry", r"http://", "the Collector's own receivers and Kubernetes discovery (observability, B-36)"),
+    ("anvilkit-metrics", r"http://", "the metrics stack's in-cluster endpoints (Prometheus, Alertmanager, Grafana and its Loki/Tempo data sources) inside anvilkit-observability; DEVELOPMENT_ONLY plaintext like the OTLP export (B-36), production TLS"),
+    ("anvilkit-logs", r"http://", "Loki's in-cluster endpoints inside anvilkit-observability (DEVELOPMENT_ONLY plaintext, B-36)"),
+    ("anvilkit-traces", r"http://", "Tempo's in-cluster endpoints inside anvilkit-observability (DEVELOPMENT_ONLY plaintext, B-36)"),
     ("kyverno", r"http://", "Kyverno's in-cluster webhooks and metrics (its chart)"),
     ("cert-manager", r"http://", "cert-manager's own health and metrics endpoints"),
     ("metrics-server", r"http://", "metrics-server's own endpoints"),
@@ -195,7 +198,7 @@ def bootstrap_payloads() -> list[str]:
     import bootstrap  # noqa: E402
     fake = {"roles": {r: "pw" for r in bootstrap.ROLES}, "objectsRoot": {"user": "u", "password": "p"},
             "objects": {u: {"id": "i", "secret": "s"} for u in bootstrap.OBJECT_USERS},
-            "dr": {u: {"id": "i", "secret": "s"} for u in bootstrap.DR_USERS}, "queue": "q", "qdrant": "k",
+            "dr": {u: {"id": "i", "secret": "s"} for u in bootstrap.DR_USERS}, "queue": "q", "qdrant": "k", "grafana": "g",
             "principals": {"probe": "a", "tenantA": "b", "tenantB": "c", "modelProxyWorkflow": "d"},
             "nats": {u: {"seed": "SU", "public": "U"} for u in bootstrap.NATS_USERS}}
     findings = []

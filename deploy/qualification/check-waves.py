@@ -129,7 +129,7 @@ def main() -> int:
     repaired = publish(a.run, a.revision + 1, {"applications": {MARKED_APP: {"values": {"podAnnotations": {MARKER_KEY: marker}}}}}, out, "repair")
     record["repairRevision"] = repaired["version"]
     started = time.time()
-    ok = bootstrap.wait(a.wait)
+    ok = bootstrap.wait(a.wait, bootstrap.credentials())
     current = apps()
     probes_op = current["anvilkit-probes"].get("status", {}).get("operationState", {})
     record["repairSeconds"] = round(time.time() - started, 1)
