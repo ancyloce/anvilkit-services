@@ -1,21 +1,23 @@
 #!/usr/bin/env python3
 """Disposable source-export exercise of the replacement baseline (delivery.md P01 exit).
 
-Usage: python3 tools/check-source-export.py [--keep DIR] [--skip-build]
+Usage: python3 tools/check-source-export.py [--keep DIR] [--skip-build] [--self-test]
 
 A `.gitignore` edit is not evidence that the design and build inputs are included in the
-source. This check computes the export set the way Git would: the parent's tracked files
-plus its untracked files that are not ignored, and, for each replacement repository mounted
-in the tree (the contracts repository at contracts/, the API, Control and Workflow
-repositories at services/agent/{api,control,workflow,model-proxy}, since P14 the Knowledge
-and MCP repositories at services/agent/{knowledge,mcp}, the access sidecar repository at
-jobs/shared/access-sidecar, the validator repository at jobs/validator, since 2026-10-04,
-the Background Worker, Inference and parser Job repositories at
-services/agent/{background-worker,inference} and jobs/parser and, since 2026-10-06, the
-codegen Job's supervisor and team repositories at jobs/codegen/{supervisor,team}, whether
-already registered as submodules or still nested checkouts), that repository's own tracked plus
-untracked-not-ignored files. The shared configuration schemas (packages/profile-schemas) are a
-plain directory of the parent.
+source, and neither is a file that merely exists on disk. Since P3.1 (plan 0004, AC5) this
+check computes the export set the way a clean recursive clone would see it: the parent's
+committed tree at HEAD and, for each replacement repository mounted in the tree (the contracts
+repository at contracts/, the API, Control and Workflow repositories at
+services/agent/{api,control,workflow,model-proxy}, since P14 the Knowledge and MCP repositories
+at services/agent/{knowledge,mcp}, the access sidecar repository at jobs/shared/access-sidecar,
+the validator repository at jobs/validator, since 2026-10-04, the Background Worker, Inference
+and parser Job repositories at services/agent/{background-worker,inference} and jobs/parser and,
+since 2026-10-06, the codegen Job's supervisor and team repositories at
+jobs/codegen/{supervisor,team}), that repository's committed tree at the gitlink the parent
+records. Untracked files, uncommitted edits and a submodule checked out at another commit are
+never part of the export, even when present on disk; they are reported. A replacement
+repository the parent does not record as a gitlink is not in a clean clone and fails. The
+shared configuration schemas (packages/profile-schemas) are a plain directory of the parent.
 Then:
 
   1. Required inputs: every file under each declared input directory and every anchor file
@@ -25,13 +27,15 @@ Then:
   2. Exclusions: nothing from docs/archive/, outputs/, logs/, .local/, node_modules/,
      __pycache__/ or *.egg-info/, no `.env*`, `*.pem`, `*.log`, `*.kubeconfig`, and nothing
      from inside a legacy submodule.
-  3. Disposable export: the export set is copied into a temporary directory and checked
-     there on its own: tools/check-docs.py, tools/check-contracts.py and `go build ./...`
+  3. Disposable export: the committed trees are extracted (`git archive`) into a temporary
+     directory and checked there on its own: tools/check-docs.py, tools/check-contracts.py and `go build ./...`
      in every go.work module (GOFLAGS=-mod=readonly), so the export is self-contained.
 
 Legacy environment tooling that the cleanup record keeps (deploy/local/, compose.yaml,
 tools/prepare-local-compose.py, tools/component/) is reported, not required and not failed.
 Git is only read; the export lives in a temporary directory unless --keep names one.
+--self-test builds a scratch repository in a temporary directory and proves the negative: a
+required input present on disk but untracked fails, and an uncommitted edit is not exported.
 """
 from __future__ import annotations
 
@@ -39,9 +43,11 @@ import argparse
 import os
 import pathlib
 import re
+import io
 import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
@@ -110,6 +116,14 @@ REQUIRED_DIRS = (
     "tests/evals/rag/corpus",
     "deploy/dev",
     "deploy/handover",
+    # P3 (plan 0004): the release, promotion and qualification tooling, the
+    # operations runbooks, the load tool and the parent's CI.
+    "deploy/gitops",
+    "deploy/qualification/platform/observability",
+    "deploy/qualification/platform/backups",
+    "docs/operations",
+    "tests/load",
+    ".github/workflows",
 )
 REQUIRED_FILES = (
     "README.md", "AGENTS.md", "CLAUDE.md", "docs/README.md", "go.work", "go.work.sum",
@@ -246,61 +260,140 @@ def git(*args: str, cwd: pathlib.Path = ROOT) -> str:
     return subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, check=True).stdout
 
 
-def listing(repo: pathlib.Path) -> tuple[set[str], set[str]]:
-    """Tracked blobs plus untracked non-ignored files of one repository; gitlinks separately."""
+def committed(repo: pathlib.Path, commit: str) -> tuple[set[str], dict[str, str]]:
+    """Files of one repository's committed tree; gitlinks (path -> commit) separately."""
     files: set[str] = set()
-    gitlinks: set[str] = set()
-    for line in git("ls-files", "--stage", cwd=repo).splitlines():
-        mode, _, _, path = line.split(None, 3)
-        (gitlinks if mode == "160000" else files).add(path)
-    files.update(p for p in git("ls-files", "--others", "--exclude-standard", cwd=repo).splitlines() if p)
-    # An index entry whose file was deleted in the worktree (an uncommitted removal) is not source.
-    files.difference_update(p for p in git("ls-files", "--deleted", cwd=repo).splitlines() if p)
+    gitlinks: dict[str, str] = {}
+    out = subprocess.run(["git", "ls-tree", "-r", "-z", "--full-tree", commit], cwd=repo, capture_output=True, check=True).stdout
+    for entry in out.decode("utf-8").split("\0"):
+        if not entry:
+            continue
+        meta, path = entry.split("\t", 1)
+        mode, _, sha = meta.split(" ")
+        if mode == "160000":
+            gitlinks[path] = sha
+        else:
+            files.add(path)
     return files, gitlinks
 
 
-def export_set() -> tuple[set[str], set[str], set[str]]:
-    """The parent's listing plus each mounted replacement repository's own listing.
+def worktree_drift(repo: pathlib.Path, commit: str) -> list[str]:
+    """Untracked-not-ignored files and uncommitted edits that the export leaves out (reported)."""
+    drift = [f"untracked {p}" for p in git("ls-files", "--others", "--exclude-standard", cwd=repo).splitlines() if p]
+    drift += [f"uncommitted {p}" for p in git("diff", "--name-only", commit, "--", ".", cwd=repo).splitlines() if p]
+    return drift
 
-    Returns (files, legacy submodule paths, replacement repositories found)."""
-    files, gitlinks = listing(ROOT)
-    found: set[str] = set()
-    for rel in REPLACEMENT_REPOS:
-        repo = ROOT / rel
+
+def export_set(root: pathlib.Path = ROOT, repos: tuple[str, ...] = REPLACEMENT_REPOS) -> tuple[set[str], set[str], dict[str, str], list[str], list[str]]:
+    """The parent's committed tree plus each replacement repository's tree at its recorded gitlink.
+
+    Returns (files, legacy submodule paths, replacement repositories -> exported commit,
+    failures, drift notes)."""
+    files, gitlinks = committed(root, "HEAD")
+    found: dict[str, str] = {}
+    failures: list[str] = []
+    drift = [f"parent: {d}" for d in worktree_drift(root, "HEAD")]
+    for rel in repos:
+        repo = root / rel
         if not (repo / ".git").exists():
             continue  # not mounted: the required-input check reports what is missing
-        found.add(rel)
-        files.discard(rel + "/")  # an unregistered nested checkout shows up as one untracked directory entry
-        gitlinks.discard(rel)
-        nested, _ = listing(repo)
+        commit = gitlinks.pop(rel, None)
+        if commit is None:
+            failures.append(f"replacement repository not recorded as a gitlink at the parent's HEAD (absent from a clean clone): {rel}")
+            continue
+        try:
+            nested, _ = committed(repo, commit)
+        except subprocess.CalledProcessError:
+            failures.append(f"{rel}: the recorded commit {commit[:12]} is not available in the local repository")
+            continue
+        found[rel] = commit
         files.update(f"{rel}/{p}" for p in nested)
-    return files, gitlinks, found
+        head = git("rev-parse", "HEAD", cwd=repo).strip()
+        if head != commit:
+            drift.append(f"{rel}: checked out at {head[:12]}, the parent records {commit[:12]} (exported)")
+        drift += [f"{rel}: {d}" for d in worktree_drift(repo, commit)]
+    return files, set(gitlinks), found, failures, drift
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--keep", help="directory to leave the export in (default: a temporary directory that is removed)")
-    ap.add_argument("--skip-build", action="store_true", help="skip go build in the export (docs/contract checks still run)")
-    a = ap.parse_args()
+def required_failures(root: pathlib.Path, files: set[str], required_files, required_dirs) -> list[str]:
+    """Required inputs missing from the export set; files on disk under a declared input
+    directory that the export does not contain fail even though they exist (AC5)."""
     failures: list[str] = []
-
-    files, submodules, repos = export_set()
-    for rel in REQUIRED_FILES:
+    for rel in required_files:
         if rel not in files:
             failures.append(f"required input not in the export set: {rel}")
-    for d in REQUIRED_DIRS:
-        base = ROOT / d
+    for d in required_dirs:
+        base = root / d
         if not base.is_dir():
             failures.append(f"required input directory missing: {d}")
             continue
         for path in base.rglob("*"):
             # A mounted repository's .git (a gitdir file or directory) is Git metadata, not an input.
             if path.is_file() and not any(part in ("__pycache__", "node_modules", ".pytest_cache", ".git") or part.endswith(".egg-info") for part in path.parts):
-                rel = path.relative_to(ROOT).as_posix()
+                rel = path.relative_to(root).as_posix()
                 if rel.startswith(GENERATED_OUTPUT_PREFIXES):
                     continue
                 if rel not in files:
-                    failures.append(f"file under a declared input directory is ignored or untracked-ignored: {rel}")
+                    failures.append(f"file under a declared input directory is untracked, uncommitted or ignored: {rel}")
+    return failures
+
+
+def extract(repo: pathlib.Path, commit: str, target: pathlib.Path) -> None:
+    """Extract one repository's committed tree (git archive) under target."""
+    data = subprocess.run(["git", "archive", "--format=tar", commit], cwd=repo, capture_output=True, check=True).stdout
+    target.mkdir(parents=True, exist_ok=True)
+    with tarfile.open(fileobj=io.BytesIO(data)) as tar:
+        tar.extractall(target, filter="tar")
+
+
+def self_test() -> int:
+    """AC5 negative: a required input present on disk but untracked fails; an uncommitted
+    edit of a tracked file is not exported."""
+    failures: list[str] = []
+    with tempfile.TemporaryDirectory(prefix="anvilkit-export-selftest-") as tmp:
+        root = pathlib.Path(tmp)
+        env = dict(os.environ, GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_SYSTEM=os.devnull)
+        def run(*args: str) -> None:
+            subprocess.run(["git", "-c", "user.name=self-test", "-c", "user.email=self-test@invalid", "-c", "commit.gpgsign=false", *args], cwd=root, env=env, check=True, capture_output=True)
+        run("init", "-q", "-b", "main")
+        (root / "inputs").mkdir()
+        (root / "inputs" / "tracked.txt").write_text("committed\n")
+        (root / "README.md").write_text("committed\n")
+        run("add", "README.md", "inputs/tracked.txt")
+        run("commit", "-q", "-m", "self-test")
+        (root / "inputs" / "untracked.txt").write_text("on disk only\n")
+        (root / "README.md").write_text("uncommitted edit\n")
+        files, _, _, fails, drift = export_set(root, ())
+        missing = required_failures(root, files, ("README.md", "inputs/untracked.txt"), ("inputs",))
+        cases = [
+            ("a required file present on disk but untracked fails", any("required input not in the export set: inputs/untracked.txt" in m for m in missing)),
+            ("a file on disk under a declared input directory but untracked fails", any("declared input directory is untracked" in m and "inputs/untracked.txt" in m for m in missing)),
+            ("a committed required file passes", not any(m.endswith(": README.md") for m in missing) and "inputs/tracked.txt" in files),
+            ("the untracked file and the uncommitted edit are reported as drift", "parent: untracked inputs/untracked.txt" in drift and "parent: uncommitted README.md" in drift),
+            ("no failure from the listing itself", not fails),
+        ]
+        out = root / "export"
+        extract(root, "HEAD", out)
+        cases.append(("the export holds the committed content, not the uncommitted edit", (out / "README.md").read_text() == "committed\n" and not (out / "inputs" / "untracked.txt").exists()))
+        for name, ok in cases:
+            print(f"{'PASS' if ok else 'FAIL':<5} self-test: {name}")
+            if not ok:
+                failures.append(name)
+    print(f"source export self-test: {len(cases) - len(failures)}/{len(cases)} PASS")
+    return 1 if failures else 0
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--keep", help="directory to leave the export in (default: a temporary directory that is removed)")
+    ap.add_argument("--skip-build", action="store_true", help="skip go build in the export (docs/contract checks still run)")
+    ap.add_argument("--self-test", action="store_true", help="prove the untracked-input negative in a scratch repository and exit")
+    a = ap.parse_args()
+    if a.self_test:
+        return self_test()
+
+    files, submodules, repos, failures, drift = export_set()
+    failures += required_failures(ROOT, files, REQUIRED_FILES, REQUIRED_DIRS)
     for rel in sorted(files):
         if rel.startswith(EXCLUDED_PREFIXES + GENERATED_OUTPUT_PREFIXES) or any(i in rel for i in EXCLUDED_INFIXES):
             failures.append(f"excluded path in the export set: {rel}")
@@ -310,13 +403,22 @@ def main() -> int:
             failures.append(f"legacy submodule content in the export set: {rel}")
     legacy = sorted(rel for rel in files if rel.startswith(LEGACY_TOOLING))
 
-    print(f"export set: {len(files)} files; replacement repositories included: {', '.join(sorted(repos)) or 'none'}; "
+    print(f"export set (committed trees): {len(files)} files; replacement repositories included: "
+          f"{', '.join(f'{r}@{c[:7]}' for r, c in sorted(repos.items())) or 'none'}; "
           f"{len(submodules)} legacy submodule pointers excluded: {', '.join(sorted(submodules))}")
     if legacy:
         print(f"retained legacy environment tooling included (cleanup record): {len(legacy)} files under {', '.join(LEGACY_TOOLING)}")
+    if drift:
+        print(f"not exported (working tree differs from the committed source): {len(drift)} entries")
+        for d in drift[:40]:
+            print(f"  {d}")
+        if len(drift) > 40:
+            print(f"  ... {len(drift) - 40} more")
     if failures:
-        for f in failures:
+        for f in failures[:200]:
             print("FAIL", f)
+        if len(failures) > 200:
+            print(f"FAIL ... {len(failures) - 200} more")
         print(f"source export: {len(failures)} failures before materialization")
         return 1
 
@@ -329,13 +431,11 @@ def main() -> int:
         tmp = tempfile.TemporaryDirectory(prefix="anvilkit-export-")
         target = pathlib.Path(tmp.name)
     try:
-        for rel in sorted(files):
-            src = ROOT / rel
-            if not src.is_file():
-                continue
-            dst = target / rel
-            dst.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(src, dst)
+        extract(ROOT, "HEAD", target)
+        for rel, commit in sorted(repos.items()):
+            extract(ROOT / rel, commit, target / rel)
+        for legacy_link in submodules:
+            shutil.rmtree(target / legacy_link, ignore_errors=True)
         env = dict(os.environ, GOFLAGS="-mod=readonly")
         steps: list[tuple] = [
             ("docs", [sys.executable, "tools/check-docs.py"], target),

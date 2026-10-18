@@ -1,27 +1,43 @@
 #!/usr/bin/env python3
-"""Release artifacts (P23-02): build, publish, scan, SBOM and sign the release candidate.
+"""Release artifacts (P23-02, P3.2): build, publish, scan, SBOM and sign the release candidate.
 
   .local/verification-venv/bin/python tools/release-artifacts.py [--run ID] [--only NAME ...] [--no-build] [--from-run RUN]
+      [--registry-push HOST] [--registry REF] [--network NAME] [--signing key|keyless] [--key REF]
+      [--certificate-identity ID --certificate-oidc-issuer URL] [--transparency-log] [--provenance]
+  .local/verification-venv/bin/python tools/release-artifacts.py --self-test
 
 Owned service images (the eight services, the Knowledge forwarder sidecar and the
-knowledge/mcp migration Job) are built from the current working trees with each
-repository's own Dockerfile and pushed to the registry; the fixed Job images are taken
-at the exact digests their reviewed profiles pin (contracts/jobs/profiles.json), never
-rebuilt; the third-party platform images (PLATFORM) are copied into the registry by
-digest. For every image, by digest: a CycloneDX SBOM and a vulnerability and license
-scan (Trivy), a Cosign signature and a signed SBOM attestation, both verified with the
-public key. The eight service charts are packaged, pushed as OCI artifacts and signed.
-Everything is bound in outputs/qualification/<run>/release-manifest.json together with
-each source's repository head, cleanliness and build-context digest and the pinned
-tool images.
+knowledge/mcp migration Job) are built from each repository's own Dockerfile and pushed to
+the registry; the fixed Job images are taken at the exact digests their reviewed profiles
+pin (contracts/jobs/profiles.json), never rebuilt; the third-party platform images
+(PLATFORM) are copied into the registry by digest. For every image, by digest: an SPDX
+SBOM and a vulnerability and license scan (Trivy), a Cosign signature and a signed SBOM
+attestation, both verified. The eight service charts are packaged, pushed as OCI artifacts
+and signed. Everything is bound in outputs/qualification/<run>/release/release-manifest.json
+together with each source's repository head, cleanliness and build-context digest, the
+parent's release tag and the pinned tool images.
 
-DEVELOPMENT_ONLY placement: the registry is the development foundation's CNCF
-Distribution registry (E02's alternative), not Harbor; the signing key is generated
-under .local/release/ (0600), not held under ENV-10 custody; no signature or
-attestation is uploaded to a transparency log (--tlog-upload=false), so nothing leaves
-this machine. The release policy blocks on a CRITICAL vulnerability with a fixed
-version and on a forbidden license; it is the tool's explicit rule pending the
-security owner's input, not a derived threshold.
+Status, derived from the inputs (P3.2, never hard-coded):
+  BLOCKED                  any finding: a dirty or untracked input (a release builds only
+                           committed sources), a fixable CRITICAL or HIGH vulnerability, a
+                           forbidden license, a missing or unverified signature or
+                           attestation, a failed build or push;
+  SIGNED_DEVELOPMENT_ONLY  no finding, but a development placement: the development key
+                           under .local/release (no ENV-10 custody), a plain-HTTP registry,
+                           no transparency log, no build provenance or no release tag on the
+                           parent;
+  SIGNED                   no finding, built from a tagged parent with provenance, signed
+                           keylessly in CI (OIDC, transparency log) or with a KMS/OpenBao-
+                           held key (--key hashivault://... etc.) with the transparency log,
+                           pushed to a TLS registry.
+deploy/gitops/publish.py publishes nothing from a manifest whose status is not SIGNED (or,
+for a development combination, SIGNED_DEVELOPMENT_ONLY) or that has findings.
+
+The development defaults (registry localhost:5001 / anvilkit-dev-registry:5000, network
+kind, key under .local/release, no transparency log) reproduce the DEVELOPMENT_ONLY
+qualification placement; .github/workflows/release.yml runs the same tool keylessly on a
+tag. The release policy is the tool's explicit rule pending the security owner's input,
+not a derived threshold. --self-test proves the status rules on synthetic manifests.
 
 Exit 0 when every artifact is published, signed and verified and the policy has no
 blocking finding; 1 otherwise; 2 when Docker, helm or the registry is unavailable.
@@ -42,9 +58,13 @@ import sys
 import urllib.request
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-HOST_REGISTRY = "localhost:5001"          # the registry as the host pushes to it
-REGISTRY = "anvilkit-dev-registry:5000"   # the same registry as clusters and tools reach it
-NETWORK = "kind"
+# Development defaults; --registry-push, --registry and --network replace them (P3.2).
+HOST_REGISTRY = os.environ.get("ANVILKIT_RELEASE_REGISTRY_PUSH", "localhost:5001")   # the registry as this host pushes to it
+REGISTRY = os.environ.get("ANVILKIT_RELEASE_REGISTRY", "anvilkit-dev-registry:5000")  # the same registry as clusters and tools reach it
+NETWORK = os.environ.get("ANVILKIT_RELEASE_NETWORK", "kind")
+DEVELOPMENT_REGISTRIES = {"localhost:5001", "anvilkit-dev-registry:5000"}
+BLOCKING_SEVERITIES = ("CRITICAL", "HIGH")
+SETTINGS: dict = {"signing": "key", "key": None, "insecure": True, "tlog": False, "identity": None, "issuer": None, "provenance": False}
 TRIVY = "aquasec/trivy@sha256:bcc376de8d77cfe086a917230e818dc9f8528e3c852f7b1aff648949b6258d1c"   # 0.69.3
 COSIGN = "ghcr.io/sigstore/cosign/cosign@sha256:68839b7f13dac5a6744a5d8818e984dd39183374e37855c19e14d623d9bc9037"  # v2.6.1
 KEYS = ROOT / ".local/release"
@@ -118,6 +138,16 @@ def tool(image: str, args: list[str], out: pathlib.Path, env: dict | None = None
     name = f"anvilkit-release-{secrets.token_hex(6)}"
     cmd = ["docker", "run", "--rm", "--name", name, "--network", NETWORK, "-u", f"{os.getuid()}:{os.getgid()}", "-v", f"{out}:/out", "-v", f"{KEYS}:/keys:ro",
            "-v", f"{CACHE}:/root/.cache/trivy", "-e", "DOCKER_CONFIG=/tmp/docker"]
+    # An authenticated registry: the host's Docker credentials, read-only (never on a command line).
+    config = pathlib.Path(os.environ.get("DOCKER_CONFIG", pathlib.Path.home() / ".docker")) / "config.json"
+    if not SETTINGS["insecure"] and config.is_file():
+        cmd += ["-v", f"{config}:/tmp/docker/config.json:ro"]
+    # Keyless signing in GitHub Actions: cosign's provider reads the runner's OIDC request
+    # variables (their values from the client's environment, never the command line).
+    if SETTINGS["signing"] == "keyless":
+        for k in ("ACTIONS_ID_TOKEN_REQUEST_URL", "ACTIONS_ID_TOKEN_REQUEST_TOKEN"):
+            if os.environ.get(k):
+                cmd += ["-e", k]
     for k in env or {}:
         cmd += ["-e", k]  # the value comes from the docker client's environment, never the command line
     penv = {**os.environ, **(env or {})}
@@ -149,45 +179,71 @@ def keypair() -> str:
     return pw.read_text()
 
 
+def signing_flags() -> tuple[list[str], list[str]]:
+    """(sign flags, verify flags) of the configured signing mode."""
+    registry = ["--allow-http-registry", "--allow-insecure-registry"] if SETTINGS["insecure"] else []
+    if SETTINGS["signing"] == "keyless":
+        return registry, registry + ["--certificate-identity", SETTINGS["identity"], "--certificate-oidc-issuer", SETTINGS["issuer"]]
+    key = SETTINGS["key"] or "/keys/cosign.key"
+    pub = SETTINGS["key"] or "/keys/cosign.pub"
+    tlog_sign = [] if SETTINGS["tlog"] else ["--tlog-upload=false"]
+    tlog_verify = [] if SETTINGS["tlog"] else ["--insecure-ignore-tlog=true"]
+    return ["--key", key, *tlog_sign, *registry], ["--key", pub, *tlog_verify, *registry]
+
+
 def sign_and_verify(ref: str, out: pathlib.Path, password: str, sbom: str | None) -> dict:
-    flags = ["--allow-http-registry", "--allow-insecure-registry"]
-    env = {"COSIGN_PASSWORD": password}
-    tool(COSIGN, ["sign", "--yes", "--key", "/keys/cosign.key", "--tlog-upload=false", *flags, ref], out, env)
-    verified = tool(COSIGN, ["verify", "--key", "/keys/cosign.pub", "--insecure-ignore-tlog=true", *flags, ref], out)
+    env = {"COSIGN_PASSWORD": password} if SETTINGS["signing"] == "key" and not SETTINGS["key"] else {}
+    sign, verify = signing_flags()
+    tool(COSIGN, ["sign", "--yes", *sign, ref], out, env)
+    verified = tool(COSIGN, ["verify", *verify, ref], out)
     result = {"signature": "VERIFIED" if ref.split("@")[1] in verified else "FAILED"}
     if sbom:
-        tool(COSIGN, ["attest", "--yes", "--key", "/keys/cosign.key", "--tlog-upload=false", "--type", "cyclonedx",
-                      "--predicate", f"/out/{sbom}", *flags, ref], out, env)
-        att = tool(COSIGN, ["verify-attestation", "--key", "/keys/cosign.pub", "--insecure-ignore-tlog=true", "--type", "cyclonedx", *flags, ref], out)
+        tool(COSIGN, ["attest", "--yes", *sign, "--type", "spdxjson", "--predicate", f"/out/{sbom}", ref], out, env)
+        att = tool(COSIGN, ["verify-attestation", *verify, "--type", "spdxjson", ref], out)
         result["sbomAttestation"] = "VERIFIED" if att.strip() else "FAILED"
     return result
 
 
 def scan(name: str, ref: str, out: pathlib.Path) -> dict:
-    tool(TRIVY, ["image", "--insecure", "--quiet", "--image-src", "remote", "--format", "cyclonedx", "--output", f"/out/{name}.cdx.json", ref], out,
-         expect=out / f"{name}.cdx.json")
-    tool(TRIVY, ["image", "--insecure", "--quiet", "--image-src", "remote", "--scanners", "vuln,license", "--format", "json", "--output", f"/out/{name}.trivy.json", ref], out,
+    insecure = ["--insecure"] if SETTINGS["insecure"] else []
+    tool(TRIVY, ["image", *insecure, "--quiet", "--image-src", "remote", "--format", "spdx-json", "--output", f"/out/{name}.spdx.json", ref], out,
+         expect=out / f"{name}.spdx.json")
+    tool(TRIVY, ["image", *insecure, "--quiet", "--image-src", "remote", "--scanners", "vuln,license", "--format", "json", "--output", f"/out/{name}.trivy.json", ref], out,
          expect=out / f"{name}.trivy.json")
-    sbom = json.loads((out / f"{name}.cdx.json").read_text())
-    report = json.loads((out / f"{name}.trivy.json").read_text())
+    sbom = json.loads((out / f"{name}.spdx.json").read_text())
+    return {"sbom": {"file": f"{name}.spdx.json", "format": "SPDX JSON", "digest": sha256_file(out / f"{name}.spdx.json"), "packages": len(sbom.get("packages") or [])},
+            "scan": {"file": f"{name}.trivy.json", "digest": sha256_file(out / f"{name}.trivy.json"), **policy_view(json.loads((out / f"{name}.trivy.json").read_text()))}}
+
+
+def policy_view(report: dict) -> dict:
+    """The release policy's reading of a Trivy report: every severity counted, every
+    fixable CRITICAL or HIGH vulnerability named (blocking, P3.2), the license categories."""
     severities: dict[str, int] = {}
-    fixable_critical, licenses = [], {}
+    fixable, licenses = [], {}
     for r in report.get("Results") or []:
         for v in r.get("Vulnerabilities") or []:
             severities[v["Severity"]] = severities.get(v["Severity"], 0) + 1
-            if v["Severity"] == "CRITICAL" and v.get("FixedVersion"):
-                fixable_critical.append(f"{v['VulnerabilityID']} {v.get('PkgName')} {v.get('InstalledVersion')} -> {v['FixedVersion']}")
+            if v["Severity"] in BLOCKING_SEVERITIES and v.get("FixedVersion"):
+                fixable.append(f"{v['Severity']} {v['VulnerabilityID']} {v.get('PkgName')} {v.get('InstalledVersion')} -> {v['FixedVersion']}")
         for lic in r.get("Licenses") or []:
-            cat = lic.get("Category", "unknown")
-            licenses.setdefault(cat, set()).add(lic.get("Name"))
-    return {"sbom": {"file": f"{name}.cdx.json", "digest": sha256_file(out / f"{name}.cdx.json"), "components": len(sbom.get("components") or [])},
-            "scan": {"file": f"{name}.trivy.json", "digest": sha256_file(out / f"{name}.trivy.json"), "severities": severities,
-                     "fixableCritical": sorted(set(fixable_critical)), "licenses": {k: sorted(n for n in v if n) for k, v in licenses.items()}}}
+            licenses.setdefault(lic.get("Category", "unknown"), set()).add(lic.get("Name"))
+    return {"severities": severities, "fixableBlocking": sorted(set(fixable)), "licenses": {k: sorted(n for n in v if n) for k, v in licenses.items()}}
 
 
 def build(name: str, context: str, extra: list[str], run_id: str, out: pathlib.Path) -> str:
     tag = f"{HOST_REGISTRY}/{name}:{run_id}"
     log = out / f"{name}.build.log"
+    if SETTINGS["provenance"]:
+        # BuildKit's SLSA provenance (mode=max) is pushed with the image (P3.2).
+        meta = out / f"{name}.build-metadata.json"
+        p = sh(["docker", "buildx", "build", "--provenance=mode=max", "--push", "--metadata-file", str(meta), *extra, "-t", tag, context], cwd=ROOT)
+        log.write_text(p.stdout + p.stderr)
+        if p.returncode != 0:
+            raise RuntimeError(f"build failed, see {log.relative_to(ROOT)}")
+        digest = json.loads(meta.read_text()).get("containerimage.digest", "")
+        if not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
+            raise RuntimeError("buildx recorded no image digest")
+        return digest
     p = sh(["docker", "build", "--network=host", *extra, "-t", tag, context], cwd=ROOT)
     log.write_text(p.stdout + p.stderr)
     if p.returncode != 0:
@@ -233,6 +289,8 @@ def job_images() -> list[tuple[str, str, list[str]]]:
 
 
 def registry_up() -> bool:
+    if not SETTINGS["insecure"]:
+        return True  # an authenticated TLS registry: the first push proves it
     try:
         with urllib.request.urlopen(f"http://{HOST_REGISTRY}/v2/", timeout=5) as r:
             return r.status == 200
@@ -240,17 +298,126 @@ def registry_up() -> bool:
         return False
 
 
+def parent_tag() -> str | None:
+    """The release tag the parent's HEAD carries (a release builds from a tag)."""
+    p = sh(["git", "describe", "--tags", "--exact-match", "HEAD"], cwd=ROOT)
+    return (p.stdout.strip() or None) if p.returncode == 0 else None
+
+
+def findings_of(manifest: dict) -> list[str]:
+    """Every blocking finding of a manifest's artifacts: the policy, the signatures and
+    attestations, and the cleanliness of every source (P3.2)."""
+    found: list[str] = []
+    for name, e in manifest["images"].items():
+        if e.get("signature") not in ("VERIFIED", "NOT_SIGNED (third-party image, pinned by digest)") or e.get("sbomAttestation", "VERIFIED") != "VERIFIED":
+            found.append(f"{name}: signature {e.get('signature')}, attestation {e.get('sbomAttestation')}")
+        src = e.get("source")
+        if isinstance(src, dict) and src.get("clean") is False:
+            found.append(f"{name}: built from a dirty input ({src.get('repository')}: {src.get('uncommittedPaths')} uncommitted or untracked paths)")
+        scan_ = e.get("scan") or {}
+        for v in scan_.get("fixableBlocking", scan_.get("fixableCritical", [])):
+            found.append(f"{name}: policy: fixable {v}")
+        if (scan_.get("licenses") or {}).get("forbidden"):
+            found.append(f"{name}: policy: forbidden licenses {scan_['licenses']['forbidden']}")
+    for name, e in manifest["charts"].items():
+        if e.get("signature") != "VERIFIED":
+            found.append(f"chart {name}: signature {e.get('signature')}")
+        src = e.get("source")
+        if isinstance(src, dict) and src.get("clean") is False:
+            found.append(f"chart {name}: packaged from a dirty input ({src.get('repository')})")
+    return found
+
+
+def derive_status(findings: list[str], placement: dict) -> tuple[str, list[str]]:
+    """BLOCKED on any finding; SIGNED only for a production placement; otherwise
+    SIGNED_DEVELOPMENT_ONLY with its reasons (never hard-coded, P3.2)."""
+    if findings:
+        return "BLOCKED", []
+    reasons = []
+    if placement.get("signing") == "key" and not placement.get("kmsKey"):
+        reasons.append("development signing key under .local/release (no ENV-10 key custody)")
+    if placement.get("insecureRegistry"):
+        reasons.append("plain-HTTP registry")
+    if not placement.get("transparencyLog"):
+        reasons.append("no transparency log")
+    if not placement.get("provenance"):
+        reasons.append("no build provenance")
+    if not placement.get("tag"):
+        reasons.append("the parent's HEAD carries no release tag")
+    return ("SIGNED_DEVELOPMENT_ONLY" if reasons else "SIGNED"), reasons
+
+
+def self_test() -> int:
+    """P3.2 AC2/AC3: the status rules on synthetic manifests, without Docker."""
+    clean = {"repository": ".", "clean": True}
+    good = {"signature": "VERIFIED", "sbomAttestation": "VERIFIED", "source": clean, "scan": {"fixableBlocking": [], "licenses": {}}}
+    production = {"signing": "keyless", "insecureRegistry": False, "transparencyLog": True, "provenance": True, "tag": "v1.0.0"}
+    development = {"signing": "key", "insecureRegistry": True, "transparencyLog": False, "provenance": False, "tag": None}
+
+    def manifest(**images) -> dict:
+        return {"images": images, "charts": {"anvilkit-agent-api": {"signature": "VERIFIED", "source": clean}}}
+
+    def vuln(severity: str, fixed: str | None) -> dict:
+        v = {"Severity": severity, "VulnerabilityID": "CVE-0000-0001", "PkgName": "openssl", "InstalledVersion": "3.0.0"}
+        return policy_view({"Results": [{"Vulnerabilities": [{**v, **({"FixedVersion": fixed} if fixed else {})}]}]})
+
+    cases = []
+    cases.append(("a clean, verified, keyless, tagged release with provenance is SIGNED",
+                  derive_status(findings_of(manifest(api=good)), production)[0] == "SIGNED"))
+    st, why = derive_status(findings_of(manifest(api=good)), development)
+    cases.append(("the development placement is SIGNED_DEVELOPMENT_ONLY with its five reasons", st == "SIGNED_DEVELOPMENT_ONLY" and len(why) == 5))
+    dirty = {**good, "source": {"repository": "services/agent/api", "clean": False, "uncommittedPaths": 3}}
+    cases.append(("an image built from a dirty input is BLOCKED", derive_status(findings_of(manifest(api=dirty)), production)[0] == "BLOCKED"))
+    cases.append(("a fixable HIGH vulnerability is BLOCKED", derive_status(findings_of(manifest(api={**good, "scan": vuln("HIGH", "3.0.1")})), production)[0] == "BLOCKED"))
+    cases.append(("a fixable CRITICAL vulnerability is BLOCKED", derive_status(findings_of(manifest(api={**good, "scan": vuln("CRITICAL", "3.0.1")})), production)[0] == "BLOCKED"))
+    unfixable = {**good, "scan": vuln("CRITICAL", None)}
+    cases.append(("an unfixable CRITICAL is counted, not blocking",
+                  derive_status(findings_of(manifest(api=unfixable)), production)[0] == "SIGNED" and unfixable["scan"]["severities"] == {"CRITICAL": 1}))
+    cases.append(("a fixable MEDIUM is counted, not blocking", derive_status(findings_of(manifest(api={**good, "scan": vuln("MEDIUM", "1")})), production)[0] == "SIGNED"))
+    cases.append(("an unverified signature is BLOCKED", derive_status(findings_of(manifest(api={**good, "signature": "FAILED"})), production)[0] == "BLOCKED"))
+    m = manifest(api=good)
+    m["charts"]["anvilkit-agent-api"]["signature"] = "FAILED"
+    cases.append(("an unsigned chart is BLOCKED", derive_status(findings_of(m), production)[0] == "BLOCKED"))
+    cases.append(("a KMS-held key with the transparency log is SIGNED",
+                  derive_status(findings_of(manifest(api=good)), {**production, "signing": "key", "kmsKey": True})[0] == "SIGNED"))
+    cases.append(("an untagged parent is not SIGNED", derive_status(findings_of(manifest(api=good)), {**production, "tag": None})[0] == "SIGNED_DEVELOPMENT_ONLY"))
+    failures = [n for n, ok in cases if not ok]
+    for n, ok in cases:
+        print(f"{'PASS' if ok else 'FAIL':<5} self-test: {n}")
+    print(f"release-artifacts self-test: {len(cases) - len(failures)}/{len(cases)} PASS")
+    return 1 if failures else 0
+
+
 def main() -> int:
+    global HOST_REGISTRY, REGISTRY, NETWORK
     ap = argparse.ArgumentParser()
     ap.add_argument("--run", default=datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ"))
     ap.add_argument("--only", action="append", help="limit to these image or chart names (repeatable)")
     ap.add_argument("--no-build", action="store_true", help="reuse the images this run already pushed (manifest of --run)")
     ap.add_argument("--from-run", help="derive this run from another run's manifest: its artifacts are carried over (with their evidence "
                                        "in that run) except those --only selects, which are rebuilt")
+    ap.add_argument("--registry-push", default=HOST_REGISTRY, help="the registry as this host pushes to it")
+    ap.add_argument("--registry", default=REGISTRY, help="the registry as clusters and the tool containers reach it")
+    ap.add_argument("--network", default=NETWORK, help="the Docker network of the tool containers (host in CI)")
+    ap.add_argument("--signing", choices=["key", "keyless"], default="key", help="key: --key, by default the development key under .local/release; keyless: CI OIDC")
+    ap.add_argument("--key", help="a cosign key reference held outside this machine (hashivault://..., awskms://..., gcpkms://...)")
+    ap.add_argument("--certificate-identity", help="keyless: the signer identity verification requires (the release workflow's ref)")
+    ap.add_argument("--certificate-oidc-issuer", help="keyless: the OIDC issuer verification requires")
+    ap.add_argument("--transparency-log", action="store_true", help="upload key signatures to the transparency log (always on for keyless)")
+    ap.add_argument("--provenance", action="store_true", help="build with BuildKit SLSA provenance (docker buildx, pushed with the image)")
+    ap.add_argument("--self-test", action="store_true", help="prove the status rules on synthetic manifests and exit")
     a = ap.parse_args()
+    if a.self_test:
+        return self_test()
+    HOST_REGISTRY, REGISTRY, NETWORK = a.registry_push, a.registry, a.network
+    if a.signing == "keyless" and not (a.certificate_identity and a.certificate_oidc_issuer):
+        ap.error("--signing keyless needs --certificate-identity and --certificate-oidc-issuer")
+    SETTINGS.update({"signing": a.signing, "key": a.key, "insecure": HOST_REGISTRY in DEVELOPMENT_REGISTRIES or REGISTRY in DEVELOPMENT_REGISTRIES,
+                     "tlog": a.signing == "keyless" or a.transparency_log, "identity": a.certificate_identity, "issuer": a.certificate_oidc_issuer,
+                     "provenance": a.provenance})
     helm_bin = helm()
     if not shutil.which("docker") or not helm_bin or not registry_up():
-        print("UNEXECUTED: docker, helm and the development registry (localhost:5001) are required")
+        print(f"UNEXECUTED: docker, helm and the registry ({HOST_REGISTRY}) are required")
         return 2
     out = ROOT / "outputs/qualification" / a.run / "release"
     out.mkdir(parents=True, exist_ok=True)
@@ -267,15 +434,26 @@ def main() -> int:
     def carry(entry: dict) -> dict:
         """An artifact taken from another run keeps its SBOM, scan and signature evidence there."""
         return {**entry, "evidenceRun": entry.get("evidenceRun", carried_from)} if carried_from else entry
-    password = keypair()
-    pub = KEYS / "cosign.pub"
-    manifest = {"schemaVersion": 1, "run": a.run, "placement": "DEVELOPMENT_ONLY",
-                "registry": {"push": HOST_REGISTRY, "reference": REGISTRY, "product": "CNCF Distribution (E02 alternative); Harbor NOT_RUN"},
-                "signing": {"publicKey": "cosign.pub", "publicKeyDigest": sha256_file(pub), "custody": "DEVELOPMENT_ONLY key under .local/release (ENV-10 custody NOT_VERIFIED)", "transparencyLog": "not used"},
+    development_key = a.signing == "key" and not a.key
+    password = keypair() if development_key else ""
+    CACHE.mkdir(parents=True, exist_ok=True)
+    placement = {"signing": a.signing, "kmsKey": bool(a.key), "insecureRegistry": SETTINGS["insecure"], "transparencyLog": SETTINGS["tlog"],
+                 "provenance": a.provenance, "tag": parent_tag()}
+    if a.signing == "keyless":
+        signing = {"mode": "keyless", "certificateIdentity": a.certificate_identity, "certificateOidcIssuer": a.certificate_oidc_issuer, "transparencyLog": "rekor"}
+    elif a.key:
+        signing = {"mode": "key", "key": a.key, "custody": "held outside this machine (KMS/OpenBao)", "transparencyLog": "rekor" if SETTINGS["tlog"] else "not used"}
+    else:
+        pub = KEYS / "cosign.pub"
+        signing = {"mode": "key", "publicKey": "cosign.pub", "publicKeyDigest": sha256_file(pub),
+                   "custody": "DEVELOPMENT_ONLY key under .local/release (ENV-10 custody NOT_VERIFIED)", "transparencyLog": "rekor" if SETTINGS["tlog"] else "not used"}
+        shutil.copy(pub, out / "cosign.pub")
+    manifest = {"schemaVersion": 1, "run": a.run, "parentTag": placement["tag"],
+                "registry": {"push": HOST_REGISTRY, "reference": REGISTRY, "insecure": SETTINGS["insecure"]},
+                "signing": signing, "provenance": "BuildKit SLSA mode=max" if a.provenance else "none",
                 "tools": {"trivy": TRIVY, "cosign": COSIGN, "helm": must([helm_bin, "version", "--short"]).strip(), "docker": must(["docker", "version", "--format", "{{.Server.Version}}"]).strip()},
-                "policy": "block: CRITICAL vulnerability with a fixed version; forbidden license category (DEVELOPMENT_ONLY rule pending the security owner)",
+                "policy": "block: fixable CRITICAL or HIGH vulnerability; forbidden license category; dirty input; unverified signature or attestation (P3.2 rule pending the security owner)",
                 "images": {}, "charts": {}}
-    shutil.copy(pub, out / "cosign.pub")
     findings: list[str] = []
     want = set(a.only or [])
 
@@ -294,7 +472,7 @@ def main() -> int:
             ref = f"{REGISTRY}/{name}@{digest}"
             entry.update({"reference": ref, "digest": digest})
             entry.update(scan(name, ref, out))
-            entry.update(sign_and_verify(ref, out, password, f"{name}.cdx.json"))
+            entry.update(sign_and_verify(ref, out, password, f"{name}.spdx.json"))
             manifest["images"][name] = entry
             print(f"{digest[:19]}… signed {entry['signature']}, attestation {entry['sbomAttestation']}, {entry['scan']['severities']}")
         except RuntimeError as e:
@@ -316,7 +494,7 @@ def main() -> int:
             entry = {"kind": "job" if owned else "third-party job", "reference": ref, "digest": digest, "profiles": users,
                      "source": "the reviewed profile's pinned digest (not rebuilt)"}
             entry.update(scan(key.replace("@", "-"), ref, out))
-            entry.update(sign_and_verify(ref, out, password, f"{key.replace('@', '-')}.cdx.json") if owned
+            entry.update(sign_and_verify(ref, out, password, f"{key.replace('@', '-')}.spdx.json") if owned
                          else {"signature": "NOT_SIGNED (third-party image, pinned by digest)"})
             manifest["images"][key] = entry
             print(f"signed {entry['signature']}, {entry['scan']['severities']}")
@@ -335,7 +513,7 @@ def main() -> int:
             entry = {"kind": "third-party platform", "reference": ref, "digest": digest,
                      "source": {"upstream": upstream, "mirroredAs": f"{REGISTRY}/{target}"}}
             entry.update(scan(name, ref, out))
-            entry.update(sign_and_verify(ref, out, password, f"{name}.cdx.json"))
+            entry.update(sign_and_verify(ref, out, password, f"{name}.spdx.json"))
             manifest["images"][name] = entry
             print(f"{digest[:19]}… signed {entry['signature']}, attestation {entry['sbomAttestation']}, {entry['scan']['severities']}")
         except (RuntimeError, OSError) as e:
@@ -355,7 +533,7 @@ def main() -> int:
             # A per-run prerelease version: a published chart tag is never overwritten.
             base = yaml_version(ROOT / chart / "Chart.yaml")
             pkg = must([helm_bin, "package", str(ROOT / chart), "-d", str(charts), "--version", f"{base}-qualification.{a.run}"]).strip().split(": ")[-1]
-            pushed = sh([helm_bin, "push", pkg, f"oci://{HOST_REGISTRY}/charts", "--plain-http"])
+            pushed = sh([helm_bin, "push", pkg, f"oci://{HOST_REGISTRY}/charts", *(["--plain-http"] if SETTINGS["insecure"] else [])])
             m = re.search(r"Digest: (sha256:[0-9a-f]{64})", pushed.stdout + pushed.stderr)
             if pushed.returncode != 0 or not m:
                 raise RuntimeError((pushed.stderr or pushed.stdout).strip()[-300:])
@@ -368,21 +546,13 @@ def main() -> int:
         except RuntimeError as e:
             findings.append(f"chart {name}: {e}")
             print(f"FAILED {e}")
-    for name, e in manifest["images"].items():
-        if e.get("signature") not in ("VERIFIED", "NOT_SIGNED (third-party image, pinned by digest)") or e.get("sbomAttestation", "VERIFIED") != "VERIFIED":
-            findings.append(f"{name}: signature {e.get('signature')}, attestation {e.get('sbomAttestation')}")
-        for v in e["scan"]["fixableCritical"]:
-            findings.append(f"{name}: policy: fixable CRITICAL {v}")
-        if e["scan"]["licenses"].get("forbidden"):
-            findings.append(f"{name}: policy: forbidden licenses {e['scan']['licenses']['forbidden']}")
-    for name, e in manifest["charts"].items():
-        if e.get("signature") != "VERIFIED":
-            findings.append(f"chart {name}: signature {e.get('signature')}")
+    findings += findings_of(manifest)
     if carried_from:
         manifest["derivedFrom"] = {"run": carried_from, "manifestSha256": sha256_file(ROOT / "outputs/qualification" / carried_from / "release/release-manifest.json"),
                                    "rebuilt": sorted(want)}
     manifest["findings"] = findings
-    manifest["status"] = "BLOCKED" if findings else "SIGNED_DEVELOPMENT_ONLY"
+    manifest["placement"] = placement
+    manifest["status"], manifest["developmentReasons"] = derive_status(findings, placement)
     manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
     print(f"\nmanifest {manifest_path.relative_to(ROOT)} {sha256_file(manifest_path)}: {manifest['status']}, "
           f"{len(manifest['images'])} images, {len(manifest['charts'])} charts, {len(findings)} findings")

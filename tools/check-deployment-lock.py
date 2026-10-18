@@ -17,6 +17,15 @@ cluster's max_connections. The lock must name all eight services and every DD-10
 platform row with a production status of REQUIRED and its ENV inputs.
 
 Production fields that are REQUIRED are listed as NOT_VERIFIED; they never pass.
+Once ENV-01..ENV-10 supply them (P3.8), a production row is SUPPLIED with its source
+(the ENV record) and concrete values: every platform row names the application of the
+production combination that provides it, every service's production autoscaling has a
+minimum of at least two and a maximum, every connection budget a production
+max_connections. Then the production combination (lock environments.production) is
+checked like the qualification one, with the production values in place of the
+qualification ones: the charts rendered with the production values must meet the
+replica floor, and every connection budget must fit. Without a production combination
+the production check is NOT_RUN (named, never a pass).
 --self-test applies known defects to copies of the rendered objects and the lock
 and requires each to be reported. Exit 0 when the qualification environment satisfies
 the lock, 1 on any finding, 2 when helm is unavailable (UNEXECUTED).
@@ -221,19 +230,75 @@ def check_structure(lock: dict, findings: list[str]) -> list[str]:
     not_verified = []
     for p in lock["platform"]:
         prod, qual = p.get("production", {}), p.get("qualification", {})
-        if prod.get("status") != "REQUIRED" or not prod.get("inputs"):
+        if prod.get("status") == "SUPPLIED":
+            if not (prod.get("source") and prod.get("application")):
+                findings.append(f"platform {p['name']}: a SUPPLIED production row names its source and the combination application providing it")
+        elif prod.get("status") != "REQUIRED" or not prod.get("inputs"):
             findings.append(f"platform {p['name']}: production must be REQUIRED with its ENV inputs until they exist")
         if qual.get("status") not in ("DEVELOPMENT_ONLY", "NOT_RUN") or (qual.get("status") == "NOT_RUN" and not qual.get("reason")):
             findings.append(f"platform {p['name']}: qualification is DEVELOPMENT_ONLY or NOT_RUN with a reason")
         not_verified.append(f"  {p['name']:<25} production REQUIRED ({', '.join(prod.get('inputs', []))})")
     for a in lock["applications"]:
         prod = a["autoscaling"]["production"]
-        if prod.get("max") != "REQUIRED" or not prod.get("inputs"):
+        if isinstance(prod.get("max"), int):
+            if not (isinstance(prod.get("min"), int) and prod.get("source")):
+                findings.append(f"{a['name']}: a supplied production autoscaling names its minimum and its source")
+        elif prod.get("max") != "REQUIRED" or not prod.get("inputs"):
             findings.append(f"{a['name']}: the production autoscaling maximum must stay REQUIRED with its inputs")
         not_verified.append(f"  {a['name']:<25} production maximum, resources and placement REQUIRED ({', '.join(prod.get('inputs', []))})")
     for b in lock["connectionBudgets"]:
         not_verified.append(f"  budget {b['cluster']:<18} production max_connections REQUIRED ({', '.join(b['maxConnections'].get('inputs', []))})")
     return not_verified
+
+
+def production_view(lock: dict) -> dict:
+    """The lock with its production values in the qualification slots, so the
+    per-application and budget checks apply to the production combination."""
+    lk = copy.deepcopy(lock)
+    for a in lk["applications"]:
+        prod = a["autoscaling"]["production"]
+        a["autoscaling"]["qualification"] = {"max": prod.get("max")}
+        if isinstance(prod.get("min"), int):
+            a["replicas"]["min"] = max(a["replicas"]["min"], prod["min"])
+    for b in lk["connectionBudgets"]:
+        b["maxConnections"]["qualification"] = b["maxConnections"].get("production")
+    return lk
+
+
+def check_production(lock: dict, combination: dict, rendered: dict[str, list[dict]], findings: list[str]) -> list[str]:
+    """P3.8 AC1: concrete production values against the production combination."""
+    for a in lock["applications"]:
+        prod = a["autoscaling"]["production"]
+        if not (isinstance(prod.get("min"), int) and isinstance(prod.get("max"), int) and prod.get("source")):
+            findings.append(f"production {a['name']}: autoscaling needs a concrete minimum, maximum and source (got {prod})")
+        elif prod["min"] < 2 or prod["max"] < prod["min"]:
+            findings.append(f"production {a['name']}: minimum {prod['min']} below two replicas or above the maximum {prod['max']}")
+    for b in lock["connectionBudgets"]:
+        if not isinstance(b["maxConnections"].get("production"), int):
+            findings.append(f"production budget {b['cluster']}: max_connections is not a concrete value")
+    apps = {a["name"] for a in combination.get("applications", [])}
+    for p in lock["platform"]:
+        prod = p.get("production", {})
+        if prod.get("status") != "SUPPLIED":
+            findings.append(f"production platform {p['name']}: still {prod.get('status')} ({', '.join(prod.get('inputs', []))})")
+        elif prod.get("application") not in apps:
+            findings.append(f"production platform {p['name']}: its application {prod.get('application')!r} is absent from the production combination")
+    check_combination(combination, findings)
+    if findings:
+        return []
+    view = production_view(lock)
+    maxima = {}
+    for app in view["applications"]:
+        if app["name"] not in rendered:
+            findings.append(f"production {app['name']}: not rendered with production values")
+            continue
+        before = len(findings)
+        maxima[app["name"]] = check_app(app, view, rendered[app["name"]], findings)["max"]
+        findings[before:] = [f"production {x}" for x in findings[before:]]
+    before = len(findings)
+    report = check_budgets(view, maxima, findings)
+    findings[before:] = [f"production {x}" for x in findings[before:]]
+    return report
 
 
 def check_combination(combination: dict, findings: list[str]) -> None:
@@ -305,7 +370,7 @@ def self_test(lock: dict, rendered: dict[str, list[dict]], combination: dict) ->
               "platform row missing": missing_platform, "production maximum guessed": guessed_production,
               "PDB selects the migration Job": pdb_selects_migration, "network policies absent": no_network_policies,
               "secret delivery absent": no_secret_delivery}
-    failures = []
+    failures = production_self_test(lock, rendered, combination)
     for label, mutate in probes.items():
         r, lk, cb = copy.deepcopy(rendered), copy.deepcopy(lock), copy.deepcopy(combination)
         if mutate in (no_network_policies, no_secret_delivery):  # combination probes
@@ -315,6 +380,51 @@ def self_test(lock: dict, rendered: dict[str, list[dict]], combination: dict) ->
         findings, _, _ = evaluate(lk, r, cb)
         print(f"  probe {label:<32} {'detected: ' + findings[0] if findings else 'NOT DETECTED'}")
         if not findings:
+            failures.append(label)
+    return failures
+
+
+def production_self_test(lock: dict, rendered: dict[str, list[dict]], combination: dict) -> list[str]:
+    """A synthetic SUPPLIED production lock (the qualification values, each named
+    as supplied by the self-test, every platform row provided by a combination
+    application) passes; each known production defect is reported."""
+    supplied = copy.deepcopy(lock)
+    provider = combination["applications"][0]["name"]
+    for a in supplied["applications"]:
+        a["autoscaling"]["production"] = {"min": a["replicas"]["min"], "max": a["autoscaling"]["qualification"]["max"], "source": "self-test"}
+    for b in supplied["connectionBudgets"]:
+        b["maxConnections"]["production"] = b["maxConnections"]["qualification"]
+    for p in supplied["platform"]:
+        p["production"] = {"status": "SUPPLIED", "source": "self-test", "application": provider}
+    failures = []
+    base: list[str] = []
+    check_production(supplied, combination, rendered, base)
+    print(f"  production baseline (synthetic SUPPLIED lock)  {'passes' if not base else 'FAILS: ' + base[0]}")
+    if base:
+        failures.append("production baseline")
+
+    def floor(lk):
+        a = next(x for x in lk["applications"] if x["name"] == "anvilkit-agent-api")
+        a["autoscaling"]["production"]["min"] = a["autoscaling"]["production"]["max"] + 1
+        a["autoscaling"]["production"]["max"] = a["autoscaling"]["production"]["min"]
+
+    def undersized(lk):
+        lk["connectionBudgets"][0]["maxConnections"]["production"] = 10
+
+    def absent(lk):
+        lk["platform"][0]["production"]["application"] = "anvilkit-not-in-the-combination"
+
+    def unfilled(lk):
+        lk["applications"][1]["autoscaling"]["production"] = {"max": "REQUIRED", "inputs": ["ENV-05"]}
+
+    for label, mutate in {"production replica floor missing": floor, "production connection budget undersized": undersized,
+                          "platform row absent from the combination": absent, "production value not filled": unfilled}.items():
+        lk = copy.deepcopy(supplied)
+        mutate(lk)
+        found: list[str] = []
+        check_production(lk, combination, rendered, found)
+        print(f"  probe {label:<40} {'detected: ' + found[0] if found else 'NOT DETECTED'}")
+        if not found:
             failures.append(label)
     return failures
 
@@ -347,6 +457,20 @@ def main() -> int:
     print("\n".join(budget))
     print("NOT_VERIFIED (production inputs):")
     print("\n".join(not_verified))
+    prod_env = lock["environments"].get("production") or {}
+    prod_combination = ROOT / prod_env["combination"] if prod_env.get("combination") else None
+    if prod_combination and prod_combination.exists():
+        prod_values = ROOT / prod_env["values"]
+        prod_rendered = {}
+        for app in lock["applications"]:
+            values = prod_values / f"{app['name']}.yaml"
+            if values.exists():
+                prod_rendered[app["name"]] = render(helm_bin, app, values)
+        prod_report = check_production(lock, yaml.safe_load(prod_combination.read_text()), prod_rendered, findings)
+        print("connection budgets (production):")
+        print("\n".join(prod_report))
+    else:
+        print("production: NOT_RUN - no production combination (lock environments.production; its values are ENV-01..ENV-10)")
     if a.self_test:
         print("self-test:")
         if self_test(lock, rendered, combination):

@@ -7,28 +7,33 @@ contract and evidence recording").
   .local/verification-venv/bin/python tools/run-verification.py --static
 
 Steps, in order:
-  docs        tools/check-docs.py                      current-baseline Markdown, missing inputs fail
+  docs        tools/check-docs.py                      current-baseline Markdown, missing inputs fail, generated status drift (docs-status.py)
   generate    pnpm install --frozen-lockfile in        the contracts repository's pinned generators (ts-proto and
               contracts/, then                         openapi-typescript come from that locked install) reproduce
               tools/generate-contracts.py --check      every checked-in binding (contracts/{go,ts,python});
                                                        sqlc reproduces Control's data-access code
   contracts   tools/check-contracts.py                 contracts/tools/check.py: buf lint, OpenAPI, JSON Schema
                                                        fixtures, API/RPC vectors
-  evals       tools/run-evaluation.py --check           the P22 registry (tests/evals/registry.json) maps every
-                                                       M1/CAP/SEC requirement to existing executable cases or
-                                                       explicit NOT_RUN entries naming the missing ENV inputs
+  evals       tools/run-evaluation.py --check and       the P22 registry (tests/evals/registry.json) maps every
+              --self-test                              M1/CAP/SEC requirement to existing executable cases or
+                                                       explicit NOT_RUN entries naming the missing ENV inputs;
+                                                       the evaluator's skip/BLOCKED/roll-up negatives hold
   deployment  tools/check-deployment-lock.py           the P23 deployment lock (deploy/gitops/lock.yaml): the eight
-              --self-test                              charts rendered with the qualification values carry its
+              --self-test; the self-tests of           charts rendered with the qualification values carry its
                                                        replica/HPA/PDB/spread/probe/grace/pool limits, the
                                                        connection budgets fit, production fields stay REQUIRED;
-                                                       its negative probes must each be detected
+              tools/release-artifacts.py,              its negative probes must each be detected; the release
+              deploy/gitops/publish.py and             tools refuse BLOCKED, dirty or unsigned inputs and
+              deploy/qualification/record.py           evidence of another release (P3.2)
   handover    deploy/handover/rehearse.py self-test    the P24 rehearsal's decisions on synthetic inputs: each
                                                        single violation of a preservation rule requires a
                                                        transfer; legacy-name patterns and route classifiers
-  export      tools/check-source-export.py             the Git export set (parent plus the contracts and API
-                                                       repositories) holds every declared input and no
-                                                       archive/secret/legacy-submodule content; a disposable
-                                                       copy passes docs/contract checks and builds on its own
+  export      tools/check-source-export.py             the committed trees a clean recursive clone checks out
+              --self-test, then the check              (the parent's HEAD and each submodule at its gitlink)
+                                                       hold every declared input and no archive/secret/
+                                                       legacy-submodule content; an untracked input fails;
+                                                       a disposable extraction passes docs/contract checks
+                                                       and builds on its own
   ts          pnpm install --frozen-lockfile in        the TypeScript consumer type-checks (tsc), lints (Biome)
               contracts/, then check-types/lint/test   and agrees with the fixtures (Vitest)
               in contracts/ts
@@ -70,10 +75,20 @@ Steps, in order:
                                                        Workflow repository's cluster scenario the parent
                                                        starts a Control from the Control repository first
 
-Each step prints PASS, FAIL or UNEXECUTED; an UNEXECUTED step is one whose environment is
-missing and is never counted as a pass. Exit code 1 if anything failed, 2 if something could
-not run, 0 otherwise. This runner never regenerates, deletes or publishes anything; --check
-mode generation writes only into a temporary directory. The runner itself refuses to start
+Each step prints PASS, PARTIAL, FAIL or UNEXECUTED (P3.3, plan 0004). PASS means every
+part of the step ran and passed. PARTIAL means what ran passed but work was omitted: a
+step that only byte-compiles or builds under --static (knowledge, background, parser,
+inference), or any test that skipped itself. The Go and Vitest suites run with their
+JSON reporters (`go test -json`, `vitest --reporter=json`), and every skipped package,
+test or subtest is listed as an UNEXECUTED unit with its skip reason; the summary counts
+those units apart from the steps. UNEXECUTED means the step's environment is missing.
+Neither PARTIAL nor UNEXECUTED is ever counted as a pass. Running as root sets
+ANVILKIT_REQUIRE_ROOT_TESTS=1, which turns a root-only skip into a failure, and
+ANVILKIT_REQUIRE_VALIDATOR=1 once jobs/validator is built; their absence is reported.
+Every command has a timeout (ANVILKIT_VERIFY_TIMEOUT seconds, default 2400). An unknown
+--only name is refused. Exit code 1 if anything failed, 2 if any step is not a full PASS,
+0 otherwise. This runner never regenerates, deletes or publishes anything; --check mode
+generation writes only into a temporary directory. The runner itself refuses to start
 under an interpreter other than the pinned one (tools/requirements.txt), because the Python
 steps would then report failures of the machine rather than of the checkout.
 """
@@ -81,6 +96,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import json
 import os
 import pathlib
 import re
@@ -108,12 +124,91 @@ def workspace_modules() -> list[pathlib.Path]:
     return [ROOT / m for m in re.findall(r"^\s*\./(\S+)", work, flags=re.M)]
 
 
-def run(cmd: list[str], cwd: pathlib.Path, env: dict | None = None) -> subprocess.CompletedProcess:
-    return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, env=env)
+TIMEOUT = int(os.environ.get("ANVILKIT_VERIFY_TIMEOUT", "2400"))
+IS_ROOT = hasattr(os, "geteuid") and os.geteuid() == 0
 
 
-def step_go(static: bool) -> tuple[str, str]:
-    env = dict(os.environ)
+def run(cmd: list[str], cwd: pathlib.Path, env: dict | None = None, timeout: int = TIMEOUT) -> subprocess.CompletedProcess:
+    """One command with a bound; a timeout is a failure with what it printed so far."""
+    try:
+        return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, env=env, timeout=timeout)
+    except subprocess.TimeoutExpired as e:
+        out = e.stdout.decode(errors="replace") if isinstance(e.stdout, bytes) else (e.stdout or "")
+        err = e.stderr.decode(errors="replace") if isinstance(e.stderr, bytes) else (e.stderr or "")
+        return subprocess.CompletedProcess(cmd, 124, out, err + f"\ntimed out after {timeout}s: {' '.join(cmd)}")
+
+
+def test_env(env: dict | None = None) -> dict:
+    """The environment of every test command: as root, root-only tests must run
+    (ANVILKIT_REQUIRE_ROOT_TESTS=1 turns their skip into a failure); with the
+    validator built, the team's validation cases must run (ANVILKIT_REQUIRE_VALIDATOR=1)."""
+    env = dict(os.environ if env is None else env)
+    if IS_ROOT:
+        env.setdefault("ANVILKIT_REQUIRE_ROOT_TESTS", "1")
+    if (ROOT / "jobs" / "validator" / "dist" / "job.js").exists():
+        env.setdefault("ANVILKIT_REQUIRE_VALIDATOR", "1")
+    return env
+
+
+class Units:
+    """Skipped tests of a step: each is an UNEXECUTED unit with its reason."""
+
+    def __init__(self) -> None:
+        self.items: list[str] = []
+
+    def add(self, unit: str, reason: str) -> None:
+        self.items.append(f"{unit}: {reason}")
+
+
+def go_test(mod: pathlib.Path, env: dict, units: Units) -> tuple[bool, str]:
+    """`go test -json -count=1 ./...` in one module: every skipped test or subtest
+    becomes an UNEXECUTED unit with its printed reason; a failure keeps the
+    failing tests' output."""
+    p = run(["go", "test", "-json", "-count=1", "./..."], mod, env)
+    notes: dict[str, list[str]] = {}
+    failed: list[str] = []
+    for line in p.stdout.splitlines():
+        try:
+            ev = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        pkg, test, action = ev.get("Package", ""), ev.get("Test"), ev.get("Action")
+        key = f"{pkg} {test or ''}".strip()
+        if action == "output":
+            notes.setdefault(key, []).append(ev.get("Output") or "")
+        elif action == "skip" and test:
+            said = [n.strip() for n in notes.get(key, []) if "_test.go:" in n]
+            units.add(f"{mod.relative_to(ROOT)} {pkg.rsplit('/', 1)[-1]}.{test}", (said[-1] if said else "no reason printed")[:200])
+        elif action == "fail":
+            failed.append(key)
+    if p.returncode == 0 and not failed:
+        return True, ""
+    tail = "".join(n for k in failed for n in notes.get(k, []))[-3000:]
+    return False, tail or (p.stdout[-2000:] + p.stderr[-2000:])
+
+
+def vitest(pkg: pathlib.Path, env: dict, units: Units) -> tuple[bool, str]:
+    """The package's tests (its test script is `vitest run`) with the JSON reporter:
+    skipped, pending and todo tests become UNEXECUTED units."""
+    with tempfile.TemporaryDirectory(prefix="anvilkit-vitest-") as tmp:
+        report = pathlib.Path(tmp) / "report.json"
+        p = run([shutil.which("pnpm") or "pnpm", "exec", "vitest", "run", "--reporter=default", "--reporter=json", f"--outputFile.json={report}"], pkg, env)
+        if not report.exists():
+            return False, "no Vitest JSON report was written\n" + p.stdout[-2000:] + p.stderr[-2000:]
+        doc = json.loads(report.read_text(encoding="utf-8"))
+    for f in doc.get("testResults", []):
+        for a in f.get("assertionResults", []):
+            if a.get("status") in ("skipped", "pending", "todo", "disabled"):
+                units.add(f"{pkg.relative_to(ROOT)} {pathlib.Path(f.get('name', '')).name} > {a.get('fullName')}", f"vitest {a.get('status')}")
+    if p.returncode != 0 or doc.get("numFailedTests") or doc.get("numFailedTestSuites"):
+        return False, p.stdout[-3000:] + p.stderr[-1500:]
+    if not doc.get("numTotalTests"):
+        units.add(str(pkg.relative_to(ROOT)), "no test ran")
+    return True, ""
+
+
+def step_go(static: bool, units: Units) -> tuple[str, str]:
+    env = test_env()
     if static:
         env["ANVILKIT_SKIP_DOCKER_TESTS"] = "1"
     elif not shutil.which("docker"):
@@ -128,12 +223,19 @@ def step_go(static: bool) -> tuple[str, str]:
             if p.returncode != 0:
                 return "FAIL", "\n".join(out + [p.stdout[-2000:], p.stderr[-2000:]])
             continue
-        for cmd in (["go", "build", "./..."], ["go", "vet", "./..."], ["go", "test", "-count=1", "./..."]):
+        for cmd in (["go", "build", "./..."], ["go", "vet", "./..."]):
             p = run(cmd, mod, env)
             out.append(f"{mod.relative_to(ROOT)}: {' '.join(cmd[:2])} -> {'ok' if p.returncode == 0 else 'FAIL'}")
             if p.returncode != 0:
                 return "FAIL", "\n".join(out + [p.stdout[-2000:], p.stderr[-2000:]])
-    return "PASS", "\n".join(out)
+        before = len(units.items)
+        ok, detail = go_test(mod, env, units)
+        out.append(f"{mod.relative_to(ROOT)}: go test -> {'ok' if ok else 'FAIL'}" + (f" ({len(units.items) - before} skipped)" if len(units.items) > before else ""))
+        if not ok:
+            return "FAIL", "\n".join(out + [detail])
+    if static:
+        out.append("--static: ANVILKIT_SKIP_DOCKER_TESTS=1, the Docker-backed tests are omitted")
+    return ("PARTIAL" if units.items or static else "PASS"), "\n".join(out)
 
 
 def locked_install() -> tuple[str, str] | None:
@@ -156,28 +258,35 @@ def step_generate() -> tuple[str, str]:
     return script([PY, "tools/generate-contracts.py", "--check"])
 
 
-def step_ts() -> tuple[str, str]:
+def step_ts(units: Units) -> tuple[str, str]:
     if outcome := locked_install():
         return outcome
     pnpm = shutil.which("pnpm")
     out = ["contracts: pnpm install --frozen-lockfile -> ok"]
-    steps = [
-        ("check-types", [pnpm, "run", "check-types"], TS_PKG),
-        ("lint", [pnpm, "run", "lint"], TS_PKG),
-        ("test", [pnpm, "run", "test"], TS_PKG),
-    ]
-    for name, cmd, cwd in steps:
-        p = run(cmd, cwd, dict(os.environ))
-        out.append(f"{TS_PKG.relative_to(ROOT)}: {name} -> {'ok' if p.returncode == 0 else 'FAIL'}")
+    return scripts_then_vitest(TS_PKG, [("check-types", [pnpm, "run", "check-types"]), ("lint", [pnpm, "run", "lint"])], test_env(), units, out)
+
+
+def scripts_then_vitest(pkg: pathlib.Path, scripts: list[tuple[str, list[str]]], env: dict, units: Units, out: list[str] | None = None) -> tuple[str, str]:
+    """The package's checks in order, then its Vitest suite with the JSON reporter;
+    PARTIAL when a test skipped."""
+    out = out or []
+    for name, cmd in scripts:
+        p = run(cmd, pkg, env)
+        out.append(f"{pkg.relative_to(ROOT)}: pnpm {name} -> {'ok' if p.returncode == 0 else 'FAIL'}")
         if p.returncode != 0:
             return "FAIL", "\n".join(out + [p.stdout[-2000:], p.stderr[-2000:]])
-    return "PASS", "\n".join(out)
+    before = len(units.items)
+    ok, detail = vitest(pkg, env, units)
+    out.append(f"{pkg.relative_to(ROOT)}: vitest -> {'ok' if ok else 'FAIL'}" + (f" ({len(units.items) - before} skipped)" if len(units.items) > before else ""))
+    if not ok:
+        return "FAIL", "\n".join(out + [detail])
+    return ("PARTIAL" if len(units.items) > before else "PASS"), "\n".join(out)
 
 
 VALIDATOR_PKG = ROOT / "jobs" / "validator"
 
 
-def step_validator() -> tuple[str, str]:
+def step_validator(units: Units) -> tuple[str, str]:
     """The validator Job package (P10): its locked install (no lifecycle script),
     type check, lint, profile digests and toolchain, the compiled dist the
     integration step's host-process scenario runs, and the tests (the build,
@@ -185,91 +294,66 @@ def step_validator() -> tuple[str, str]:
     pnpm = shutil.which("pnpm")
     if not pnpm or not shutil.which("node"):
         return "UNEXECUTED", "pnpm/node are not on PATH (Node.js 24 LTS and the packageManager of jobs/validator/package.json are required)"
-    out = []
-    for name, cmd in (
-        ("install", [pnpm, "install", "--frozen-lockfile"]),
-        ("check-types", [pnpm, "run", "check-types"]),
-        ("lint", [pnpm, "run", "lint"]),
-        ("profiles:check", [pnpm, "run", "profiles:check"]),
-        ("build", [pnpm, "run", "build"]),
-        ("test", [pnpm, "run", "test"]),
-    ):
-        p = run(cmd, VALIDATOR_PKG, dict(os.environ))
-        out.append(f"jobs/validator: pnpm {name} -> {'ok' if p.returncode == 0 else 'FAIL'}")
-        if p.returncode != 0:
-            return "FAIL", "\n".join(out + [p.stdout[-2000:], p.stderr[-2000:]])
-    return "PASS", "\n".join(out)
+    return scripts_then_vitest(VALIDATOR_PKG, [("install", [pnpm, "install", "--frozen-lockfile"]), ("check-types", [pnpm, "run", "check-types"]),
+                                               ("lint", [pnpm, "run", "lint"]), ("profiles:check", [pnpm, "run", "profiles:check"]),
+                                               ("build", [pnpm, "run", "build"])], test_env(), units)
 
 
 MODEL_PROXY_PKG = ROOT / "services" / "agent" / "model-proxy"
 
 
-def step_model_proxy() -> tuple[str, str]:
+def step_model_proxy(units: Units) -> tuple[str, str]:
     """The Model Proxy (P11): its locked install (no lifecycle script), type
     check, lint, build and tests; the contract document comes from the
     contracts checkout of this repository."""
     pnpm = shutil.which("pnpm")
     if not pnpm or not shutil.which("node"):
         return "UNEXECUTED", "pnpm/node are not on PATH (Node.js 24 LTS and the packageManager of services/agent/model-proxy/package.json are required)"
-    env = dict(os.environ, ANVILKIT_MODEL_PROXY_CONTRACTS_DIR=str(CONTRACTS))
-    out = []
-    for name, cmd in (
-        ("install", [pnpm, "install", "--frozen-lockfile", "--ignore-scripts"]),
-        ("check-types", [pnpm, "run", "check-types"]),
-        ("lint", [pnpm, "run", "lint"]),
-        ("build", [pnpm, "run", "build"]),
-        ("test", [pnpm, "run", "test"]),
-    ):
-        p = run(cmd, MODEL_PROXY_PKG, env)
-        out.append(f"services/agent/model-proxy: pnpm {name} -> {'ok' if p.returncode == 0 else 'FAIL'}")
-        if p.returncode != 0:
-            return "FAIL", "\n".join(out + [p.stdout[-2000:], p.stderr[-2000:]])
-    return "PASS", "\n".join(out)
+    env = test_env(dict(os.environ, ANVILKIT_MODEL_PROXY_CONTRACTS_DIR=str(CONTRACTS)))
+    return scripts_then_vitest(MODEL_PROXY_PKG, [("install", [pnpm, "install", "--frozen-lockfile", "--ignore-scripts"]), ("check-types", [pnpm, "run", "check-types"]),
+                                                 ("lint", [pnpm, "run", "lint"]), ("build", [pnpm, "run", "build"])], env, units)
 
 
 TEAM_PKG = ROOT / "jobs" / "codegen" / "team"
 SUPERVISOR_REPO = ROOT / "jobs" / "codegen" / "supervisor"
 
 
-def step_team() -> tuple[str, str]:
+def step_team(units: Units) -> tuple[str, str]:
     """The codegen team package (P12, repository anvilkit-job-codegen-team):
     its locked install (better-sqlite3's prebuilt binary is the one lifecycle
     script its workspace file allows), type check, lint, build (the coder and
     coordinator the tests and the integration scenario spawn), the reviewed
     tools document checked against the build, the tests (a countable sidecar
     double; the coordinator over the process protocol; the validation test
-    runs the real validator chain from jobs/validator when it is built), and
-    the process protocol copies of both codegen repositories against
-    contracts/jobs/codegen (the supervisor's Go tests run in the go step)."""
+    runs the real validator chain from jobs/validator when it is built, and
+    must then, ANVILKIT_REQUIRE_VALIDATOR), and the process protocol copies of
+    both codegen repositories against contracts/jobs/codegen (the
+    supervisor's Go tests run in the go step)."""
     pnpm = shutil.which("pnpm")
     if not pnpm or not shutil.which("node"):
         return "UNEXECUTED", "pnpm/node are not on PATH (Node.js 24 LTS and the packageManager of jobs/codegen/team/package.json are required)"
-    env = dict(os.environ, ANVILKIT_CODEGEN_TEAM_CONTRACTS_DIR=str(CONTRACTS))
+    env = test_env(dict(os.environ, ANVILKIT_CODEGEN_TEAM_CONTRACTS_DIR=str(CONTRACTS)))
     out = []
     for repo in (SUPERVISOR_REPO, TEAM_PKG):
         p = run(["sh", "tools/sync-protocol.sh", "--check", str(CONTRACTS)], repo, env)
         out.append(f"{repo.relative_to(ROOT)}: protocol copy -> {'ok' if p.returncode == 0 else 'FAIL'}")
         if p.returncode != 0:
             return "FAIL", "\n".join(out + [p.stdout[-2000:], p.stderr[-2000:]])
-    for name, cmd in (
-        ("install", [pnpm, "install", "--frozen-lockfile"]),
-        ("check-types", [pnpm, "run", "check-types"]),
-        ("lint", [pnpm, "run", "lint"]),
-        ("build", [pnpm, "run", "build"]),
-        ("tools:check", [pnpm, "run", "tools:check"]),
-        ("test", [pnpm, "run", "test"]),
-    ):
-        p = run(cmd, TEAM_PKG, env)
-        out.append(f"jobs/codegen/team: pnpm {name} -> {'ok' if p.returncode == 0 else 'FAIL'}")
-        if p.returncode != 0:
-            return "FAIL", "\n".join(out + [p.stdout[-2000:], p.stderr[-2000:]])
-    return "PASS", "\n".join(out)
+    if "ANVILKIT_REQUIRE_VALIDATOR" not in env:
+        out.append("jobs/validator is not built: the team's validation cases may skip (ANVILKIT_REQUIRE_VALIDATOR unset)")
+    return scripts_then_vitest(TEAM_PKG, [("install", [pnpm, "install", "--frozen-lockfile"]), ("check-types", [pnpm, "run", "check-types"]),
+                                          ("lint", [pnpm, "run", "lint"]), ("build", [pnpm, "run", "build"]), ("tools:check", [pnpm, "run", "tools:check"])],
+                               env, units, out)
 
 
-def step_python() -> tuple[str, str]:
-    p = run([PY, "-m", "pytest", "-q"], PY_PKG, dict(os.environ))
+def step_python(units: Units) -> tuple[str, str]:
+    p = run([PY, "-m", "pytest", "-q", "-rs"], PY_PKG, test_env())
+    for m in re.finditer(r"^SKIPPED \[\d+\] (.+?): (.*)$", p.stdout, flags=re.M):
+        units.add(f"{PY_PKG.relative_to(ROOT)} {m.group(1)}", m.group(2)[:200])
     detail = f"{PY_PKG.relative_to(ROOT)}: pytest -> {'ok' if p.returncode == 0 else 'FAIL'}\n{p.stdout[-1500:]}"
-    return ("PASS" if p.returncode == 0 else "FAIL"), detail
+    if p.returncode != 0:
+        return "FAIL", detail
+    return ("PARTIAL" if re.search(r"\b[1-9][0-9]* skipped\b", p.stdout) else "PASS"), detail
 
 
 KNOWLEDGE_PKG = ROOT / "services" / "agent" / "knowledge"
@@ -277,45 +361,45 @@ BACKGROUND_WORKER_PKG = ROOT / "services" / "agent" / "background-worker"
 PROFILE_SCHEMAS = ROOT / "packages" / "profile-schemas"
 
 
-def pnpm_package(rel: pathlib.Path, env: dict, scripts: tuple[str, ...] = ("check-types", "lint", "build", "test")) -> tuple[str, str]:
-    """The locked install (no lifecycle script) and the named scripts of one
-    TypeScript package outside the workspace."""
+def pnpm_package(rel: pathlib.Path, env: dict, units: Units, static: bool) -> tuple[str, str]:
+    """The locked install (no lifecycle script), type check, lint and build of one
+    TypeScript package outside the workspace, then its tests unless --static (Docker-
+    backed Testcontainers): under --static the step is PARTIAL, naming the omitted tests."""
     pnpm = shutil.which("pnpm")
     if not pnpm or not shutil.which("node"):
         return "UNEXECUTED", f"pnpm/node are not on PATH (Node.js 24 LTS and the packageManager of {rel}/package.json are required)"
-    out = []
-    for name, cmd in (("install", [pnpm, "install", "--frozen-lockfile", "--ignore-scripts"]),) + tuple((s, [pnpm, "run", s]) for s in scripts):
-        p = run(cmd, ROOT / rel, env)
-        out.append(f"{rel}: pnpm {name} -> {'ok' if p.returncode == 0 else 'FAIL'}")
-        if p.returncode != 0:
-            return "FAIL", "\n".join(out + [p.stdout[-2000:], p.stderr[-2000:]])
-    return "PASS", "\n".join(out)
+    scripts = [("install", [pnpm, "install", "--frozen-lockfile", "--ignore-scripts"])] + [(n, [pnpm, "run", n]) for n in ("check-types", "lint", "build")]
+    if static:
+        out = []
+        for name, cmd in scripts:
+            p = run(cmd, ROOT / rel, env)
+            out.append(f"{rel}: pnpm {name} -> {'ok' if p.returncode == 0 else 'FAIL'}")
+            if p.returncode != 0:
+                return "FAIL", "\n".join(out + [p.stdout[-2000:], p.stderr[-2000:]])
+        out.append(f"omitted under --static: the {rel} test suite (Testcontainers)")
+        units.add(str(rel), "test suite omitted under --static (Docker-backed Testcontainers)")
+        return "PARTIAL", "\n".join(out)
+    if not shutil.which("docker"):
+        return "UNEXECUTED", f"docker is not on PATH; the {rel} tests need Testcontainers (use --static for the build alone)"
+    return scripts_then_vitest(ROOT / rel, scripts, test_env(env), units)
 
 
-def step_knowledge(static: bool) -> tuple[str, str]:
+def step_knowledge(static: bool, units: Units) -> tuple[str, str]:
     """The Knowledge owner (P14-P17): type check, lint, build (the entries the
     forwarder test and the integration scenarios spawn, since P17 also the
     Store's vendor migration and memoryctl) and tests (Vitest; Docker-backed
     PostgreSQL with the Store's vendor schema and, since P16, Qdrant through
-    Testcontainers, so --static leaves the tests out). The Go forwarder
-    sidecar module is covered by the go step."""
-    if static:
-        return pnpm_package(pathlib.Path("services/agent/knowledge"), dict(os.environ), ("check-types", "lint", "build"))
-    if not shutil.which("docker"):
-        return "UNEXECUTED", "docker is not on PATH; the Knowledge tests need Testcontainers (use --static for the build alone)"
-    return pnpm_package(pathlib.Path("services/agent/knowledge"), dict(os.environ))
+    Testcontainers, so --static leaves the tests out and is PARTIAL). The Go
+    forwarder sidecar module is covered by the go step."""
+    return pnpm_package(pathlib.Path("services/agent/knowledge"), dict(os.environ), units, static)
 
 
-def step_background_worker(static: bool) -> tuple[str, str]:
+def step_background_worker(static: bool, units: Units) -> tuple[str, str]:
     """The Background Worker and owner queue relay (P14): type check, lint,
     build and tests (Vitest; Docker-backed PostgreSQL, Valkey and NATS
-    through Testcontainers, so --static leaves the tests out)."""
+    through Testcontainers, so --static leaves the tests out and is PARTIAL)."""
     env = dict(os.environ, ANVILKIT_BACKGROUND_WORKER_CONTRACTS_DIR=str(CONTRACTS))
-    if static:
-        return pnpm_package(pathlib.Path("services/agent/background-worker"), env, ("check-types", "lint", "build"))
-    if not shutil.which("docker"):
-        return "UNEXECUTED", "docker is not on PATH; the Background Worker tests need Testcontainers (use --static for the build alone)"
-    return pnpm_package(pathlib.Path("services/agent/background-worker"), env)
+    return pnpm_package(pathlib.Path("services/agent/background-worker"), env, units, static)
 
 
 def step_profile_schemas() -> tuple[str, str]:
@@ -327,7 +411,7 @@ def step_profile_schemas() -> tuple[str, str]:
     return ("PASS" if p.returncode == 0 else "FAIL"), detail
 
 
-def python_image_step(name: str, image: str, package: pathlib.Path, mounts: list[tuple[pathlib.Path, str]], env: dict[str, str], static: bool) -> tuple[str, str]:
+def python_image_step(name: str, image: str, package: pathlib.Path, mounts: list[tuple[pathlib.Path, str]], env: dict[str, str], static: bool, units: Units) -> tuple[str, str]:
     """A Python package whose dependencies and weights are locked into its
     image: the checkout's sources and tests run inside that image with no
     network. Without Docker or the image (or under --static) the sources are
@@ -336,10 +420,12 @@ def python_image_step(name: str, image: str, package: pathlib.Path, mounts: list
     if compiled.returncode != 0:
         return "FAIL", f"{name}: compileall failed\n{compiled.stdout[-1500:]}{compiled.stderr[-800:]}"
     if static:
-        return "PASS", f"{name}: sources byte-compile (tests need the image; not run under --static)"
+        units.add(name, f"unittest omitted under --static (only byte-compiled; the tests run in {image})")
+        return "PARTIAL", f"{name}: sources byte-compile; omitted under --static: the unittest suite in {image}"
     docker = shutil.which("docker")
     if not docker or run([docker, "image", "inspect", image], ROOT).returncode != 0:
-        return "UNEXECUTED", f"{name}: the image {image} is not built (sources byte-compile; build it to run the tests)"
+        units.add(name, f"unittest not run: the image {image} is not built")
+        return "PARTIAL", f"{name}: sources byte-compile; the image {image} is not built, so its unittest suite did not run"
     cmd = [docker, "run", "--rm", "--network", "none", "--read-only", "--tmpfs", "/tmp:rw,size=512m", "--cap-drop", "ALL",
            "--security-opt", "no-new-privileges", "--entrypoint", "/opt/venv/bin/python", "-w", "/opt/anvilkit"]
     for src, dst in mounts:
@@ -348,23 +434,29 @@ def python_image_step(name: str, image: str, package: pathlib.Path, mounts: list
         cmd += ["-e", f"{k}={v}"]
     p = run(cmd + [image, "-m", "unittest", "discover", "-s", "tests"], ROOT)
     tail = (p.stdout + p.stderr)[-1500:]
-    return ("PASS" if p.returncode == 0 else "FAIL"), f"{name}: unittest in {image} -> {'ok' if p.returncode == 0 else 'FAIL'}\n{tail}"
+    if p.returncode != 0:
+        return "FAIL", f"{name}: unittest in {image} -> FAIL\n{tail}"
+    skipped = re.search(r"OK \(skipped=(\d+)\)", p.stdout + p.stderr)
+    if skipped:
+        units.add(name, f"{skipped.group(1)} unittest case(s) skipped in {image}")
+        return "PARTIAL", f"{name}: unittest in {image} -> ok, {skipped.group(1)} skipped\n{tail}"
+    return "PASS", f"{name}: unittest in {image} -> ok\n{tail}"
 
 
-def step_parser(static: bool) -> tuple[str, str]:
+def step_parser(static: bool, units: Units) -> tuple[str, str]:
     pkg = ROOT / "jobs" / "parser"
     return python_image_step("jobs/parser", "anvilkit-parser:dev", pkg,
                              [(pkg / "src" / "anvilkit_parser", "/opt/anvilkit/src/anvilkit_parser"), (pkg / "tests", "/opt/anvilkit/tests"),
-                              (CONTRACTS / "jobs" / "job.schema.json", "/opt/anvilkit/job.schema.json")], {}, static)
+                              (CONTRACTS / "jobs" / "job.schema.json", "/opt/anvilkit/job.schema.json")], {}, static, units)
 
 
-def step_inference(static: bool) -> tuple[str, str]:
+def step_inference(static: bool, units: Units) -> tuple[str, str]:
     pkg = ROOT / "services" / "agent" / "inference"
     return python_image_step("services/agent/inference", "anvilkit-agent-inference:dev", pkg,
                              [(pkg / "src" / "anvilkit_inference", "/opt/anvilkit/src/anvilkit_inference"), (pkg / "tests", "/opt/anvilkit/tests"),
                               (PY_PKG / "anvilkit_generated_clients", "/opt/anvilkit/src/anvilkit_generated_clients"),
                               (pkg / "models.lock", "/opt/models/models.lock")],
-                             {"ANVILKIT_INFERENCE_MODELS_DIR": "/opt/models"}, static)
+                             {"ANVILKIT_INFERENCE_MODELS_DIR": "/opt/models"}, static, units)
 
 
 @contextlib.contextmanager
@@ -417,29 +509,37 @@ def prepared_control(env: dict):
             log.close()
 
 
-def step_integration() -> tuple[str, str]:
+def step_integration(units: Units) -> tuple[str, str]:
     missing = [v for v in ("ANVILKIT_DEV_CONTROL_DSN", "ANVILKIT_DEV_TEMPORAL_ADDRESS", "KUBECONFIG") if not os.environ.get(v)]
     if missing:
         return "UNEXECUTED", "deploy/dev foundation not configured; missing " + ", ".join(missing)
     out = []
+    before = len(units.items)
     for mod in workspace_modules():
         if not list(mod.rglob("*_integration_test.go")):
             continue
-        env = dict(os.environ)
+        env = test_env()
         if mod == ROOT / "services/agent/workflow":
             # The parent prepares the cross-service dependency of that repository's scenario.
             try:
                 with prepared_control(env) as (env, note):
                     out.append(f"{mod.relative_to(ROOT)}: {note}")
-                    p = run(["go", "test", "-tags", "integration", "-count=1", "./..."], mod, env)
+                    ok, detail = go_test_tagged(mod, env, units)
             except RuntimeError as exc:
                 return "FAIL", "\n".join(out + [str(exc)])
         else:
-            p = run(["go", "test", "-tags", "integration", "-count=1", "./..."], mod, env)
-        out.append(f"{mod.relative_to(ROOT)}: integration -> {'ok' if p.returncode == 0 else 'FAIL'}")
-        if p.returncode != 0:
-            return "FAIL", "\n".join(out + [p.stdout[-3000:], p.stderr[-2000:]])
-    return "PASS", "\n".join(out) if out else "no integration tests present"
+            ok, detail = go_test_tagged(mod, env, units)
+        out.append(f"{mod.relative_to(ROOT)}: integration -> {'ok' if ok else 'FAIL'}")
+        if not ok:
+            return "FAIL", "\n".join(out + [detail])
+    if not out:
+        return "UNEXECUTED", "no integration tests present"
+    return ("PARTIAL" if len(units.items) > before else "PASS"), "\n".join(out)
+
+
+def go_test_tagged(mod: pathlib.Path, env: dict, units: Units) -> tuple[bool, str]:
+    """go_test with the integration build tag."""
+    return go_test(mod, dict(env, GOFLAGS=(env.get("GOFLAGS", "") + " -tags=integration").strip()), units)
 
 
 def main() -> int:
@@ -448,27 +548,44 @@ def main() -> int:
     ap.add_argument("--only", action="append")
     a = ap.parse_args()
 
+    units: dict[str, Units] = {}
+
+    def u(name: str) -> Units:
+        return units.setdefault(name, Units())
+
     steps = [
-        ("docs", lambda: script([PY, "tools/check-docs.py"])),
+        ("docs", lambda: scripts([PY, "tools/docs-status.py", "--self-test"], [PY, "tools/check-docs.py"])),
         ("generate", step_generate),
         ("contracts", lambda: script([PY, "tools/check-contracts.py"])),
-        ("evals", lambda: script([PY, "tools/run-evaluation.py", "--check"])),
-        ("deployment", lambda: script([PY, "tools/check-deployment-lock.py", "--self-test"])),
-        ("handover", lambda: script([PY, "deploy/handover/rehearse.py", "self-test"])),
-        ("export", lambda: script([PY, "tools/check-source-export.py"])),
-        ("ts", step_ts),
-        ("validator", step_validator),
-        ("model-proxy", step_model_proxy),
-        ("team", step_team),
-        ("python", step_python),
-        ("knowledge", lambda: step_knowledge(a.static)),
-        ("background", lambda: step_background_worker(a.static)),
+        ("evals", lambda: scripts([PY, "tools/run-evaluation.py", "--check"], [PY, "tools/run-evaluation.py", "--self-test"])),
+        ("deployment", lambda: scripts([PY, "tools/check-deployment-lock.py", "--self-test"], [PY, "tools/release-artifacts.py", "--self-test"],
+                                       [PY, "deploy/gitops/publish.py", "--self-test"], [PY, "deploy/qualification/record.py", "--self-test"],
+                                       [PY, "deploy/qualification/check-dr.py", "--self-test"], [PY, "deploy/qualification/loadrun.py", "--self-test"],
+                                       [PY, "deploy/qualification/soak.py", "--self-test"], [PY, "deploy/qualification/chaos.py", "--self-test"])),
+        ("handover", lambda: scripts([PY, "deploy/handover/rehearse.py", "self-test"], [PY, "deploy/handover/handover.py", "--self-test"])),
+        ("export", lambda: scripts([PY, "tools/check-source-export.py", "--self-test"], [PY, "tools/check-source-export.py"])),
+        ("ts", lambda: step_ts(u("ts"))),
+        ("validator", lambda: step_validator(u("validator"))),
+        ("model-proxy", lambda: step_model_proxy(u("model-proxy"))),
+        ("team", lambda: step_team(u("team"))),
+        ("python", lambda: step_python(u("python"))),
+        ("knowledge", lambda: step_knowledge(a.static, u("knowledge"))),
+        ("background", lambda: step_background_worker(a.static, u("background"))),
         ("profiles", step_profile_schemas),
-        ("parser", lambda: step_parser(a.static)),
-        ("inference", lambda: step_inference(a.static)),
-        ("go", lambda: step_go(a.static)),
-        ("integration", step_integration),
+        ("parser", lambda: step_parser(a.static, u("parser"))),
+        ("inference", lambda: step_inference(a.static, u("inference"))),
+        ("go", lambda: step_go(a.static, u("go"))),
+        ("integration", lambda: step_integration(u("integration"))),
     ]
+    names = [n for n, _ in steps]
+    if a.only:
+        unknown = sorted(set(a.only) - set(names))
+        if unknown:
+            ap.error(f"unknown step(s): {', '.join(unknown)} (steps: {', '.join(names)})")
+        if a.static and a.only == ["integration"]:
+            ap.error("--static excludes the integration step; nothing would run")
+    print(("root: ANVILKIT_REQUIRE_ROOT_TESTS=1 (root-only tests must run)" if IS_ROOT
+           else "not root: root-only tests may skip; each skip is reported as an UNEXECUTED unit"))
     outcomes = []
     for name, fn in steps:
         if a.only and name not in a.only:
@@ -478,23 +595,44 @@ def main() -> int:
         t0 = time.time()
         status, detail = fn()
         outcomes.append((name, status))
-        print(f"{status:<11} {name:<12} ({time.time() - t0:.1f}s)")
+        skipped = units.get(name, Units()).items
+        print(f"{status:<11} {name:<12} ({time.time() - t0:.1f}s)" + (f"  {len(skipped)} UNEXECUTED units" if skipped else ""))
         if status != "PASS":
             for line in detail.strip().splitlines()[-15:]:
                 print(f"            | {line}")
-    failed = [n for n, s in outcomes if s == "FAIL"]
-    unexec = [n for n, s in outcomes if s == "UNEXECUTED"]
-    print(f"\n{len(outcomes)} steps, {len(failed)} failed, {len(unexec)} unexecuted")
-    if unexec:
-        print("  unexecuted: " + ", ".join(unexec) + "   (environment missing; NOT a pass)")
+        for item in skipped[:60]:
+            print(f"            UNEXECUTED {item}")
+        if len(skipped) > 60:
+            print(f"            ... {len(skipped) - 60} more UNEXECUTED units")
+    count = {s: [n for n, st in outcomes if st == s] for s in ("PASS", "PARTIAL", "FAIL", "UNEXECUTED")}
+    n_units = sum(len(v.items) for v in units.values())
+    print(f"\n{len(outcomes)} steps: {len(count['PASS'])} PASS, {len(count['PARTIAL'])} PARTIAL, {len(count['FAIL'])} FAIL, "
+          f"{len(count['UNEXECUTED'])} UNEXECUTED; {n_units} UNEXECUTED units (skipped or omitted tests, never a pass)")
+    for s in ("PARTIAL", "UNEXECUTED", "FAIL"):
+        if count[s]:
+            print(f"  {s.lower()}: " + ", ".join(count[s]))
     print("\nThese checks establish contract agreement and local behavior only; G-01..G-14 stay NOT_RUN "
           "until their complete real-environment evidence exists.")
-    return 1 if failed else (2 if unexec else 0)
+    return 1 if count["FAIL"] else (2 if count["PARTIAL"] or count["UNEXECUTED"] else 0)
 
 
 def script(cmd: list[str]) -> tuple[str, str]:
+    """A checker with the 0/1/2 contract: 2 (UNEXECUTED, e.g. a wrong interpreter or a
+    missing tool) is not a failure of the checkout and never a pass."""
     p = run(cmd, ROOT)
-    return ("PASS" if p.returncode == 0 else "FAIL"), p.stdout + p.stderr
+    status = "PASS" if p.returncode == 0 else ("UNEXECUTED" if p.returncode == 2 else "FAIL")
+    return status, p.stdout + p.stderr
+
+
+def scripts(*cmds: list[str]) -> tuple[str, str]:
+    """Several checkers of one step, in order; the worst status wins."""
+    order = {"PASS": 0, "UNEXECUTED": 1, "FAIL": 2}
+    worst, details = "PASS", []
+    for cmd in cmds:
+        status, detail = script(cmd)
+        details.append(f"{' '.join(cmd[1:])} -> {status}\n{detail[-1500:] if status != 'PASS' else ''}".rstrip())
+        worst = max(worst, status, key=order.get)
+    return worst, "\n".join(details)
 
 
 if __name__ == "__main__":

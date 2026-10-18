@@ -4,7 +4,7 @@
 Usage: python3 tools/check-docs.py [--root PATH] [--include-archive]
 
 Scope: README.md, AGENTS.md, CLAUDE.md, docs/README.md and every Markdown file under
-docs/architecture/. docs/archive/ is historical and is skipped unless --include-archive
+docs/architecture/ and, since P3.6, docs/operations/ (the runbooks). docs/archive/ is historical and is skipped unless --include-archive
 is given; its results are then printed under a separate heading and never affect the
 exit status.
 
@@ -136,6 +136,16 @@ def check_markdown(root: pathlib.Path, files: list[pathlib.Path]) -> tuple[list[
     return failures, counts
 
 
+def docs_status_drift(root: pathlib.Path) -> list[str]:
+    """tools/docs-status.py's drift check against root (its own checkout's tools)."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("docs_status", pathlib.Path(__file__).resolve().parent / "docs-status.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    mod.ROOT = root
+    return [f"generated status: {e}" for e in mod.check()]
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--root", default=str(pathlib.Path(__file__).resolve().parent.parent))
@@ -152,7 +162,13 @@ def main() -> int:
 
     current = [root / n for n in ("README.md", "AGENTS.md", "CLAUDE.md", "docs/README.md")]
     current += sorted((root / "docs" / "architecture").glob("*.md"))
+    current += sorted((root / "docs" / "operations").rglob("*.md"))
     failures, counts = check_markdown(root, current)
+    # P3.8: the generated status blocks (README units and repositories, AGENTS
+    # repositories, delivery.md registry, the component READMEs' contracts
+    # pins) must match the checkout, and no component README may cite
+    # another contracts version than its manifest pins.
+    failures += docs_status_drift(root)
     for f in failures:
         print("FAIL", f)
     print(f"current baseline: {counts['files']} files, {counts['tables']} tables, {counts['links']} links, {len(failures)} failures")
