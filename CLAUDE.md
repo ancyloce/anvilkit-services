@@ -20,3 +20,24 @@ Claude-specific entry point for `anvilkit-services`. The shared working rules fo
 - Never `git commit`, `git push`, or open a PR unless the user explicitly asks in that message (commit/push may also be hook-blocked — a block is the policy working, not an obstacle to route around). Default: leave changes uncommitted and report modified files, flagging those inside submodules and nested repositories (`contracts/`, `services/agent/{api,control,workflow}`).
 - Never stage, amend, rebase, merge, cherry-pick, reset, clean, tag, switch branches, register or change submodules (`git submodule add/update/sync`, `.gitmodules`) or publish a package unless asked for that exact action. Never force-push, never push `main`. Read-only git is always fine. Prepare such operations locally and present their concrete targets for authorization.
 - Never publish, deploy, or send anything to an external service without task authorization.
+- Never create branches or worktrees; edit the current local checkout directly. If a commit seems necessary, stop and ask first.
+
+## Shell
+
+- The shell is zsh. Unquoted variables do NOT word-split. Use arrays (`args=(a b c); cmd "${args[@]}"`) or `${=VAR}`. Don't rely on bash splitting semantics.
+- Never use `pkill -f` patterns that can match your own command line. Prefer PIDs or `pgrep -x`.
+- For long installs or builds (pnpm, model downloads, image builds), run them in the background with a log file and poll it, rather than blocking until a timeout.
+
+## Workflows
+
+### Delivery plan execution (Pxx tasks)
+
+- When asked to implement a plan phase (e.g. P16), read its subtasks and definition of done from the delivery doc first. Then create one Task per subtask.
+- After the code changes, run the full static chain and the per-repo test suites. Report the pass count (e.g. 18/18).
+- Update `delivery.md` with an evidence record per subtask. Mark items blocked on env, soak, image rebuild or contracts release as OPEN with the reason. Never mark them as done.
+- When bumping the contracts version, update ALL consumers and re-verify.
+- Other Claude sessions may be editing the same repos concurrently. Re-read files before writing, and don't revert changes you didn't make.
+
+## Conversation
+
+- Never reply "No response requested". Every user message, including a decision or a short answer like "all recommended", is an instruction to act on. Apply it and continue.
