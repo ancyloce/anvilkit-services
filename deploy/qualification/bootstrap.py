@@ -625,11 +625,36 @@ def admission_check(run: str) -> bool:
     return p.returncode == 0
 
 
+def unseal_only() -> int:
+    """Reboot recovery step 3 (deploy/qualification/README.md): unseal every running,
+    initialized and sealed member with the custody shares, and change nothing else (no
+    initialization, no configuration). Production unseals through ENV-10's KMS."""
+    if not (CUSTODY / "init.json").exists():
+        print(f"UNEXECUTED: {CUSTODY / 'init.json'} is missing")
+        return 2
+    pods = json.loads(kubectl("-n", "anvilkit-platform", "get", "pods", "-l", "app.kubernetes.io/name=openbao,component=server", "-o", "json"))["items"]
+    sealed = 0
+    for pod in sorted(p["metadata"]["name"] for p in pods if p.get("status", {}).get("phase") == "Running"):
+        status = json.loads(bao(pod, "status", "-format=json") or "{}")
+        if status.get("initialized") and status.get("sealed"):
+            for key in custody()["unseal_keys_b64"][:3]:
+                bao(pod, "write", "-format=json", "sys/unseal", "key=-", stdin=key)
+            status = json.loads(bao(pod, "status", "-format=json") or "{}")
+        sealed += bool(status.get("sealed"))
+        print(f"{pod}: initialized={status.get('initialized')} sealed={status.get('sealed')}", flush=True)
+    return 1 if sealed else 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--run", required=True)
+    ap.add_argument("--run")
     ap.add_argument("--wait", type=int, default=1800)
+    ap.add_argument("--unseal-only", action="store_true", help="unseal the sealed OpenBao members and change nothing else")
     a = ap.parse_args()
+    if a.unseal_only:
+        return unseal_only()
+    if not a.run:
+        ap.error("--run is required")
     root_app = ROOT / "outputs/qualification" / a.run / "gitops/root-application.yaml"
     for need in (KUBECONFIG, STATE / "dr.env", root_app, ROOT / ".local/release/cosign.pub"):
         if not need.exists():

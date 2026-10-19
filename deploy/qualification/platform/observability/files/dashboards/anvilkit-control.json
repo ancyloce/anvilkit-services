@@ -369,6 +369,170 @@
           "legendFormat": "failures"
         }
       ]
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "First progress p50 / p95 (acceptance to leaving accepted; SLO row 2)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 40
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "anvilkit:operation_first_progress_seconds:p50_1h",
+          "legendFormat": "p50 {{kind}} {{profile}}"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "anvilkit:operation_first_progress_seconds:p95_1h",
+          "legendFormat": "p95 {{kind}} {{profile}}"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Completion p50 / p95 to succeeded (a Generation's accepted candidate; SLO row 2)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 40
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "anvilkit:operation_completion_seconds:p50_1h{lifecycle=\"succeeded\"}",
+          "legendFormat": "p50 {{kind}} {{profile}}"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "anvilkit:operation_completion_seconds:p95_1h{lifecycle=\"succeeded\"}",
+          "legendFormat": "p95 {{kind}} {{profile}}"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "First progress and completions per hour by lifecycle reached",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 48
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (kind, lifecycle) (increase(anvilkit_control_operation_first_progress_seconds_count[1h]))",
+          "legendFormat": "first progress {{kind}} {{lifecycle}}"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (kind, lifecycle) (increase(anvilkit_control_operation_completion_seconds_count[1h]))",
+          "legendFormat": "completed {{kind}} {{lifecycle}}"
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "Authorization decision age at use p50 / p95 (production authority source; SLO row 3)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 48
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "anvilkit:authority_decision_age_seconds:p50_5m",
+          "legendFormat": "p50 {{kind}}"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "anvilkit:authority_decision_age_seconds:p95_5m",
+          "legendFormat": "p95 {{kind}}"
+        }
+      ]
     }
   ]
 }

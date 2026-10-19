@@ -31,6 +31,33 @@ spec:
           expr: histogram_quantile(0.95, sum by (le, route) (rate(anvilkit_api_request_duration_seconds_bucket{route!~".*/events"}[5m])))
         - record: anvilkit:control_rpc_duration_seconds:p95_5m
           expr: histogram_quantile(0.95, sum by (le, method) (rate(anvilkit_control_rpc_duration_seconds_bucket[5m])))
+        # First progress and complete generation latency (SLO row 2): from an
+        # operation's acceptance to the commit that takes it out of `accepted`
+        # (a cancel of an accepted operation is no progress) and to its
+        # terminal commit (a Generation's succeeded is its accepted candidate),
+        # by kind and profile, over 1h: operations are rare next to requests.
+        # No alert yet: the bounds are ENV-05 inputs that no run has measured.
+        - record: anvilkit:operation_first_progress_seconds:p50_1h
+          expr: histogram_quantile(0.5, sum by (le, kind, profile) (rate(anvilkit_control_operation_first_progress_seconds_bucket{lifecycle!="canceled"}[1h])))
+        - record: anvilkit:operation_first_progress_seconds:p95_1h
+          expr: histogram_quantile(0.95, sum by (le, kind, profile) (rate(anvilkit_control_operation_first_progress_seconds_bucket{lifecycle!="canceled"}[1h])))
+        - record: anvilkit:operation_completion_seconds:p50_1h
+          expr: histogram_quantile(0.5, sum by (le, kind, profile, lifecycle) (rate(anvilkit_control_operation_completion_seconds_bucket[1h])))
+        - record: anvilkit:operation_completion_seconds:p95_1h
+          expr: histogram_quantile(0.95, sum by (le, kind, profile, lifecycle) (rate(anvilkit_control_operation_completion_seconds_bucket[1h])))
+        # Authorization and revocation effectiveness (SLO row 3): the age of a
+        # commercial decision when Control relies on it (its original
+        # freshUntil bounds it), and a grant revocation from its commit to
+        # Control's fence and to REVOKED, over 1d: revocations are rare.
+        # No alert yet, as above.
+        - record: anvilkit:authority_decision_age_seconds:p50_5m
+          expr: histogram_quantile(0.5, sum by (le, kind) (rate(anvilkit_control_authority_decision_age_seconds_bucket[5m])))
+        - record: anvilkit:authority_decision_age_seconds:p95_5m
+          expr: histogram_quantile(0.95, sum by (le, kind) (rate(anvilkit_control_authority_decision_age_seconds_bucket[5m])))
+        - record: anvilkit:grant_revocation_seconds:p50_1d
+          expr: histogram_quantile(0.5, sum by (le, stage) (rate(anvilkit_mcp_grant_revocation_seconds_bucket[1d])))
+        - record: anvilkit:grant_revocation_seconds:p95_1d
+          expr: histogram_quantile(0.95, sum by (le, stage) (rate(anvilkit_mcp_grant_revocation_seconds_bucket[1d])))
         # Capacity (DD-09 §6 pool utilization).
         - record: anvilkit:control_grpc_pool_utilization
           expr: max by (pool) (anvilkit_control_grpc_pool_in_use / clamp_min(anvilkit_control_grpc_pool_limit, 1))

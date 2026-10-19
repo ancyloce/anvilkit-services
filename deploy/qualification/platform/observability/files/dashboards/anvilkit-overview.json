@@ -310,6 +310,70 @@
           "legendFormat": "{{cronjob}}"
         }
       ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Operation first progress p95 (SLO row 2)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 32
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "anvilkit:operation_first_progress_seconds:p95_1h",
+          "legendFormat": "{{kind}} {{profile}}"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Revocation barrier p95 (SLO row 3)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 40
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "anvilkit:grant_revocation_seconds:p95_1d",
+          "legendFormat": "{{stage}}"
+        }
+      ]
     }
   ]
 }

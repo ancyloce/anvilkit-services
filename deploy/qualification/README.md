@@ -25,6 +25,8 @@ A disposable environment for P23's drills, separate from the development foundat
 | `soak.py` | P3.5 AC2: >= 4 h of the load tool (`tests/load`) with holds, cancels and stream resumes while each application Deployment is rolled out in turn; zero duplicate sends/charges, zero stuck `reconciling`, zero `SENDER_LOST` from rollouts, no restart from load. `--self-test`. |
 | `chaos.py` | P3.5 AC3: Control/Proxy/MCP Pod faults and the PostgreSQL, Valkey, NATS and object-store drills of `drills.py`, each under its own load; the designed outcome per fault and no duplicate charge. `--self-test`. |
 | `check-dr.py` | P3.7 AC3: the DR store's least-privilege users and object lock (`bootstrap.py` `DR_USERS`, `DR_BUCKETS`): create-only inventory and removal users, a snapshot writer without delete, a prune identity that can neither read nor write, locked versions that no one deletes within their retention. `--local` applies the bootstrap's DR script to a disposable MinIO and runs every probe; `--run` probes the qualification DR store; `--self-test`. |
+| `workflow-rollout.py` | P1.7: the Workflow worker's Worker Deployment Versioning rollout (any cluster and release of the Workflow chart with `config.temporal.versioning.enabled`): installs build B's Deployment beside A's, promotes B once it is ready and has registered its task queues, and removes A only after Temporal reports it DRAINED with no open pinned run; `retire` resumes the drain and removal later. `--self-test`. Procedure below. |
+| `workflow-rollout-drill.sh` | P1.7 AC2 on the development foundation (DEVELOPMENT_ONLY): `workflow-rollout.py` with the Workflow image and real LocalCheck runs in the namespace `anvilkit-rollout-drill` on task queues and a worker deployment of its own (no RBAC or certificate elsewhere; Control unreachable by design, so each run stays open on its build while its first Control call retries, about 4 minutes, then closes failed): first versioned install, DRAINING refusal while runs pinned to the old build are open, retire after DRAINED, an aborted build that never becomes ready, its retirement; run histories and worker logs searched for non-determinism. Record under `outputs/workflow-rollout-drill-<UTC>/`. |
 
 ```sh
 sh deploy/qualification/cluster.sh up
@@ -42,10 +44,34 @@ sh deploy/qualification/cluster.sh up
 .local/verification-venv/bin/python deploy/qualification/restore-drills.py --run RUN postgres-business ...
 ```
 
+
+### Workflow worker rollout under Worker Deployment Versioning (P1.7)
+
+With `config.temporal.versioning.enabled` every Workflow run is pinned to the worker build it started on, so a plain rolling update would leave the pinned runs of the old build without a worker. The Workflow chart then renders one worker version per release: the Deployment, ConfigMap, HPA and PDB are named `<fullname>-<first 10 hex of sha256(buildId)>`, selected by `anvilkit.io/worker-version`, annotated with the Temporal deployment and Build ID, and carry `helm.sh/resource-policy: keep` and Argo CD `Prune=false`, so the next release starts its version beside the previous one instead of replacing it. The rollout moves a release from build A to build B:
+
+1. **Install** B beside A: `helm upgrade --install` with B's values (the image digest is the Build ID); the release that first enables versioning has an unversioned Deployment, which the tool annotates with the keep policies before the upgrade. A's Deployment must still exist, unchanged.
+2. **Ready**: B's rollout completes and B's version has registered both task queues and every task queue type the current version serves. Otherwise the rollout is ABORTED: nothing is promoted, A stays current and running, B's objects stay for diagnosis (`retire` removes a never-promoted build later).
+3. **Promote**: `temporal worker deployment set-current-version` B. New runs land on B; A's pinned runs continue on A.
+4. **Drain**: A's version is polled (`describe-version` drainage status and a visibility count of the runs pinned to it, both reported) until Temporal reports DRAINED, checked after A's last routing change, and no open run is pinned to A. Temporal reports DRAINED only a visibility grace period (3 minutes by default) after the last pinned run closed.
+5. **Remove** A's Deployment, ConfigMap, PDB and HPA by exact name, waiting for its Pods. A DRAINING, current or ramping build is never removed: at `--drain-timeout` the result is DRAINING (exit 3) and `retire` resumes steps 4-5 later. An unversioned predecessor holds no pinned runs: it is removed once B is current, its open runs move to B on their next task, as in a rolling update (counted in the record).
+
+```sh
+# Temporal CLI: `temporal` on PATH (TLS flags may be part of --temporal-cli as --flag=value), or on the
+# development foundation the pinned admin-tools image:
+T="docker run --rm --network host --entrypoint temporal temporalio/admin-tools:1.31.2@sha256:dbc5fcd6ee8f0f4d808bf765af9a87dea9d8a283abfdcfbd2fc148496ba66107"
+.local/verification-venv/bin/python deploy/qualification/workflow-rollout.py rollout --namespace NS [--context CTX] \
+    --temporal-address HOST:PORT --temporal-cli "$T" -f VALUES --set image.digest=sha256:... --set config.temporal.versioning.enabled=true
+.local/verification-venv/bin/python deploy/qualification/workflow-rollout.py retire --namespace NS --temporal-address HOST:PORT --temporal-cli "$T"
+.local/verification-venv/bin/python deploy/qualification/workflow-rollout.py --self-test
+```
+
+After an ABORTED rollout the release's latest revision renders the aborted build while the running build stays through its keep policy: roll forward with a fixed build (its rollout treats both as previous builds) or `helm rollback` to the previous revision, and `retire` removes the aborted build, which never registered and holds no runs. `--no-install` skips step 1 where the environment's GitOps applied B's release (Argo CD keeps A through `Prune=false`). The record goes to `outputs/workflow-rollout/<UTC>/` (or `--out`). Exit 0 COMPLETE, 1 ABORTED or FAILED, 2 REFUSED (nothing changed: an unversioned or self-promoting render, an unreadable routing, a current version without a Deployment in the release), 3 DRAINING. The tool changes workloads and the deployment's routing: run it only with the environment operator's authorization. Versioning stays disabled in the chart default and in the development and qualification values; enabling it in an environment is that environment's decision.
+
 Operating notes. A StatefulSet whose Pod never became Ready (an unpullable image) keeps that Pod after its template is repaired: delete the Pod once the fixed revision is applied (Kubernetes' forced rollback). A restarted OpenBao member stays sealed until `bootstrap.py` (or an operator with three shares) unseals it; production unseals through ENV-10's KMS. Rotating the queue Valkey password restarts every member at once (a member started with the new password asks the old Sentinels for the primary and fails); production rotation needs ACL users with two passwords. A host reboot restarts the nodes through Docker's restart policy, not `cluster.sh start`, and has these effects:
 - `fs.inotify.max_user_instances` is back at 128, and a kubelet fails on `inotify_init`.
 - A control plane can come back on a new address. Free its etcd peer certificate's address if another container took it, then reconnect the node on it.
-- OpenBao is sealed.
+- OpenBao is sealed: `.local/verification-venv/bin/python deploy/qualification/bootstrap.py --unseal-only` unseals the running members with the custody shares and changes nothing else (exit 1 while a member stays sealed).
+- With more than 500 inotify instances in use on the host (three kind clusters), 512 is not enough either: a restarted node's systemd fails with "Failed to create control group inotify object: Too many open files" and exits 255; raise the limit (1024 served on 2026-10-18).
 - The Valkey master proxies can keep a resolution taken before cluster DNS was ready, with every server DOWN, until their `haproxy` containers restart. `platform/valkey` is the upstream CloudPirates chart patched so the Sentinel no longer prints its password-bearing configuration (`ANVILKIT-PATCH.md`).
 
 Evidence goes to `outputs/qualification/<RUN>/` (ignored by Git). Cleanup deletes only resources this environment owns, by exact name.

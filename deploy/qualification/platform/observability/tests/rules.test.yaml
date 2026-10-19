@@ -334,3 +334,97 @@ tests:
       exp_annotations:
         summary: The newest successful backup of anvilkit-backup-postgres-anvilkit-business is older than 93600 s, or it never succeeded.
         runbook_url: https://github.com/ancyloce/anvilkit-services/blob/main/docs/operations/runbooks/recovery-epoch.md
+- name: SLO row 2 recordings - first progress and completion quantiles by kind and profile
+  interval: 1m
+  input_series:
+  # Half the Generations made progress within 1 s, none between 1 and 4 s,
+  # the rest later; the canceled ones would pull the median below 1 s if
+  # they counted as progress.
+  - series: anvilkit_control_operation_first_progress_seconds_bucket{kind="generation",profile="generation-v1",lifecycle="running",le="1"}
+    values: 0+1x90
+  - series: anvilkit_control_operation_first_progress_seconds_bucket{kind="generation",profile="generation-v1",lifecycle="running",le="4"}
+    values: 0+1x90
+  - series: anvilkit_control_operation_first_progress_seconds_bucket{kind="generation",profile="generation-v1",lifecycle="running",le="+Inf"}
+    values: 0+2x90
+  - series: anvilkit_control_operation_first_progress_seconds_bucket{kind="generation",profile="generation-v1",lifecycle="canceled",le="1"}
+    values: 0+10x90
+  - series: anvilkit_control_operation_first_progress_seconds_bucket{kind="generation",profile="generation-v1",lifecycle="canceled",le="4"}
+    values: 0+10x90
+  - series: anvilkit_control_operation_first_progress_seconds_bucket{kind="generation",profile="generation-v1",lifecycle="canceled",le="+Inf"}
+    values: 0+10x90
+  - series: anvilkit_control_operation_completion_seconds_bucket{kind="generation",profile="generation-v1",lifecycle="succeeded",le="60"}
+    values: 0+1x90
+  - series: anvilkit_control_operation_completion_seconds_bucket{kind="generation",profile="generation-v1",lifecycle="succeeded",le="600"}
+    values: 0+1x90
+  - series: anvilkit_control_operation_completion_seconds_bucket{kind="generation",profile="generation-v1",lifecycle="succeeded",le="+Inf"}
+    values: 0+2x90
+  promql_expr_test:
+  - expr: anvilkit:operation_first_progress_seconds:p50_1h
+    eval_time: 80m
+    exp_samples:
+    - labels: 'anvilkit:operation_first_progress_seconds:p50_1h{kind="generation",profile="generation-v1"}'
+      value: 1
+  - expr: anvilkit:operation_first_progress_seconds:p95_1h
+    eval_time: 80m
+    exp_samples:
+    - labels: 'anvilkit:operation_first_progress_seconds:p95_1h{kind="generation",profile="generation-v1"}'
+      value: 4
+  - expr: anvilkit:operation_completion_seconds:p50_1h
+    eval_time: 80m
+    exp_samples:
+    - labels: 'anvilkit:operation_completion_seconds:p50_1h{kind="generation",profile="generation-v1",lifecycle="succeeded"}'
+      value: 60
+  - expr: anvilkit:operation_completion_seconds:p95_1h
+    eval_time: 80m
+    exp_samples:
+    - labels: 'anvilkit:operation_completion_seconds:p95_1h{kind="generation",profile="generation-v1",lifecycle="succeeded"}'
+      value: 600
+- name: SLO row 3 recordings - decision age at use and the revocation barrier
+  interval: 1m
+  input_series:
+  # Half the decisions were fetched for their use (age 0), the rest served
+  # from the cache more than 10 s old (the buckets the case needs).
+  - series: anvilkit_control_authority_decision_age_seconds_bucket{kind="execution",decision="allow",le="0.001"}
+    values: 0+1x30
+  - series: anvilkit_control_authority_decision_age_seconds_bucket{kind="execution",decision="allow",le="10"}
+    values: 0+1x30
+  - series: anvilkit_control_authority_decision_age_seconds_bucket{kind="execution",decision="allow",le="+Inf"}
+    values: 0+2x30
+  # Half the revocations were fenced within 1 s and converged within 60 s.
+  - series: anvilkit_mcp_grant_revocation_seconds_bucket{stage="fenced",le="1"}
+    values: 0+1x1600
+  - series: anvilkit_mcp_grant_revocation_seconds_bucket{stage="fenced",le="8"}
+    values: 0+1x1600
+  - series: anvilkit_mcp_grant_revocation_seconds_bucket{stage="fenced",le="+Inf"}
+    values: 0+2x1600
+  - series: anvilkit_mcp_grant_revocation_seconds_bucket{stage="converged",le="60"}
+    values: 0+1x1600
+  - series: anvilkit_mcp_grant_revocation_seconds_bucket{stage="converged",le="600"}
+    values: 0+1x1600
+  - series: anvilkit_mcp_grant_revocation_seconds_bucket{stage="converged",le="+Inf"}
+    values: 0+2x1600
+  promql_expr_test:
+  - expr: anvilkit:authority_decision_age_seconds:p50_5m
+    eval_time: 20m
+    exp_samples:
+    - labels: 'anvilkit:authority_decision_age_seconds:p50_5m{kind="execution"}'
+      value: 0.001
+  - expr: anvilkit:authority_decision_age_seconds:p95_5m
+    eval_time: 20m
+    exp_samples:
+    - labels: 'anvilkit:authority_decision_age_seconds:p95_5m{kind="execution"}'
+      value: 10
+  - expr: anvilkit:grant_revocation_seconds:p50_1d
+    eval_time: 25h
+    exp_samples:
+    - labels: 'anvilkit:grant_revocation_seconds:p50_1d{stage="fenced"}'
+      value: 1
+    - labels: 'anvilkit:grant_revocation_seconds:p50_1d{stage="converged"}'
+      value: 60
+  - expr: anvilkit:grant_revocation_seconds:p95_1d
+    eval_time: 25h
+    exp_samples:
+    - labels: 'anvilkit:grant_revocation_seconds:p95_1d{stage="fenced"}'
+      value: 8
+    - labels: 'anvilkit:grant_revocation_seconds:p95_1d{stage="converged"}'
+      value: 600

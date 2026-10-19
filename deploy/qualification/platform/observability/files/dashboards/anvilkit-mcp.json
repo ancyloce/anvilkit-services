@@ -223,6 +223,79 @@
           "legendFormat": "pool acquired"
         }
       ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Revocation barrier p50 / p95 from the revocation's commit (SLO row 3)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 24
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "anvilkit:grant_revocation_seconds:p50_1d",
+          "legendFormat": "p50 {{stage}}"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "anvilkit:grant_revocation_seconds:p95_1d",
+          "legendFormat": "p95 {{stage}}"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Revocation barrier milestones per day",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 24
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (stage) (increase(anvilkit_mcp_grant_revocation_seconds_count[1d]))",
+          "legendFormat": "{{stage}}"
+        }
+      ]
     }
   ]
 }
