@@ -6,7 +6,9 @@
 #              validator, model-proxy, team, python, knowledge, background,
 #              profiles, parser, inference and go steps); the export step
 #              reads the committed trees, so an untracked or uncommitted input
-#              fails here exactly as on a fresh machine
+#              fails here exactly as on a fresh machine; a FAIL fails the
+#              job, PARTIAL or UNEXECUTED steps (exit 2) leave it green with a
+#              warning and the unexecuted units in the job summary (D-6)
 #   policies   the offline Kyverno suite (deploy/policies/check.sh) against
 #              the committed fixtures with the pinned CLI
 #   migration  the migration Job of the knowledge and mcp schemas (jobs/migration)
@@ -59,10 +61,38 @@ jobs:
         run: |
           pnpm install --frozen-lockfile
           pnpm exec playwright install --with-deps chromium-headless-shell
-      - name: Static chain (clean clone; exit 2 for any step that is not a full PASS)
+      # Decision D-6 (a): a FAIL (exit 1) fails the job; exit 2 (a step PARTIAL or
+      # UNEXECUTED: the Docker-backed and root-only units --static omits, the
+      # local-only docs/) passes the job with a warning annotation, and the job
+      # summary lists every UNEXECUTED unit. UNEXECUTED is never reported as a pass.
+      - name: Static chain (clean clone; FAIL fails the job, UNEXECUTED units are a warning)
+        shell: bash
         env:
           ANVILKIT_PYTHON: python3.12
-        run: sh tools/verification-env.sh --static
+        run: |
+          set +e
+          sh tools/verification-env.sh --static 2>&1 | tee "$RUNNER_TEMP/chain.log"
+          rc=${PIPESTATUS[0]}
+          set -e
+          log="$RUNNER_TEMP/chain.log"
+          {
+            echo "## Static chain (exit $rc)"
+            echo '```'
+            grep -E '^(PASS|FAIL|PARTIAL|UNEXECUTED) |^[0-9]+ steps:|^  (partial|unexecuted|fail):' "$log" || true
+            echo '```'
+            if [ "$rc" -ne 0 ]; then
+              echo "### UNEXECUTED units (skipped or omitted tests, never a pass)"
+              echo '```'
+              grep -E '^ +UNEXECUTED ' "$log" | sed -E 's/^ +//' || true
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          case "$rc" in
+            0) ;;
+            2) summary=$(grep -E '^[0-9]+ steps:' "$log" | tail -1)
+               echo "::warning title=Static chain: not every unit ran::${summary:-exit 2}; the job summary lists every UNEXECUTED unit (decision D-6: nothing failed, nothing unexecuted counts as a pass)" ;;
+            *) exit "$rc" ;;
+          esac
   policies:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
