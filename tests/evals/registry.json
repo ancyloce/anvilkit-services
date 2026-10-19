@@ -2639,14 +2639,14 @@
         "case": "U-PARSER",
         "name": "run-verification --only parser",
         "title": "def step_parser",
-        "file": "tools/run-verification.py:446",
+        "file": "tools/run-verification.py:449",
         "checks": "Document parsing of the ingestion path inside the built parser image."
       },
       {
         "case": "U-INFERENCE",
         "name": "run-verification --only inference",
         "title": "def step_inference",
-        "file": "tools/run-verification.py:453",
+        "file": "tools/run-verification.py:456",
         "checks": "The Inference service's embedding and reranking units."
       }
     ],
@@ -3182,7 +3182,7 @@
         "case": "U-PARSER",
         "name": "run-verification --only parser",
         "title": "def step_parser",
-        "file": "tools/run-verification.py:446",
+        "file": "tools/run-verification.py:449",
         "checks": "The parser Job's malicious and oversized document tests inside the built image with no network."
       }
     ],
