@@ -15,6 +15,7 @@ image:
   pullPolicy: Never
 control:
   address: anvilkit-agent-control.anvilkit-apps.svc.cluster.local:9101
+  serverName: anvilkit-agent-control
 launcher:
   namespace: anvilkit-components
   backend: kind-anvilkit-dev
@@ -36,8 +37,6 @@ identity:
 temporal:
   tls:
     mode: development
-control:
-  serverName: anvilkit-agent-control
 modelProxy:
   serverName: anvilkit-agent-model-proxy
 sidecar:

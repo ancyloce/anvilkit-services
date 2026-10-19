@@ -201,7 +201,10 @@ if [ ! -x "$KYVERNO_DIR/kyverno" ]; then
 fi
 echo "d3322cb346d3d42dd0f41e230b0d1d7bc5619960e1c36fdac4d9151d724b88e6  $KYVERNO_DIR/install.yaml" | sha256sum -c --quiet
 echo "b38228f367fc0fdc2b08f4c83ea50ac5f16c60ff8d62d76a66157c33c47b70ae  $KYVERNO_DIR/kyverno-cli.tar.gz" | sha256sum -c --quiet
-kubectl --context kind-anvilkit-dev apply --server-side -f "$KYVERNO_DIR/install.yaml" >/dev/null
+# --force-conflicts: the scale below owns the admission controller's
+# replicas after the first run, so a re-run's apply would otherwise refuse
+# the manifest's own replica count (the scale restores three right after).
+kubectl --context kind-anvilkit-dev apply --server-side --force-conflicts -f "$KYVERNO_DIR/install.yaml" >/dev/null
 kubectl --context kind-anvilkit-dev -n kyverno rollout status deploy/kyverno-admission-controller --timeout=240s >/dev/null
 # P0.5: the Job-boundary admission chart every environment installs (the
 # components and parser template/digest policies, this environment's
