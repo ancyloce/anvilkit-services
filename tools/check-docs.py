@@ -8,6 +8,12 @@ docs/architecture/ and, since P3.6, docs/operations/ (the runbooks). docs/archiv
 is given; its results are then printed under a separate heading and never affect the
 exit status.
 
+The documents under docs/ are local-only: the owner keeps them out of the repository, so a
+clone has no docs/ directory. Without it the root documents (README.md, AGENTS.md,
+CLAUDE.md) and the generated blocks that do not derive from docs/ are still checked, links
+into docs/ are counted but not resolved, and the run ends UNEXECUTED (exit 2), never PASS.
+With docs/ present every check below applies.
+
 Checks:
   1. Every required input exists. A missing required document fails the run; nothing is
      skipped silently.
@@ -86,9 +92,10 @@ def anchors_for(text: str) -> set[str]:
     return anchors
 
 
-def check_markdown(root: pathlib.Path, files: list[pathlib.Path]) -> tuple[list[str], dict[str, int]]:
+def check_markdown(root: pathlib.Path, files: list[pathlib.Path], local_only: bool = False) -> tuple[list[str], dict[str, int]]:
+    """local_only: docs/ is absent (local-only documents); links into it are counted, not resolved."""
     failures: list[str] = []
-    counts = {"files": len(files), "tables": 0, "links": 0}
+    counts = {"files": len(files), "tables": 0, "links": 0, "unresolved": 0}
     texts = {p: p.read_text(encoding="utf-8") for p in files}
     anchors = {p: anchors_for(t) for p, t in texts.items()}
     for p, t in texts.items():
@@ -124,6 +131,9 @@ def check_markdown(root: pathlib.Path, files: list[pathlib.Path]) -> tuple[list[
             path_part, _, frag = target.partition("#")
             if path_part:
                 dest = (p.parent / path_part).resolve()
+                if local_only and dest.is_relative_to(root / "docs"):
+                    counts["unresolved"] += 1
+                    continue
                 if not dest.exists():
                     failures.append(f"{rel}: broken link target {target!r}")
                     continue
@@ -153,17 +163,21 @@ def main() -> int:
     args = ap.parse_args()
     root = pathlib.Path(args.root).resolve()
 
-    missing = [n for n in REQUIRED_INPUTS if not (root / n).is_file()]
+    local_only = not (root / "docs").is_dir()
+    required = [n for n in REQUIRED_INPUTS if not (local_only and n.startswith("docs/"))]
+    missing = [n for n in required if not (root / n).is_file()]
     for n in missing:
         print(f"FAIL missing required input {n}")
     if missing:
         print(f"{len(missing)} required inputs missing; the current baseline cannot be checked")
         return 1
 
-    current = [root / n for n in ("README.md", "AGENTS.md", "CLAUDE.md", "docs/README.md")]
-    current += sorted((root / "docs" / "architecture").glob("*.md"))
-    current += sorted((root / "docs" / "operations").rglob("*.md"))
-    failures, counts = check_markdown(root, current)
+    current = [root / n for n in ("README.md", "AGENTS.md", "CLAUDE.md")]
+    if not local_only:
+        current += [root / "docs" / "README.md"]
+        current += sorted((root / "docs" / "architecture").glob("*.md"))
+        current += sorted((root / "docs" / "operations").rglob("*.md"))
+    failures, counts = check_markdown(root, current, local_only)
     # P3.8: the generated status blocks (README units and repositories, AGENTS
     # repositories, delivery.md registry, the component READMEs' contracts
     # pins) must match the checkout, and no component README may cite
@@ -172,6 +186,8 @@ def main() -> int:
     for f in failures:
         print("FAIL", f)
     print(f"current baseline: {counts['files']} files, {counts['tables']} tables, {counts['links']} links, {len(failures)} failures")
+    if local_only:
+        print(f"UNEXECUTED: docs/ is not in this tree (the documents are local-only); they and {counts['unresolved']} links into docs/ were not checked")
 
     if args.include_archive:
         archive = sorted((root / "docs" / "archive").rglob("*.md"))
@@ -179,7 +195,9 @@ def main() -> int:
         print(f"docs/archive (informational, not part of the exit status): {arch_counts['files']} files, {len(arch_failures)} findings")
         for f in arch_failures[:40]:
             print("ARCHIVE", f)
-    return 1 if failures else 0
+    if failures:
+        return 1
+    return 2 if local_only else 0
 
 
 if __name__ == "__main__":

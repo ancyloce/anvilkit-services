@@ -223,7 +223,10 @@ def step_go(static: bool, units: Units) -> tuple[str, str]:
             if p.returncode != 0:
                 return "FAIL", "\n".join(out + [p.stdout[-2000:], p.stderr[-2000:]])
             continue
-        for cmd in (["go", "build", "./..."], ["go", "vet", "./..."]):
+        # -o os.devnull: a module whose ./... is a single main package (tests/load, the
+        # integration fixture) would otherwise leave its executable in the source tree,
+        # which tools/check-source-export.py rightly refuses under an input directory.
+        for cmd in (["go", "build", "-o", os.devnull, "./..."], ["go", "vet", "./..."]):
             p = run(cmd, mod, env)
             out.append(f"{mod.relative_to(ROOT)}: {' '.join(cmd[:2])} -> {'ok' if p.returncode == 0 else 'FAIL'}")
             if p.returncode != 0:

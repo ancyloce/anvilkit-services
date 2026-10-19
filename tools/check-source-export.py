@@ -22,8 +22,10 @@ Then:
 
   1. Required inputs: every file under each declared input directory and every anchor file
      (contract sources and generated bindings in contracts/, migrations, the Go modules of the
-     replacement, the dev foundation, the current documentation, the verification tools) is in
-     the export set.
+     replacement, the dev foundation, the root documents, the verification tools) is in
+     the export set. The documents under docs/ are local-only (the owner keeps them out of
+     the repository): they are neither required nor exported, and tools/check-docs.py in the
+     export reports them UNEXECUTED.
   2. Exclusions: nothing from docs/archive/, outputs/, logs/, .local/, node_modules/,
      __pycache__/ or *.egg-info/, no `.env*`, `*.pem`, `*.log`, `*.kubeconfig`, and nothing
      from inside a legacy submodule.
@@ -75,7 +77,6 @@ REQUIRED_DIRS = (
     "contracts/python",
     "contracts/tests/go",
     "contracts/tools",
-    "docs/architecture",
     "jobs/codegen/supervisor/cmd",
     "jobs/codegen/supervisor/internal",
     "jobs/codegen/team/src",
@@ -118,16 +119,15 @@ REQUIRED_DIRS = (
     "deploy/dev",
     "deploy/handover",
     # P3 (plan 0004): the release, promotion and qualification tooling, the
-    # operations runbooks, the load tool and the parent's CI.
+    # load tool and the parent's CI (the runbooks under docs/ are local-only).
     "deploy/gitops",
     "deploy/qualification/platform/observability",
     "deploy/qualification/platform/backups",
-    "docs/operations",
     "tests/load",
     ".github/workflows",
 )
 REQUIRED_FILES = (
-    "README.md", "AGENTS.md", "CLAUDE.md", "docs/README.md", "go.work", "go.work.sum",
+    "README.md", "AGENTS.md", "CLAUDE.md", "go.work", "go.work.sum",
     "contracts/README.md", "contracts/LICENSE", "contracts/package.json", "contracts/pnpm-workspace.yaml", "contracts/pnpm-lock.yaml",
     "contracts/buf.yaml", "contracts/buf.gen.yaml", "contracts/buf.gen.ts.yaml", "contracts/buf.lock",
     "contracts/openapi/agent.yaml", "contracts/openapi/inference.yaml", "contracts/openapi/model-proxy.yaml",
@@ -341,7 +341,10 @@ def required_failures(root: pathlib.Path, files: set[str], required_files, requi
 
 def extract(repo: pathlib.Path, commit: str, target: pathlib.Path) -> None:
     """Extract one repository's committed tree (git archive) under target."""
-    data = subprocess.run(["git", "archive", "--format=tar", commit], cwd=repo, capture_output=True, check=True).stdout
+    # The committed bytes, whatever the host's core.autocrlf: git archive applies the
+    # working-tree conversion, and a host with autocrlf=true would export CRLF shell
+    # scripts (`set: Illegal option -`) that no clone on a CI runner has.
+    data = subprocess.run(["git", "-c", "core.autocrlf=false", "-c", "core.eol=lf", "archive", "--format=tar", commit], cwd=repo, capture_output=True, check=True).stdout
     target.mkdir(parents=True, exist_ok=True)
     with tarfile.open(fileobj=io.BytesIO(data)) as tar:
         tar.extractall(target, filter="tar")
@@ -466,6 +469,11 @@ def main() -> int:
                 steps.append((f"go build {repo} (GOWORK=off)", ["go", "build", "-buildvcs=false", "./..."], target / repo, {"GOWORK": "off"}))
         for name, cmd, cwd, *extra in steps:
             p = subprocess.run(cmd, cwd=cwd, env=dict(env, **(extra[0] if extra else {})), capture_output=True, text=True)
+            # The docs check ends UNEXECUTED (2) when the local-only docs/ is absent, as it is
+            # in every export; its root-document findings still fail it with 1.
+            if name == "docs" and p.returncode == 2:
+                print(f"UNEXECUTED {name} (docs/ is local-only; the root documents passed)")
+                continue
             status = "PASS" if p.returncode == 0 else "FAIL"
             print(f"{status:<5} {name}")
             if p.returncode != 0:
