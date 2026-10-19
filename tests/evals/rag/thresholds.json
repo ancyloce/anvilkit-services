@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "status": "DEVELOPMENT_ONLY",
+  "description": "P3.4 (EVAL-04): the quality bounds TestRetrieval asserts, derived from the five development runs of this corpus (outputs/rag-eval reports tm7rks, tmllmn, tmlxok, tmme75 (a 15-case subset, excluded from the derivation), tmmje5: recall@5 0.818, nDCG@5 0.848, no-answer 15/15, false no-answer 9/66, no disclosure, no invalid citation, identical across runs). They are regression bounds of this DEVELOPMENT_ONLY corpus only: the business-labeled corpus and its thresholds are an ENV-05 input, and a different corpus digest refuses these bounds.",
+  "corpusDigest": "sha256:be215cc9c431d45db6d7d0027e1b4f4ae67c9ec03e32d737aab71b93ae900667",
+  "derivedFrom": ["report-tm7rks.json", "report-tmllmn.json", "report-tmlxok.json", "report-tmmje5.json"],
+  "recallAtKMin": 0.81,
+  "ndcgAtKMin": 0.84,
+  "noAnswerCorrectRatioMin": 1.0,
+  "falseNoAnswerRatioMax": 0.14,
+  "unauthorizedDisclosuresMax": 0,
+  "invalidCitationsMax": 0
+}

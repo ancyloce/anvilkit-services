@@ -1,0 +1,3297 @@
+{
+  "schemaVersion": 1,
+  "registryRevision": "14",
+  "description": "P22 requirement traceability (delivery.md P22): every M1, CAP and SEC requirement maps to executable cases and to explicit NOT_RUN entries naming what is missing. A case binds its suite, selector, the reviewed profiles it exercises, its time budget and the gates it contributes evidence to; contributing evidence never closes a gate. tools/run-evaluation.py checks, runs and reports it.",
+  "requirements": {
+    "M1": [
+      "M1-01",
+      "M1-02",
+      "M1-03",
+      "M1-04",
+      "M1-05",
+      "M1-06",
+      "M1-07",
+      "M1-08",
+      "M1-09",
+      "M1-10",
+      "M1-11",
+      "M1-12",
+      "M1-13",
+      "M1-14",
+      "M1-15",
+      "M1-16",
+      "M1-17"
+    ],
+    "CAP": [
+      "CAP-01",
+      "CAP-02",
+      "CAP-03",
+      "CAP-04",
+      "CAP-05",
+      "CAP-06",
+      "CAP-07"
+    ],
+    "SEC": [
+      "SEC-01",
+      "SEC-02",
+      "SEC-03",
+      "SEC-04",
+      "SEC-05",
+      "SEC-06",
+      "SEC-07",
+      "SEC-08",
+      "SEC-09",
+      "SEC-10",
+      "SEC-11",
+      "SEC-12"
+    ]
+  },
+  "traceability": {
+    "M1-01": [
+      "G-01",
+      "G-02"
+    ],
+    "M1-02": [
+      "G-03",
+      "G-05"
+    ],
+    "M1-03": [
+      "G-04",
+      "G-06"
+    ],
+    "M1-04": [
+      "G-06",
+      "G-07"
+    ],
+    "M1-05": [
+      "G-04",
+      "G-06"
+    ],
+    "M1-06": [
+      "G-07"
+    ],
+    "M1-07": [
+      "G-07",
+      "G-10"
+    ],
+    "M1-08": [
+      "G-07"
+    ],
+    "M1-09": [
+      "G-06",
+      "G-07"
+    ],
+    "M1-10": [
+      "G-06",
+      "G-13"
+    ],
+    "M1-11": [
+      "G-02",
+      "G-03"
+    ],
+    "M1-12": [
+      "G-10",
+      "G-14"
+    ],
+    "M1-13": [
+      "G-02",
+      "G-14"
+    ],
+    "M1-14": [
+      "G-02",
+      "G-12"
+    ],
+    "M1-15": [
+      "G-03",
+      "G-08"
+    ],
+    "M1-16": [
+      "G-08",
+      "G-12"
+    ],
+    "M1-17": [
+      "G-08",
+      "G-09"
+    ],
+    "CAP-01": [
+      "G-03",
+      "G-04",
+      "G-05"
+    ],
+    "CAP-02": [
+      "G-08"
+    ],
+    "CAP-03": [
+      "G-09"
+    ],
+    "CAP-04": [
+      "G-03",
+      "G-10"
+    ],
+    "CAP-05": [
+      "G-11"
+    ],
+    "CAP-06": [
+      "G-12"
+    ],
+    "CAP-07": [
+      "G-01",
+      "G-13",
+      "G-14"
+    ]
+  },
+  "suites": {
+    "integration": {
+      "runner": "go",
+      "dir": "tests/integration",
+      "tags": "integration",
+      "requires": [
+        "foundation"
+      ],
+      "description": "Real PostgreSQL/Temporal/kind/MinIO/NATS/Valkey/Qdrant of the development foundation (DEVELOPMENT_ONLY placement)"
+    },
+    "workflow-cluster": {
+      "runner": "go",
+      "dir": "services/agent/workflow",
+      "tags": "integration",
+      "requires": [
+        "foundation"
+      ],
+      "prepare": "control",
+      "description": "The launcher and harness Jobs on the kind cluster"
+    },
+    "control": {
+      "runner": "go",
+      "dir": "services/agent/control",
+      "description": "Control units and PostgreSQL 17 under Testcontainers"
+    },
+    "workflow": {
+      "runner": "go",
+      "dir": "services/agent/workflow",
+      "description": "Workflow units and the Temporal test suite"
+    },
+    "api": {
+      "runner": "go",
+      "dir": "services/agent/api",
+      "description": "Public API transport against the generated contract"
+    },
+    "mcp": {
+      "runner": "go",
+      "dir": "services/agent/mcp",
+      "description": "MCP owner units and PostgreSQL under Testcontainers"
+    },
+    "codegen": {
+      "runner": "go",
+      "dir": "jobs/codegen/supervisor",
+      "description": "Trusted supervisor (anvilkit-job-codegen-supervisor): privilege drop, stop and confirmation, process protocol, harness"
+    },
+    "sidecar": {
+      "runner": "go",
+      "dir": "jobs/shared/access-sidecar",
+      "description": "Trusted access sidecar"
+    },
+    "closure": {
+      "runner": "go",
+      "dir": "tests/contracts",
+      "description": "Build closure: no legacy imports, retained legacy contracts or Connect-Go"
+    },
+    "contracts": {
+      "runner": "command",
+      "dir": "contracts",
+      "argv": [
+        "sh",
+        "tools/verification-env.sh"
+      ],
+      "description": "Contract sources, generation drift and the cross-language positive/negative vectors (Go, TypeScript, Python)",
+      "report": "exit-code"
+    },
+    "policies": {
+      "runner": "command",
+      "dir": ".",
+      "argv": [
+        "sh",
+        "deploy/policies/check.sh"
+      ],
+      "description": "Kyverno Job admission policies against positive and substituted templates",
+      "report": "exit-code"
+    },
+    "validator": {
+      "runner": "pnpm",
+      "dir": "jobs/validator",
+      "description": "Source contract, protected build, independent validator, preview origin"
+    },
+    "team": {
+      "runner": "pnpm",
+      "dir": "jobs/codegen/team",
+      "description": "LangGraph/Pi team (anvilkit-job-codegen-team): controlled model port, per-send budget, one writer, process protocol, stages, bounded repair"
+    },
+    "model-proxy": {
+      "runner": "pnpm",
+      "dir": "services/agent/model-proxy",
+      "description": "Controlled Model Proxy: single send, bounded streams, reentry"
+    },
+    "knowledge": {
+      "runner": "pnpm",
+      "dir": "services/agent/knowledge",
+      "description": "Knowledge owner: sources, ACL, retrieval, memory, configuration generations"
+    },
+    "background-worker": {
+      "runner": "pnpm",
+      "dir": "services/agent/background-worker",
+      "description": "BullMQ Worker and owner relays"
+    },
+    "studio": {
+      "runner": "command",
+      "dir": "${ANVILKIT_STUDIO_DIR}",
+      "argv": [
+        "npx",
+        "vitest",
+        "run"
+      ],
+      "description": "Studio workbench, preview bridge, loader and lock units (anvilkit-studio/apps/studio)",
+      "report": "vitest-json"
+    },
+    "network-offline": {
+      "runner": "command",
+      "dir": ".",
+      "argv": [
+        ".local/verification-venv/bin/python",
+        "deploy/qualification/check-network.py",
+        "--offline"
+      ],
+      "description": "The anvilkit-network chart's rendered NetworkPolicies evaluated with the standard semantics against the communication matrix (no CNI)",
+      "report": "exit-code"
+    },
+    "network-cluster": {
+      "runner": "command",
+      "dir": ".",
+      "argv": [
+        ".local/verification-venv/bin/python",
+        "deploy/qualification/check-network.py",
+        "--cluster"
+      ],
+      "requires": [
+        "network-cluster"
+      ],
+      "description": "Stand-in pods with the components' labels and ports probed through a NetworkPolicy-enforcing CNI (Cilium) where the anvilkit-network chart is installed (ANVILKIT_NETWORK_KUBECONFIG)",
+      "report": "exit-code"
+    },
+    "secrets-rendered": {
+      "runner": "command",
+      "dir": ".",
+      "argv": [
+        ".local/verification-venv/bin/python",
+        "deploy/qualification/check-secrets.py",
+        "--rendered"
+      ],
+      "description": "P0.6: every service chart with its qualification values and every application of the qualification combination rendered (upstream charts at their pinned versions); no Secret manifest with data, no plaintext endpoint or non-verify-full DSN outside the reasoned development-labelled exceptions, and bootstrap.py's OpenBao credentials checked (verify-full DSNs with the trust bundle, rediss://, every path read by exactly its role)",
+      "report": "exit-code"
+    },
+    "parser": {
+      "runner": "command",
+      "dir": ".",
+      "argv": [
+        ".local/verification-venv/bin/python",
+        "tools/run-verification.py",
+        "--only",
+        "parser"
+      ],
+      "report": "exit-code",
+      "description": "The Docling parser Job (jobs/parser): its sources and tests inside the built anvilkit-parser image with no network (malicious and oversized documents, the trusted stager's import isolation); PARTIAL (exit 2, NOT_RUN) without the image"
+    },
+    "inference": {
+      "runner": "command",
+      "dir": ".",
+      "argv": [
+        ".local/verification-venv/bin/python",
+        "tools/run-verification.py",
+        "--only",
+        "inference"
+      ],
+      "report": "exit-code",
+      "description": "The Inference service (services/agent/inference): the compute contract and real BGE-M3/reranker computations inside the built image with no network; PARTIAL (exit 2, NOT_RUN) without the image"
+    },
+    "integration-offline": {
+      "runner": "go",
+      "dir": "tests/integration",
+      "tags": "integration",
+      "description": "Integration-tagged checks that need no foundation (the RAG quality bounds' check on recorded and degraded measurements)"
+    },
+    "model-proxy-stress": {
+      "runner": "command",
+      "dir": "services/agent/model-proxy",
+      "argv": [
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "--config",
+        "vitest.stress.config.ts",
+        "--silent=false"
+      ],
+      "report": "vitest-json",
+      "description": "P3.5 AC4: two Model Proxy instances on one store, the other instance sweeping while each call settles (ANVILKIT_MODEL_PROXY_STRESS_ITERATIONS, default 100), and the forced reclaim-before-settlement interleavings"
+    },
+    "load": {
+      "runner": "command",
+      "dir": "tests/load",
+      "argv": [
+        "go",
+        "run",
+        ".",
+        "--profile",
+        "profiles/development.json",
+        "--run",
+        "${ANVILKIT_QUALIFICATION_RUN}"
+      ],
+      "requires": [
+        "qualification-run"
+      ],
+      "report": "exit-code",
+      "description": "P3.5 AC1: the load tool (tests/load) at the profile's arrival rates against the API named by ANVILKIT_LOAD_API_URL with ANVILKIT_LOAD_TOKEN, the cluster readout from ANVILKIT_LOAD_PROMETHEUS_URL; exit 2 (NOT_RUN) when a scenario or the readout was not exercised"
+    },
+    "soak": {
+      "runner": "command",
+      "dir": ".",
+      "argv": [
+        ".local/verification-venv/bin/python",
+        "deploy/qualification/soak.py",
+        "--run",
+        "${ANVILKIT_QUALIFICATION_RUN}"
+      ],
+      "requires": [
+        "qualification-run"
+      ],
+      "report": "exit-code",
+      "description": "P3.5 AC2: >= 4 h of load with holds, cancels, stream resumes and rolling restarts on the qualification environment"
+    },
+    "chaos": {
+      "runner": "command",
+      "dir": ".",
+      "argv": [
+        ".local/verification-venv/bin/python",
+        "deploy/qualification/chaos.py",
+        "--run",
+        "${ANVILKIT_QUALIFICATION_RUN}"
+      ],
+      "requires": [
+        "qualification-run"
+      ],
+      "report": "exit-code",
+      "description": "P3.5 AC3: Control/Proxy/MCP Pod, PostgreSQL, Valkey, NATS and object-store faults under load on the qualification environment"
+    },
+    "policies-cluster": {
+      "runner": "command",
+      "dir": ".",
+      "argv": [
+        "sh",
+        "deploy/policies/check.sh",
+        "--cluster"
+      ],
+      "requires": [
+        "foundation"
+      ],
+      "report": "exit-code",
+      "description": "SEC-09 on the development cluster: server-side dry-run admission of every substituted Job template and the launcher lifecycle (pods/exec, ephemeral containers) by RBAC and policy"
+    },
+    "admission-cluster": {
+      "runner": "command",
+      "dir": ".",
+      "argv": [
+        ".local/verification-venv/bin/python",
+        "deploy/qualification/check-admission.py",
+        "--run",
+        "${ANVILKIT_QUALIFICATION_RUN}"
+      ],
+      "requires": [
+        "qualification-run"
+      ],
+      "report": "exit-code",
+      "description": "P23-03 signed-image admission of anvilkit-apps on the qualification cluster (server-side dry runs)"
+    }
+  },
+  "cases": [
+    {
+      "id": "IT-LOCALCHECK",
+      "suite": "integration",
+      "run": "TestLocalCheckChain",
+      "requirements": [
+        "M1-01"
+      ],
+      "sec": [
+        "SEC-01"
+      ],
+      "gates": [
+        "G-02"
+      ],
+      "profiles": [
+        "local-check-v1"
+      ],
+      "budget": "20m"
+    },
+    {
+      "id": "IT-TWO-CONTROLS",
+      "suite": "integration",
+      "run": "TestTwoControlProcesses",
+      "requirements": [
+        "M1-01",
+        "M1-13"
+      ],
+      "sec": [
+        "SEC-02"
+      ],
+      "gates": [
+        "G-02"
+      ],
+      "profiles": [
+        "local-check-v1"
+      ],
+      "budget": "20m",
+      "description": "Two Control processes over one database. P1 (plan 0002) SEC-02 negative 'same call on two replicas': the relay lanes of both start, answer and command each operation once."
+    },
+    {
+      "id": "IT-FAULTS",
+      "suite": "integration",
+      "run": "TestFaultScenarios",
+      "requirements": [],
+      "sec": [],
+      "gates": [
+        "G-02"
+      ],
+      "profiles": [
+        "local-check-v1"
+      ],
+      "budget": "20m",
+      "unmapped": "Job-launch fault handling (lost completion receipts, duplicate Pods) on the foundation; no database rollback, so not M1-12; supporting G-02 evidence."
+    },
+    {
+      "id": "IT-UNRESOLVED-CREATE",
+      "suite": "integration",
+      "run": "TestUnresolvedCreateRecovery",
+      "requirements": [],
+      "sec": [],
+      "gates": [
+        "G-02"
+      ],
+      "profiles": [
+        "local-check-v1"
+      ],
+      "budget": "20m",
+      "unmapped": "Cleanup of an unresolved Job create on elapsed time; no database rollback, so not M1-12; supporting G-02 evidence."
+    },
+    {
+      "id": "IT-DISPATCH",
+      "suite": "integration",
+      "run": "TestDispatchAdmission",
+      "requirements": [
+        "M1-11",
+        "M1-13"
+      ],
+      "sec": [
+        "SEC-01",
+        "SEC-02"
+      ],
+      "gates": [
+        "G-02",
+        "G-03"
+      ],
+      "profiles": [],
+      "budget": "20m",
+      "description": "Single-use dispatch admission on two Control processes (SEC-02); since P0.2 also the derived authority (SEC-01): the dispatch owner is the verified caller's workload identity (a forged owner and a wrong workload are PERMISSION_DENIED), an owner reads and reports only its own dispatches and every read is bound to the tenant it acts for. P1 (plan 0002) SEC-02 negative 'same call on two replicas': one admission per command identity on two Control processes."
+    },
+    {
+      "id": "IT-IDENTITY",
+      "suite": "integration",
+      "run": "TestWorkloadIdentityRefusals",
+      "requirements": [
+        "M1-01"
+      ],
+      "sec": [
+        "SEC-01"
+      ],
+      "gates": [
+        "G-01"
+      ],
+      "profiles": [],
+      "budget": "15m",
+      "description": "P0.1 workload identity on Control, Knowledge and MCP: plaintext, a foreign CA, a trusted certificate with a wrong trust domain, one without a URI SAN and an unauthorized workload are refused; the allowed workload reaches the handler. JWT audience, issuer and signature validation is IT-USER-AUTHZ (P0.3).",
+      "caps": [
+        "CAP-07"
+      ]
+    },
+    {
+      "id": "IT-USER-AUTHZ",
+      "suite": "integration",
+      "run": "TestUserAuthorization",
+      "requirements": [
+        "M1-01"
+      ],
+      "sec": [
+        "SEC-01"
+      ],
+      "gates": [
+        "G-01"
+      ],
+      "profiles": [
+        "local-check-v1"
+      ],
+      "budget": "15m",
+      "description": "P0.3 user identity on the development OIDC provider: a token of another audience, of an unmapped user, with a forged signature or none, an expired or tenant-less forgery and an opaque fixture token are refused with WWW-Authenticate; a tenant or actor stated in a request never reaches Control (forged tenant/actor); an unknown action is refused; a user of another project of the same tenant neither reads nor commands the operation while the operator role crosses projects; only a user holding the operator role begins a recovery run. Expiry, issuer, unknown kid and the algorithm allowlist are the verifier's table test (U-API)."
+    },
+    {
+      "id": "IT-NETWORK",
+      "suite": "network-cluster",
+      "requirements": [],
+      "sec": [
+        "SEC-04"
+      ],
+      "gates": [
+        "G-04"
+      ],
+      "profiles": [],
+      "budget": "60m",
+      "description": "P0.4 on a Cilium cluster: stand-in pods carrying each component's labels and ports; every matrix flow connects, every other pair and port is refused (direct Model Proxy, Knowledge, Control or data-store access from a pod the matrix does not name, including an unlabeled pod of anvilkit-apps). Stand-ins, not the deployed services: the services' own traffic under the policies is NR-NETWORK."
+    },
+    {
+      "id": "IT-RECOVERY",
+      "suite": "integration",
+      "run": "TestRecoveryReconciliation",
+      "requirements": [
+        "M1-12"
+      ],
+      "sec": [
+        "SEC-11"
+      ],
+      "gates": [
+        "G-02"
+      ],
+      "profiles": [],
+      "budget": "20m"
+    },
+    {
+      "id": "IT-ARTIFACTS",
+      "suite": "integration",
+      "run": "TestArtifactTransfer|TestArtifactAcceptance",
+      "requirements": [],
+      "sec": [
+        "SEC-03"
+      ],
+      "gates": [
+        "G-02"
+      ],
+      "profiles": [],
+      "budget": "20m"
+    },
+    {
+      "id": "IT-HARNESS",
+      "suite": "integration",
+      "run": "TestTrustedHarnessProcessFlow",
+      "requirements": [],
+      "sec": [
+        "SEC-03"
+      ],
+      "gates": [
+        "G-04"
+      ],
+      "profiles": [
+        "harness-wiring-dev-v1"
+      ],
+      "budget": "20m"
+    },
+    {
+      "id": "IT-CERTIFICATION",
+      "suite": "integration",
+      "run": "TestComponentCertificationFlow",
+      "requirements": [
+        "M1-05"
+      ],
+      "sec": [
+        "SEC-03"
+      ],
+      "gates": [
+        "G-06"
+      ],
+      "profiles": [
+        "validator-fixture-v1",
+        "build-support-dev-v1",
+        "host-abi-dev-v1",
+        "validator-dev-v1"
+      ],
+      "budget": "30m"
+    },
+    {
+      "id": "IT-MODEL-PROXY",
+      "suite": "integration",
+      "run": "TestModelProxyControlledCalls",
+      "requirements": [
+        "M1-11",
+        "M1-15",
+        "M1-12",
+        "M1-13"
+      ],
+      "sec": [
+        "SEC-02"
+      ],
+      "gates": [
+        "G-03"
+      ],
+      "profiles": [
+        "controlled-openai-v1"
+      ],
+      "budget": "30m",
+      "description": "Controlled Model Proxy calls through Control and the countable upstream. P1 (plan 0002) SEC-02 negatives: 'hidden transport retry' (P1.1: a 421 is one receive, one dispatch and one send; the platform fetch's re-send is refused before the wire), 'lost grant response' and 'same call on two replicas' (P1.3: a reentry reattaches to the original call, never a second send), 'cancellation race' (cancel and reenter under the original identity; P1.3: a rollout drains a held send)."
+    },
+    {
+      "id": "IT-TEAM",
+      "suite": "integration",
+      "run": "TestCodegenTeamFlow",
+      "requirements": [
+        "M1-02",
+        "M1-03"
+      ],
+      "caps": [
+        "CAP-01"
+      ],
+      "sec": [
+        "SEC-02",
+        "SEC-03",
+        "SEC-10"
+      ],
+      "gates": [
+        "G-05"
+      ],
+      "profiles": [
+        "codegen-team-dev-v1",
+        "validator-dev-v1",
+        "validator-source-dev-v1"
+      ],
+      "budget": "40m"
+    },
+    {
+      "id": "IT-LIFECYCLE",
+      "suite": "integration",
+      "run": "TestPreparationAndGenerationLifecycle",
+      "requirements": [
+        "M1-15"
+      ],
+      "sec": [],
+      "gates": [
+        "G-08",
+        "G-12"
+      ],
+      "profiles": [
+        "preparation-v1",
+        "generation-v1"
+      ],
+      "budget": "30m"
+    },
+    {
+      "id": "IT-STUDIO",
+      "suite": "integration",
+      "run": "TestStudioWorkbench",
+      "requirements": [
+        "M1-04",
+        "M1-09",
+        "M1-10"
+      ],
+      "sec": [
+        "SEC-12"
+      ],
+      "gates": [
+        "G-06",
+        "G-07"
+      ],
+      "profiles": [
+        "preview-build-v1",
+        "validator-source-dev-v1",
+        "host-abi-dev-v1"
+      ],
+      "budget": "30m"
+    },
+    {
+      "id": "IT-RELEASE",
+      "suite": "integration",
+      "run": "TestRelease",
+      "requirements": [
+        "M1-06",
+        "M1-08",
+        "M1-10"
+      ],
+      "sec": [
+        "SEC-12"
+      ],
+      "gates": [
+        "G-07"
+      ],
+      "profiles": [
+        "release-v1",
+        "validator-source-dev-v1"
+      ],
+      "budget": "40m"
+    },
+    {
+      "id": "IT-INGESTION",
+      "suite": "integration",
+      "run": "TestIngestion",
+      "requirements": [],
+      "caps": [
+        "CAP-02"
+      ],
+      "sec": [
+        "SEC-10",
+        "SEC-09"
+      ],
+      "gates": [
+        "G-08"
+      ],
+      "profiles": [],
+      "budget": "40m",
+      "description": "Ingestion (P15) through the real parser launcher on kind with the parser image of P0.7 (stager in isolated mode, separate /tmp volumes for the stagers and the parser, trixie base without CRITICAL findings): markdown and PDF parsed and accepted with provenance, an archive bomb refused inside the Job, tampered parser Jobs denied at admission with the launcher's own credentials (a /tmp shared by the parser and stage-out among them), the accepted chunks embedded over the HTTPS Inference listener (P0.6, F-P0.1-2)."
+    },
+    {
+      "id": "IT-RETRIEVAL",
+      "suite": "integration",
+      "run": "TestRetrieval",
+      "requirements": [
+        "M1-17"
+      ],
+      "caps": [
+        "CAP-02"
+      ],
+      "sec": [
+        "SEC-05"
+      ],
+      "gates": [
+        "G-08"
+      ],
+      "profiles": [
+        "hybrid-bge-m3-dev-v1"
+      ],
+      "budget": "60m",
+      "trials": {
+        "reports": "outputs/rag-eval",
+        "k": 3
+      }
+    },
+    {
+      "id": "IT-MEMORY",
+      "suite": "integration",
+      "run": "TestMemory",
+      "requirements": [],
+      "caps": [
+        "CAP-03"
+      ],
+      "sec": [
+        "SEC-06"
+      ],
+      "gates": [
+        "G-09"
+      ],
+      "profiles": [
+        "memory-expiry-v1"
+      ],
+      "budget": "60m",
+      "trials": {
+        "reports": "outputs/memory-eval",
+        "k": 3
+      }
+    },
+    {
+      "id": "IT-KNOWLEDGE-PUBLIC",
+      "suite": "integration",
+      "run": "TestKnowledgePublicAPI",
+      "requirements": [
+        "M1-17"
+      ],
+      "caps": [
+        "CAP-02",
+        "CAP-03"
+      ],
+      "sec": [
+        "SEC-05"
+      ],
+      "gates": [
+        "G-08",
+        "G-09"
+      ],
+      "profiles": [
+        "hybrid-bge-m3-dev-v1"
+      ],
+      "budget": "45m",
+      "description": "P2.6: the knowledge journey through the public Agent API alone (nothing written to the bucket by the test): beginSourceUpload, the presigned PUT with exactly the signed headers, registerSource upload:<uploadId>, ingest observed to indexed, createSnapshot, a cited search, a fact citing the source proposed, confirmed and recalled; the capability refused a second time and for another tenant, the snapshot unreadable by another tenant."
+    },
+    {
+      "id": "IT-MCP-CATALOG",
+      "suite": "integration",
+      "run": "TestMCPCatalog",
+      "requirements": [],
+      "caps": [
+        "CAP-04"
+      ],
+      "sec": [
+        "SEC-08"
+      ],
+      "gates": [
+        "G-10"
+      ],
+      "profiles": [],
+      "budget": "30m"
+    },
+    {
+      "id": "IT-MCP-CALLS",
+      "suite": "integration",
+      "run": "TestMCPToolCalls",
+      "requirements": [],
+      "caps": [
+        "CAP-04"
+      ],
+      "sec": [
+        "SEC-08",
+        "SEC-02"
+      ],
+      "gates": [
+        "G-03",
+        "G-10"
+      ],
+      "profiles": [],
+      "budget": "30m",
+      "description": "Guarded MCP tool execution. P1 (plan 0002) SEC-02 negatives: 'hidden transport retry' (P1.2: HTTP/1.1-only egress, a body-bound failure is never replayed; results the record cannot hold settle FAILED/RESULT_TOO_LARGE), 'lost grant response' (the operator path reconciles one call under its original identity)."
+    },
+    {
+      "id": "IT-BACKGROUND",
+      "suite": "integration",
+      "run": "TestBackgroundLane",
+      "requirements": [],
+      "caps": [
+        "CAP-05",
+        "CAP-06"
+      ],
+      "sec": [
+        "SEC-01"
+      ],
+      "gates": [
+        "G-11",
+        "G-12"
+      ],
+      "profiles": [],
+      "budget": "40m",
+      "description": "The background lane (P14) on a data plane run as the target platform runs it (P0.6): PostgreSQL TLS-only (pg_hba refuses plaintext, every DSN verify-full), NATS TLS-only with one NKey user per role limited to its subjects, Valkey TLS-only with the default user off and one ACL user per role limited to its owner's keys; the services connect with file-based credentials. Negatives: plaintext and anonymous NATS, an unlisted NKey, a forwarder publishing into another owner's subjects, plaintext Valkey, the default user, a wrong password, another owner's keys, a dangerous command, a plaintext or foreign-CA PostgreSQL connection; a Valkey ACL password rotated with two passwords and the worker rolled, the old one refused, Valkey not restarted."
+    },
+    {
+      "id": "IT-DEPLOYED",
+      "suite": "integration",
+      "run": "TestDeployedRepairChain",
+      "requirements": [],
+      "caps": [],
+      "sec": [],
+      "gates": [
+        "G-02"
+      ],
+      "profiles": [],
+      "budget": "30m",
+      "unmapped": "The deployed P1 repair chain on single replicas with Recreate and no HPA: the opposite of M1-13/CAP-07's two-instance HA target; supporting G-02 evidence."
+    },
+    {
+      "id": "WF-CLUSTER",
+      "suite": "workflow-cluster",
+      "package": "./internal/adapters/kubernetes/",
+      "run": "TestHarnessOnTheDevelopmentCluster",
+      "requirements": [],
+      "sec": [
+        "SEC-03",
+        "SEC-04",
+        "SEC-09"
+      ],
+      "gates": [
+        "G-04"
+      ],
+      "profiles": [
+        "harness-wiring-dev-v1"
+      ],
+      "budget": "30m"
+    },
+    {
+      "id": "U-CONTROL",
+      "suite": "control",
+      "requirements": [
+        "M1-01",
+        "M1-06",
+        "M1-07",
+        "M1-08",
+        "M1-11",
+        "M1-12",
+        "M1-13",
+        "M1-14",
+        "M1-04",
+        "M1-15",
+        "M1-16",
+        "M1-17"
+      ],
+      "sec": [
+        "SEC-01",
+        "SEC-02",
+        "SEC-08",
+        "SEC-11",
+        "SEC-10"
+      ],
+      "gates": [
+        "G-02",
+        "G-03",
+        "G-07"
+      ],
+      "profiles": [],
+      "budget": "20m"
+    },
+    {
+      "id": "U-WORKFLOW",
+      "suite": "workflow",
+      "requirements": [
+        "M1-04",
+        "M1-06",
+        "M1-07",
+        "M1-08",
+        "M1-12",
+        "M1-14",
+        "M1-16",
+        "M1-02",
+        "M1-15",
+        "M1-17"
+      ],
+      "caps": [
+        "CAP-06"
+      ],
+      "sec": [
+        "SEC-09"
+      ],
+      "gates": [
+        "G-07",
+        "G-12"
+      ],
+      "profiles": [],
+      "budget": "20m"
+    },
+    {
+      "id": "U-API",
+      "suite": "api",
+      "requirements": [
+        "M1-01"
+      ],
+      "sec": [
+        "SEC-01"
+      ],
+      "gates": [
+        "G-01"
+      ],
+      "profiles": [],
+      "budget": "10m"
+    },
+    {
+      "id": "U-MCP",
+      "suite": "mcp",
+      "requirements": [],
+      "caps": [
+        "CAP-04",
+        "CAP-06"
+      ],
+      "sec": [
+        "SEC-07",
+        "SEC-08"
+      ],
+      "gates": [
+        "G-10",
+        "G-12"
+      ],
+      "profiles": [],
+      "budget": "20m"
+    },
+    {
+      "id": "U-CODEGEN",
+      "suite": "codegen",
+      "requirements": [
+        "M1-03"
+      ],
+      "sec": [
+        "SEC-03"
+      ],
+      "gates": [
+        "G-04"
+      ],
+      "profiles": [],
+      "budget": "10m"
+    },
+    {
+      "id": "U-SIDECAR",
+      "suite": "sidecar",
+      "requirements": [],
+      "sec": [
+        "SEC-03",
+        "SEC-04"
+      ],
+      "gates": [
+        "G-04"
+      ],
+      "profiles": [],
+      "budget": "10m"
+    },
+    {
+      "id": "U-CLOSURE",
+      "suite": "closure",
+      "requirements": [],
+      "caps": [
+        "CAP-07"
+      ],
+      "sec": [],
+      "gates": [
+        "G-01",
+        "G-13"
+      ],
+      "profiles": [],
+      "budget": "10m"
+    },
+    {
+      "id": "U-CONTRACTS",
+      "suite": "contracts",
+      "requirements": [],
+      "caps": [
+        "CAP-07"
+      ],
+      "sec": [],
+      "gates": [
+        "G-01"
+      ],
+      "profiles": [],
+      "budget": "15m"
+    },
+    {
+      "id": "U-POLICIES",
+      "suite": "policies",
+      "requirements": [],
+      "sec": [
+        "SEC-09"
+      ],
+      "gates": [
+        "G-04"
+      ],
+      "profiles": [
+        "codegen-fixed-v1",
+        "validator-fixture-v1",
+        "validator-source-v1",
+        "validator-source-dev-v1",
+        "parser-docling-dev-v1"
+      ],
+      "budget": "15m"
+    },
+    {
+      "id": "U-NETWORK",
+      "suite": "network-offline",
+      "requirements": [],
+      "sec": [
+        "SEC-04"
+      ],
+      "gates": [
+        "G-04"
+      ],
+      "profiles": [],
+      "budget": "5m",
+      "description": "P0.4: every (source, target, port) of the components and one unlabeled pod per namespace against the rendered policies; exactly the matrix's flows are allowed. Evaluates the policy objects, not a CNI.",
+      "caps": [
+        "CAP-07"
+      ]
+    },
+    {
+      "id": "U-VALIDATOR",
+      "suite": "validator",
+      "requirements": [
+        "M1-03",
+        "M1-05"
+      ],
+      "sec": [
+        "SEC-03",
+        "SEC-10",
+        "SEC-12"
+      ],
+      "gates": [
+        "G-06"
+      ],
+      "profiles": [
+        "validator-dev-v1",
+        "build-support-dev-v1",
+        "host-abi-dev-v1"
+      ],
+      "budget": "20m"
+    },
+    {
+      "id": "U-TEAM",
+      "suite": "team",
+      "requirements": [
+        "M1-02",
+        "M1-11"
+      ],
+      "caps": [
+        "CAP-01"
+      ],
+      "sec": [
+        "SEC-02",
+        "SEC-10"
+      ],
+      "gates": [
+        "G-05"
+      ],
+      "profiles": [
+        "codegen-team-dev-v1"
+      ],
+      "budget": "20m"
+    },
+    {
+      "id": "U-MODEL-PROXY",
+      "suite": "model-proxy",
+      "requirements": [
+        "M1-11",
+        "M1-15"
+      ],
+      "sec": [
+        "SEC-02"
+      ],
+      "gates": [
+        "G-03"
+      ],
+      "profiles": [
+        "controlled-openai-v1"
+      ],
+      "budget": "15m",
+      "description": "Model Proxy units. P1 (plan 0002) SEC-02 negatives: 'hidden transport retry' (transport tests: one dispatch per ticket, a 421 reaches the upstream once, a forced second dispatch is refused), 'lost grant response' (safety AC4/AC8: retryable capacity refusal, own-write recognition of a repeated conditional create), 'cancellation race' (safety drain and settlement scenarios)."
+    },
+    {
+      "id": "U-KNOWLEDGE",
+      "suite": "knowledge",
+      "requirements": [
+        "M1-17"
+      ],
+      "caps": [
+        "CAP-02",
+        "CAP-03",
+        "CAP-06"
+      ],
+      "sec": [
+        "SEC-05",
+        "SEC-06"
+      ],
+      "gates": [
+        "G-08",
+        "G-09",
+        "G-12"
+      ],
+      "profiles": [],
+      "budget": "15m"
+    },
+    {
+      "id": "U-BACKGROUND",
+      "suite": "background-worker",
+      "requirements": [],
+      "caps": [
+        "CAP-05"
+      ],
+      "sec": [],
+      "gates": [
+        "G-11"
+      ],
+      "profiles": [],
+      "budget": "15m"
+    },
+    {
+      "id": "U-STUDIO",
+      "suite": "studio",
+      "requirements": [
+        "M1-04",
+        "M1-09",
+        "M1-10"
+      ],
+      "sec": [
+        "SEC-12"
+      ],
+      "gates": [
+        "G-06",
+        "G-07"
+      ],
+      "profiles": [
+        "studio-host-v1"
+      ],
+      "budget": "15m"
+    },
+    {
+      "id": "U-SECRETS",
+      "suite": "secrets-rendered",
+      "requirements": [],
+      "sec": [],
+      "gates": [],
+      "profiles": [],
+      "budget": "20m",
+      "description": "P0.6 AC1/AC2 on what the qualification environment would apply: the rendered manifests carry no credential Secret and no plaintext data-plane endpoint outside the labelled exceptions (DR store ENV-02, OTLP B-36, the API's gateway-terminated listener); the credentials bootstrap.py writes to OpenBao are verify-full/rediss. Rendering only: the live listing is check-secrets.py --cluster (NR-SECRETS-LIVE).",
+      "unmapped": "Rendered manifests scanned for Secret data; exercises no SEC-01/SEC-03 attack; supporting G-01/G-13 hygiene."
+    },
+    {
+      "id": "U-CONTROL-ADMISSION-P1",
+      "suite": "control",
+      "run": "TestPreparedDispatchesAreDeniedAtCloseAndAuthorizedOnesReconciled|TestLaunchConfirmationRevalidatesTheFence|TestRecoveryEpochsAreUniqueAndScopesExclusive|TestHotPathQueriesHaveIndexes|TestFinalizeMemoryIsBounded|TestCapacityRefusalsAreCounted|TestSettlementRegressions",
+      "requirements": [
+        "M1-11",
+        "M1-12",
+        "M1-13",
+        "M1-14"
+      ],
+      "sec": [
+        "SEC-02"
+      ],
+      "gates": [
+        "G-02",
+        "G-03"
+      ],
+      "profiles": [],
+      "budget": "20m",
+      "description": "P1.5/P1.6 (plan 0002) Control admission path: prepared dispatches denied at attempt close and authorized ones reconciled from their original identity, launch confirmation re-validated under the fence, unique recovery epochs and exclusive scopes, index-served hot paths, bounded finalize memory, counted capacity refusals, and stored settlement intents re-applied once the last obligation resolves. SEC-02 negative 'cancellation race': a fence between the launch record and its confirmation creates no Job."
+    },
+    {
+      "id": "U-WORKFLOW-BOUNDS",
+      "suite": "workflow",
+      "run": "TestSettlementRollsOverAcrossThirtyDays|TestSettlementRollsOverWhenTheServerSuggests|TestGenerationSettlementContinuesAsNew|TestRecoveryTwentyThousandFindingsStayUnderTheEventLimit|TestGenerationHoldKeepsTheAcceptedStage|TestGenerationFundingThroughAControlOutage|TestFinalCloseGoesStraightToTheSettlement",
+      "requirements": [
+        "M1-12",
+        "M1-14"
+      ],
+      "sec": [],
+      "gates": [
+        "G-02",
+        "G-14"
+      ],
+      "profiles": [],
+      "budget": "15m",
+      "description": "P1.6 (plan 0002) bounded Workflow histories under long reconciliation (continue-as-new of settlements and recovery rounds), holds that keep accepted stages and Control outages retried rather than reported as budget verdicts. SEC-02 negative 'lost grant response': a refused funding is reported once, an unreachable Control is retried under the same command."
+    },
+    {
+      "id": "U-WORKFLOW-REPLAY",
+      "suite": "workflow",
+      "run": "TestReplay",
+      "requirements": [
+        "M1-12",
+        "M1-14"
+      ],
+      "sec": [],
+      "gates": [
+        "G-02"
+      ],
+      "profiles": [],
+      "budget": "10m",
+      "description": "P1.7 (plan 0002) replay of the recorded histories in internal/workflows/testdata/histories (runs before and after the P1.6 version markers) on the current Workflow code; removing a GetVersion guard fails it."
+    },
+    {
+      "id": "U-WORKFLOW-SIGNALS",
+      "suite": "workflow",
+      "run": "TestTransferFailuresWithholdTheCapability|TestSilentCallHeartbeatsOnKeepalives|TestControlStatusClassification|TestTwoHundredObservedJobsKeepTheirCadence",
+      "requirements": [
+        "M1-12"
+      ],
+      "sec": [
+        "SEC-02"
+      ],
+      "gates": [
+        "G-03",
+        "G-14"
+      ],
+      "profiles": [],
+      "budget": "10m",
+      "description": "P1.6 (plan 0002) transfer failures without capability material, model-call heartbeats on keepalives, Control status classification (a budget refusal is not retried, capacity is) and the launcher's observation cadence with 200 Jobs."
+    },
+    {
+      "id": "IT-WORKFLOW-BOUNDARY",
+      "suite": "workflow-cluster",
+      "run": "TestRedactionAtTheWorkerBoundary|TestUpgradeDrill",
+      "requirements": [],
+      "sec": [],
+      "gates": [
+        "G-02",
+        "G-14"
+      ],
+      "profiles": [],
+      "budget": "10m",
+      "description": "P1.6/P1.7 (plan 0002) on the foundation's Temporal: no signing parameter, bucket or key in history, logs or spans after a forced transfer failure; the Worker Deployment Versioning upgrade drill (pinned runs finish on their build, new runs land on the current build, no non-determinism).",
+      "caps": [
+        "CAP-07"
+      ]
+    },
+    {
+      "id": "IT-MIGRATION-TRAFFIC",
+      "suite": "integration",
+      "run": "TestMigrationUnderTraffic",
+      "requirements": [],
+      "caps": [
+        "CAP-07"
+      ],
+      "sec": [],
+      "gates": [
+        "G-12",
+        "G-13"
+      ],
+      "profiles": [
+        "local-check-v1"
+      ],
+      "budget": "30m",
+      "description": "TEST-05 (P3.4 AC4): migration N+1 (Control 00018) applied to a populated database while image N (the release without its newest migration) serves LocalCheck traffic, then one Control process at N and one at N+1 and a Workflow worker restart with runs in flight: no failed admission, no lock_timeout retry, image N ready on the newer schema, every run succeeded, no non-determinism. The image-rollout half on Kubernetes is TestUpgradeDrill."
+    },
+    {
+      "id": "U-API-DRAIN",
+      "suite": "api",
+      "run": "TestShutdownEndsOpenStreams|TestProcessDrainsOpenStreamsAndExitsZero|TestStreamCapsRetryAndReadiness",
+      "requirements": [
+        "M1-01"
+      ],
+      "sec": [],
+      "gates": [
+        "G-02"
+      ],
+      "profiles": [],
+      "budget": "10m",
+      "description": "P1.4/P1.7 (plan 0002) API stream caps with retryable refusals and readiness, and a drain that ends every open stream with an end event, flushes traces and exits 0."
+    },
+    {
+      "id": "IT-PITR",
+      "suite": "integration",
+      "run": "TestPointInTimeRecovery",
+      "requirements": [
+        "M1-12"
+      ],
+      "sec": [
+        "SEC-08",
+        "SEC-11"
+      ],
+      "gates": [
+        "G-02",
+        "G-10",
+        "G-14"
+      ],
+      "profiles": [
+        "local-check-v1"
+      ],
+      "budget": "30m",
+      "description": "P3.4: Control's database recovered to a named point before five obligation classes; a new recovery epoch fences the old exits, the inventory is enumerated and every finding reconciled under its original identity before admission reopens (DEVELOPMENT_ONLY placement).",
+      "caps": [
+        "CAP-07"
+      ]
+    },
+    {
+      "id": "IT-MEMORY-PITR",
+      "suite": "integration",
+      "run": "TestMemoryRemovalRecovery",
+      "requirements": [],
+      "caps": [
+        "CAP-03"
+      ],
+      "sec": [
+        "SEC-06",
+        "SEC-11"
+      ],
+      "gates": [
+        "G-09",
+        "G-14"
+      ],
+      "profiles": [],
+      "budget": "30m",
+      "description": "P3.4: Knowledge's database recovered to a point before memory deletions and revocations; every removal is re-applied from the restore-surviving inventory before memory serves."
+    },
+    {
+      "id": "U-PARSER",
+      "suite": "parser",
+      "requirements": [],
+      "caps": [
+        "CAP-02"
+      ],
+      "sec": [
+        "SEC-10"
+      ],
+      "gates": [
+        "G-08"
+      ],
+      "profiles": [
+        "parser-docling-dev-v1"
+      ],
+      "budget": "30m"
+    },
+    {
+      "id": "U-INFERENCE",
+      "suite": "inference",
+      "requirements": [],
+      "caps": [
+        "CAP-02"
+      ],
+      "sec": [],
+      "gates": [
+        "G-08"
+      ],
+      "profiles": [],
+      "budget": "30m"
+    },
+    {
+      "id": "IT-DISPATCH-S3-RACE",
+      "suite": "integration",
+      "run": "TestDispatchRaceOnTheS3Inventory",
+      "requirements": [
+        "M1-13"
+      ],
+      "sec": [
+        "SEC-02"
+      ],
+      "gates": [
+        "G-02",
+        "G-14"
+      ],
+      "profiles": [],
+      "budget": "20m",
+      "description": "P3.4 (TEST-02): 2-way and 8-way races of one call identity over two Control processes whose obligation inventory is the foundation's S3 store; exactly one dispatchAllowed=true and one physical send (DEVELOPMENT_ONLY: host processes, MinIO)."
+    },
+    {
+      "id": "U-RAG-THRESHOLDS",
+      "suite": "integration-offline",
+      "run": "TestRAGThresholdsRefuseADegradedRun",
+      "requirements": [],
+      "caps": [
+        "CAP-02"
+      ],
+      "sec": [
+        "SEC-05"
+      ],
+      "gates": [
+        "G-08"
+      ],
+      "profiles": [
+        "hybrid-bge-m3-dev-v1"
+      ],
+      "budget": "5m",
+      "description": "P3.4 (EVAL-04): the DEVELOPMENT_ONLY retrieval quality bounds (tests/evals/rag/thresholds.json) accept the recorded development measurements and refuse a degraded recall, a disclosure, an invalid citation and another corpus; TestRetrieval asserts them on every live run."
+    },
+    {
+      "id": "STRESS-MODEL-PROXY-SETTLEMENT",
+      "suite": "model-proxy-stress",
+      "requirements": [
+        "M1-11",
+        "M1-13"
+      ],
+      "sec": [
+        "SEC-02"
+      ],
+      "gates": [
+        "G-02",
+        "G-14"
+      ],
+      "profiles": [
+        "controlled-openai-v1"
+      ],
+      "budget": "30m",
+      "description": "P3.5 AC4: the IT-MODEL-PROXY intermittent (two observations of one invalid-usage call) reproduced 7/100 and closed: FilesystemStore's conditional put was check-then-act across instances; it now holds the key's lock across the version check and the rename (0/100 since). The forced reclaim-before-settlement cases assert one observation without new evidence and one supplemental observation under a fresh sequence with usage. DEVELOPMENT_ONLY store (the S3 store's If-Match is atomic)."
+    },
+    {
+      "id": "LOAD-CAPACITY",
+      "suite": "load",
+      "requirements": [
+        "M1-13"
+      ],
+      "sec": [],
+      "gates": [
+        "G-14"
+      ],
+      "profiles": [
+        "local-check-v1"
+      ],
+      "budget": "40m",
+      "description": "P3.5 AC1/AC5 (G-14 load/capacity): p50/p95 of admission, first progress, end-to-end, SSE recovery, search and catalog latency at the profile's rates, with queue oldest age, relay backlog and Control pool utilization from the metrics stack. The shipped profile is DEVELOPMENT_ONLY until ENV-05 supplies the arrival rates; Preparation and search run only with their tenant inputs.",
+      "caps": [
+        "CAP-07"
+      ]
+    },
+    {
+      "id": "LOAD-SOAK",
+      "suite": "soak",
+      "requirements": [
+        "M1-11",
+        "M1-13"
+      ],
+      "sec": [],
+      "gates": [
+        "G-02",
+        "G-14"
+      ],
+      "profiles": [
+        "local-check-v1"
+      ],
+      "budget": "300m",
+      "description": "P3.5 AC2: zero duplicate sends (upstream receives = admitted model dispatches; NOT_MEASURED without a countable upstream), zero duplicate charges, zero operations stuck reconciling, zero SENDER_LOST from rollouts, no container restart from load, every rollout ready.",
+      "caps": [
+        "CAP-07"
+      ]
+    },
+    {
+      "id": "LOAD-CHAOS",
+      "suite": "chaos",
+      "requirements": [
+        "M1-12",
+        "M1-13"
+      ],
+      "sec": [],
+      "gates": [
+        "G-11",
+        "G-14"
+      ],
+      "profiles": [
+        "local-check-v1"
+      ],
+      "budget": "240m",
+      "description": "P3.5 AC3: per fault the designed outcome (readiness drop and return, failover, fenced admission, UNKNOWN then reconciled), no duplicate charge, no dispatch past its deadline unresolved, every accepted operation exists once and ends, no operation with two Jobs.",
+      "caps": [
+        "CAP-05"
+      ]
+    },
+    {
+      "id": "SEC09-POLICIES-CLUSTER",
+      "suite": "policies-cluster",
+      "sec": [
+        "SEC-09"
+      ],
+      "gates": [
+        "G-04"
+      ],
+      "profiles": [],
+      "budget": "20m",
+      "description": "SEC-09 cluster negatives: each forged image/SA/command/CSI/capability template refused by admission, and exec or ephemeral-container injection refused (RBAC for the launcher, policy for an administrator)."
+    },
+    {
+      "id": "SEC09-ADMISSION",
+      "suite": "admission-cluster",
+      "sec": [
+        "SEC-09"
+      ],
+      "gates": [
+        "G-13"
+      ],
+      "profiles": [],
+      "budget": "20m",
+      "description": "SEC-09/G-13: unsigned, foreign-signed, tagged and foreign-registry images refused by the qualification cluster's admission; a signed release image by digest admitted."
+    }
+  ],
+  "notRun": [
+    {
+      "id": "NR-REAL-MODELS",
+      "requirements": [
+        "M1-02",
+        "M1-15"
+      ],
+      "caps": [
+        "CAP-01"
+      ],
+      "sec": [],
+      "gates": [
+        "G-03",
+        "G-05"
+      ],
+      "missing": [
+        "ENV-06"
+      ],
+      "reason": "No qualified provider route, price, quota or cap exists; every model call runs against the countable controlled upstream, so repeated Agent trials with real models (success, all-trial success, cost, latency) cannot run and no quality figure is reported."
+    },
+    {
+      "id": "NR-CANDIDATE-ISOLATION",
+      "requirements": [
+        "M1-02",
+        "M1-03"
+      ],
+      "caps": [
+        "CAP-01"
+      ],
+      "sec": [
+        "SEC-03",
+        "SEC-04"
+      ],
+      "gates": [
+        "G-04",
+        "G-05"
+      ],
+      "missing": [
+        "ENV-01"
+      ],
+      "reason": "No gVisor/Cilium/kernel target runtime: the candidate profiles codegen-fixed-v1 and codegen-team-dev-v1 stay DISABLED on the development foundation."
+    },
+    {
+      "id": "NR-PAGIX",
+      "requirements": [
+        "M1-04",
+        "M1-06",
+        "M1-07",
+        "M1-08",
+        "M1-17"
+      ],
+      "caps": [],
+      "sec": [],
+      "gates": [
+        "G-07"
+      ],
+      "missing": [
+        "ENV-07"
+      ],
+      "reason": "Pagix source, lease, review, publication and activation ports are the Workflow's DEVELOPMENT_ONLY double; no real idempotency, query or receipt capability is observed."
+    },
+    {
+      "id": "NR-STUDIO-HOST",
+      "requirements": [
+        "M1-04",
+        "M1-09",
+        "M1-10"
+      ],
+      "caps": [],
+      "sec": [
+        "SEC-12"
+      ],
+      "gates": [
+        "G-06",
+        "G-07"
+      ],
+      "missing": [
+        "ENV-08"
+      ],
+      "reason": "No qualified Studio host, preview origin or CSP; the certified host ABI (host-abi-dev-v1) is not the Studio host's (studio-host-v1)."
+    },
+    {
+      "id": "NR-IDENTITY",
+      "requirements": [
+        "M1-01"
+      ],
+      "caps": [],
+      "sec": [
+        "SEC-01"
+      ],
+      "gates": [
+        "G-01"
+      ],
+      "missing": [
+        "ENV-03",
+        "ENV-07"
+      ],
+      "reason": "Workload mTLS with SPIFFE URI SAN authorization (IT-IDENTITY) and the API's OIDC verification with project/role authorization (IT-USER-AUTHZ) run on the development PKI and the disposable development OIDC provider only (cert-manager self-signed root, trust domain anvilkit.local; deploy/dev/oidc): no production trust material (ENV-03) and no production IdP issuer, audience or claim schema (ENV-07), so neither is qualified."
+    },
+    {
+      "id": "NR-HA-DR",
+      "requirements": [
+        "M1-12",
+        "M1-13"
+      ],
+      "caps": [
+        "CAP-07"
+      ],
+      "sec": [
+        "SEC-11"
+      ],
+      "gates": [
+        "G-14"
+      ],
+      "missing": [
+        "ENV-01",
+        "ENV-02",
+        "ENV-09"
+      ],
+      "reason": "No HA topology, independent failure domain, PITR or Ceph/RGW inventory; two local processes are not failure-domain evidence."
+    },
+    {
+      "id": "NR-BUSINESS-CORPUS",
+      "requirements": [],
+      "caps": [
+        "CAP-02",
+        "CAP-03"
+      ],
+      "sec": [],
+      "gates": [
+        "G-08",
+        "G-09"
+      ],
+      "missing": [
+        "ENV-05"
+      ],
+      "reason": "The RAG and memory cases are DEVELOPMENT_ONLY sets written by the implementing agent, not the approved business-labeled corpus; no quality threshold is derived from them."
+    },
+    {
+      "id": "NR-REAL-MCP",
+      "requirements": [],
+      "caps": [
+        "CAP-04"
+      ],
+      "sec": [
+        "SEC-07"
+      ],
+      "gates": [
+        "G-10"
+      ],
+      "missing": [
+        "ENV-03"
+      ],
+      "reason": "Tool execution runs against the official-SDK fixture server behind a disposable ContextForge; no real paid-read or side-effecting upstream is qualified."
+    },
+    {
+      "id": "NR-FAILOVER",
+      "requirements": [],
+      "caps": [
+        "CAP-05",
+        "CAP-06"
+      ],
+      "sec": [],
+      "gates": [
+        "G-11",
+        "G-12"
+      ],
+      "missing": [
+        "ENV-01",
+        "ENV-02"
+      ],
+      "reason": "No Valkey/NATS/PostgreSQL process-failure drills, Apollo/OpenBao control planes or Temporal SDK upgrade replay on a qualified environment."
+    },
+    {
+      "id": "NR-QUALIFIED-ENVIRONMENT",
+      "requirements": [],
+      "caps": [],
+      "sec": [],
+      "gates": [
+        "G-01",
+        "G-02",
+        "G-03",
+        "G-04",
+        "G-05",
+        "G-06",
+        "G-07",
+        "G-08",
+        "G-09",
+        "G-10",
+        "G-11",
+        "G-12",
+        "G-13",
+        "G-14"
+      ],
+      "missing": [
+        "ENV-01",
+        "ENV-02",
+        "ENV-03"
+      ],
+      "reason": "Every case runs on the DEVELOPMENT_ONLY foundation (kind, single-node Compose services, Testcontainers); a gate closes only on its entire real-environment evidence in a qualified environment (P23), never on local or synthetic results."
+    },
+    {
+      "id": "NR-SUPPLY-CHAIN",
+      "requirements": [],
+      "caps": [
+        "CAP-07"
+      ],
+      "sec": [],
+      "gates": [
+        "G-13"
+      ],
+      "missing": [
+        "ENV-01",
+        "ENV-10"
+      ],
+      "reason": "No signed images, SBOMs, published charts, clean install on a target cluster or replacement inventory; the working trees are uncommitted."
+    },
+    {
+      "id": "NR-NETWORK",
+      "requirements": [
+        "M1-03"
+      ],
+      "caps": [],
+      "sec": [
+        "SEC-04"
+      ],
+      "gates": [
+        "G-04"
+      ],
+      "missing": [
+        "ENV-01",
+        "ENV-03"
+      ],
+      "reason": "No enforcing-CNI environment runs the deployed services: the qualification cluster's kindnet does not enforce NetworkPolicy and the verification RKE2/Cilium environment is not deployed, so the integration scenarios and the LocalCheck probe Job have not run under the policies (P0.4 AC3), and the egress CIDRs of Pagix, providers, MCP upstreams, ContextForge and the inventory are ENV-03 inputs."
+    },
+    {
+      "id": "NR-SECRETS-LIVE",
+      "requirements": [],
+      "caps": [],
+      "sec": [
+        "SEC-01",
+        "SEC-03"
+      ],
+      "gates": [],
+      "missing": [
+        "ENV-01",
+        "ENV-10"
+      ],
+      "reason": "On the DEVELOPMENT_ONLY qualification cluster (run 20261010T053549Z, delivery.md P0 close-out) the CSI delivery, the Secret listing (check-secrets.py --cluster: 50 Secrets, 0 findings), drills.py secret-rotation (PASS on the second attempt) and restore-drills.py openbao ran and passed; none ran on a qualified ENV-01 environment, and seal custody (KMS unseal instead of Shamir shares on a workstation) is ENV-10. Since the 2026-10-13 host restart the qualification OpenBao is sealed and awaits an authorized unseal."
+    },
+    {
+      "id": "NR-GAP-M1-02",
+      "requirements": [
+        "M1-02"
+      ],
+      "caps": [],
+      "sec": [],
+      "missing": [
+        "ENV-01",
+        "ENV-06"
+      ],
+      "reason": "Public-API-only Generation reaching succeeded/candidate_ready (P3.4 AC2) does not exist; needs codegen-team-v1 and validator-source-v1 enabled under gVisor (ENV-01, G-04) and a qualified model route/price/cap (ENV-06, NR-REAL-MODELS).",
+      "gates": [
+        "G-03",
+        "G-05"
+      ]
+    },
+    {
+      "id": "NR-GAP-M1-04",
+      "requirements": [
+        "M1-04"
+      ],
+      "caps": [],
+      "sec": [],
+      "missing": [
+        "ENV-07",
+        "ENV-08"
+      ],
+      "reason": "Conditional save on the real Pagix source port (TestPagixPortConformance/real-<apiVersion>/a_save_under_a_stale_revision_is_a_conflict_naming_the_current_one, services/agent/workflow/tests/conformance/pagix/conformance_test.go:136, build tag conformance) and the real Studio host need ENV-07 and ENV-08.",
+      "gates": [
+        "G-06",
+        "G-07"
+      ]
+    },
+    {
+      "id": "NR-GAP-M1-05",
+      "requirements": [
+        "M1-05"
+      ],
+      "caps": [],
+      "sec": [],
+      "missing": [
+        "ENV-01",
+        "ENV-08"
+      ],
+      "reason": "In-Pod certification of candidate code under gVisor needs ENV-01 (G-04); the certified host-abi-dev-v1 is not the Studio host's studio-host-v1 (ENV-08).",
+      "gates": [
+        "G-04",
+        "G-06"
+      ]
+    },
+    {
+      "id": "NR-GAP-M1-11",
+      "requirements": [
+        "M1-11"
+      ],
+      "caps": [],
+      "sec": [],
+      "missing": [
+        "ENV-06"
+      ],
+      "reason": "Credits versus actual spend is untested: the cost-entry kind credit is declared (services/agent/control/internal/domain/budget.go:425, migrate/sql/00001_init.sql:238) but nothing writes or asserts it; real prices/caps need ENV-06.",
+      "gates": [
+        "G-02",
+        "G-03"
+      ]
+    },
+    {
+      "id": "NR-GAP-M1-14",
+      "requirements": [
+        "M1-14"
+      ],
+      "caps": [],
+      "sec": [],
+      "missing": [
+        "ENV-01"
+      ],
+      "reason": "Hold/resume/definition change through the public API on a running Generation needs the candidate profiles enabled (ENV-01); Temporal SDK upgrade replay on a qualified environment (G-12, NR-FAILOVER).",
+      "gates": [
+        "G-02",
+        "G-12"
+      ]
+    },
+    {
+      "id": "NR-GAP-CAP-01",
+      "requirements": [],
+      "caps": [
+        "CAP-01"
+      ],
+      "sec": [],
+      "missing": [
+        "ENV-01",
+        "ENV-06"
+      ],
+      "reason": "Real models (ENV-06) and gVisor candidate isolation (ENV-01) for G-04/G-05.",
+      "gates": [
+        "G-03",
+        "G-04",
+        "G-05"
+      ]
+    },
+    {
+      "id": "NR-GAP-CAP-02",
+      "requirements": [],
+      "caps": [
+        "CAP-02"
+      ],
+      "sec": [],
+      "missing": [
+        "ENV-04",
+        "ENV-05"
+      ],
+      "reason": "Business-labeled corpus and thresholds (ENV-05, NR-BUSINESS-CORPUS); inference profile residency (ENV-04).",
+      "gates": [
+        "G-08"
+      ]
+    },
+    {
+      "id": "NR-GAP-CAP-07",
+      "requirements": [],
+      "caps": [
+        "CAP-07"
+      ],
+      "sec": [],
+      "missing": [
+        "ENV-01",
+        "ENV-02",
+        "ENV-09",
+        "ENV-10"
+      ],
+      "reason": "HA topology, failure domains, off-cluster backups, signed CI releases and clean install need ENV-01/ENV-02/ENV-09/ENV-10 (NR-HA-DR, NR-SUPPLY-CHAIN).",
+      "gates": [
+        "G-01",
+        "G-13",
+        "G-14"
+      ]
+    },
+    {
+      "id": "NR-GAP-SEC-02",
+      "requirements": [],
+      "caps": [],
+      "sec": [
+        "SEC-02"
+      ],
+      "missing": [
+        "ENV-06"
+      ],
+      "reason": "Summary bypass at integration level (P3.4 new case) has no test; runs with real Pi models need ENV-06.",
+      "gates": [
+        "G-02",
+        "G-03",
+        "G-05",
+        "G-07",
+        "G-10",
+        "G-14"
+      ]
+    },
+    {
+      "id": "NR-GAP-SEC-08",
+      "requirements": [],
+      "caps": [],
+      "sec": [
+        "SEC-08"
+      ],
+      "missing": [
+        "ENV-03"
+      ],
+      "reason": "Real upstream protocol combinations (ENV-03, G-10).",
+      "gates": [
+        "G-02",
+        "G-03",
+        "G-07",
+        "G-10",
+        "G-12",
+        "G-14"
+      ]
+    },
+    {
+      "id": "NR-GAP-SEC-09",
+      "requirements": [],
+      "caps": [],
+      "sec": [
+        "SEC-09"
+      ],
+      "missing": [
+        "ENV-01",
+        "ENV-10"
+      ],
+      "reason": "No pods/exec negative for the launcher; gVisor RuntimeClass cases print UNEXECUTED without gVisor (check.sh); production admission needs ENV-01/ENV-10.",
+      "gates": [
+        "G-04",
+        "G-07",
+        "G-08",
+        "G-12",
+        "G-13"
+      ]
+    },
+    {
+      "id": "NR-GAP-SEC-10",
+      "requirements": [],
+      "caps": [],
+      "sec": [
+        "SEC-10"
+      ],
+      "missing": [
+        "ENV-01"
+      ],
+      "reason": "Symlink escape in the parser path at integration level is missing; isolation under gVisor needs ENV-01.",
+      "gates": [
+        "G-02",
+        "G-03",
+        "G-05",
+        "G-06",
+        "G-07",
+        "G-08"
+      ]
+    }
+  ],
+  "gaps": {
+    "M1-02": "Public-API-only Generation reaching succeeded/candidate_ready (P3.4 AC2) does not exist; needs codegen-team-v1 and validator-source-v1 enabled under gVisor (ENV-01, G-04) and a qualified model route/price/cap (ENV-06, NR-REAL-MODELS).",
+    "M1-03": "The same refusals inside a candidate Job under gVisor (validator-source-v1/codegen-team-v1 enabled) need ENV-01 (G-04).",
+    "M1-04": "Conditional save on the real Pagix source port (TestPagixPortConformance/real-<apiVersion>/a_save_under_a_stale_revision_is_a_conflict_naming_the_current_one, services/agent/workflow/tests/conformance/pagix/conformance_test.go:136, build tag conformance) and the real Studio host need ENV-07 and ENV-08.",
+    "M1-05": "In-Pod certification of candidate code under gVisor needs ENV-01 (G-04); the certified host-abi-dev-v1 is not the Studio host's studio-host-v1 (ENV-08).",
+    "M1-06": "Real Pagix review/approval decisions need ENV-07.",
+    "M1-07": "The real-<apiVersion> conformance target is UNEXECUTED without ANVILKIT_PAGIX_URL/ANVILKIT_PAGIX_DECLARATION (ENV-07).",
+    "M1-08": "Activation against the real Pagix catalog/receipts needs ENV-07.",
+    "M1-09": "Qualified Studio host/page API and resource origin (ENV-08, NR-STUDIO-HOST).",
+    "M1-10": "Old-page round trip on the real Studio host (ENV-08) and page-lock handover (G-13).",
+    "M1-11": "Credits versus actual spend is untested: the cost-entry kind credit is declared (services/agent/control/internal/domain/budget.go:425, migrate/sql/00001_init.sql:238) but nothing writes or asserts it; real prices/caps need ENV-06.",
+    "M1-12": "CNPG PITR with an independent DR inventory needs ENV-02/ENV-09 (G-14); TestPointInTimeRecovery (IT-PITR) uses a local Docker PostgreSQL with host-directory WAL (DEVELOPMENT_ONLY).",
+    "M1-13": "Two Control replicas behind a Service on the S3 inventory and two Proxies on the S3 store under 2-way/8-way races (P3.4 AC3), and failure-domain recovery, need ENV-01/ENV-02 (G-14, NR-HA-DR).",
+    "M1-14": "Hold/resume/definition change through the public API on a running Generation needs the candidate profiles enabled (ENV-01); Temporal SDK upgrade replay on a qualified environment (G-12, NR-FAILOVER).",
+    "M1-15": "Real model route/price (ENV-06, NR-REAL-MODELS).",
+    "M1-17": "No integration test freezes a brief from the real Knowledge port with a later revocation honored; Pagix materials need ENV-07.",
+    "CAP-01": "Real models (ENV-06) and gVisor candidate isolation (ENV-01) for G-04/G-05.",
+    "CAP-02": "Business-labeled corpus and thresholds (ENV-05, NR-BUSINESS-CORPUS); inference profile residency (ENV-04).",
+    "CAP-03": "Business-labeled memory set (ENV-05).",
+    "CAP-04": "Real paid-read/side-effecting upstream and egress (ENV-03, NR-REAL-MCP).",
+    "CAP-05": "Valkey/NATS/PostgreSQL process-failure drills on a qualified environment (ENV-01/ENV-02, G-11); drills.py queue-writes (:339) and broker (:369) exist DEVELOPMENT_ONLY and are unregistered.",
+    "CAP-06": "Apollo/OpenBao control planes and SDK upgrade replay on a qualified environment (ENV-01/ENV-02, NR-FAILOVER).",
+    "CAP-07": "HA topology, failure domains, off-cluster backups, signed CI releases and clean install need ENV-01/ENV-02/ENV-09/ENV-10 (NR-HA-DR, NR-SUPPLY-CHAIN).",
+    "SEC-01": "Production CA and IdP (ENV-03, ENV-07, NR-IDENTITY).",
+    "SEC-02": "Summary bypass at integration level (P3.4 new case) has no test; runs with real Pi models need ENV-06.",
+    "SEC-03": "The same probes under gVisor with the production profiles need ENV-01 (G-04, NR-CANDIDATE-ISOLATION).",
+    "SEC-04": "Probes on gVisor plus Cilium with the deployed services and a real candidate Pod trying Proxy/Knowledge need ENV-01/ENV-03 (NR-NETWORK, NR-CANDIDATE-ISOLATION).",
+    "SEC-07": "SSRF cases with ContextForge protections on and a real upstream need ENV-03 (NR-REAL-MCP).",
+    "SEC-08": "Real upstream protocol combinations (ENV-03, G-10).",
+    "SEC-09": "No pods/exec negative for the launcher; gVisor RuntimeClass cases print UNEXECUTED without gVisor (check.sh); production admission needs ENV-01/ENV-10.",
+    "SEC-10": "Symlink escape in the parser path at integration level is missing; isolation under gVisor needs ENV-01.",
+    "SEC-11": "Real restore in the registered suite on CNPG/DR storage (ENV-02/ENV-09).",
+    "SEC-12": "No CSP assertion anywhere (only iframe sandbox attributes); qualified Studio host/origin/CSP need ENV-08; pin the Studio commit (local HEAD cdfb685, dirty)."
+  },
+  "assertions": {
+    "M1-01": [
+      {
+        "case": "IT-LOCALCHECK",
+        "name": "TestLocalCheckChain/submit,_observe_over_SSE,_one_accepted_result,_cleanup",
+        "file": "tests/integration/localcheck_integration_test.go:542",
+        "checks": "Tenant B's GET is 404, a reconnect with cursor 2 replays from event 3 only, and a cursor past coveredEventSeq yields reset_required."
+      },
+      {
+        "case": "IT-LOCALCHECK",
+        "name": "TestLocalCheckChain/duplicate_submission_returns_the_original_operation_and_starts_nothing_new",
+        "file": "tests/integration/localcheck_integration_test.go:583",
+        "checks": "The same commandId returns the original operationId, a different body is 409 IDEMPOTENCY_CONFLICT, one operations row and one accepted result."
+      },
+      {
+        "case": "IT-LOCALCHECK",
+        "name": "TestLocalCheckChain/cancel_while_the_Job_runs_fences_new_launches_and_ends_canceled_with_cleanup",
+        "file": "tests/integration/localcheck_integration_test.go:601",
+        "checks": "A cancel under expectedRevision on a running Job ends canceled/cancel_applied with cleanup complete and the Job gone."
+      },
+      {
+        "case": "IT-USER-AUTHZ",
+        "name": "TestUserAuthorization/another_project's_user_neither_reads_nor_commands_the_operation;_the_operator_role_crosses_projects",
+        "file": "tests/integration/authorization_integration_test.go:125",
+        "checks": "Another project's user gets 404 on every read route and on cancel; only the operator role crosses projects."
+      }
+    ],
+    "M1-02": [
+      {
+        "case": "IT-TEAM",
+        "name": "TestCodegenTeamFlow/the_team_produces_the_complete_source_through_controlled_calls,_validates_it_independently_and_Control_accepts_the_joint_stage",
+        "file": "tests/integration/team_integration_test.go:413",
+        "checks": "Verdict certified, 8 source files, one upstream receive and one observed dispatch per call, accepted joint stage binds source/stage/evidence."
+      },
+      {
+        "case": "IT-TEAM",
+        "name": "TestCodegenTeamFlow/an_operation_funded_for_one_send:_Control_denies_the_coder's_first_send_and_the_run_ends_model_denied,_never_as_a_candidate_defect",
+        "file": "tests/integration/team_integration_test.go:734",
+        "checks": "With one per-send allocation only the planner send reaches the upstream; the run ends model_denied/BUDGET_EXHAUSTED with nothing validated."
+      },
+      {
+        "case": "U-WORKFLOW",
+        "name": "TestGenerationCandidateReadyAfterIndependentCertification",
+        "file": "services/agent/workflow/internal/workflows/generation_test.go:237",
+        "checks": "Temporal test env with scripted Activities: the Generation reaches succeeded/candidate_ready only after codegen then the validator-source-v1 step, funded once, lease acquired and released."
+      },
+      {
+        "case": "U-TEAM",
+        "name": "TeamRunner a budget or deadline bound ends the run before a send; missing limits refuse the configuration",
+        "file": "jobs/codegen/team/test/graph.test.ts:415",
+        "checks": "Budget/deadline bounds stop the team before the next send and missing limits refuse the configuration.",
+        "title": "a budget or deadline bound ends the run before a send; missing limits refuse the configuration"
+      }
+    ],
+    "M1-03": [
+      {
+        "case": "U-VALIDATOR",
+        "name": "source refusals rejects candidate build configuration and lifecycle scripts",
+        "file": "jobs/validator/test/source.test.ts:209",
+        "checks": "Candidate build configuration files and package lifecycle scripts make the source contract refuse the source.",
+        "title": "rejects candidate build configuration and lifecycle scripts"
+      },
+      {
+        "case": "U-VALIDATOR",
+        "name": "source refusals rejects a dependency the profile does not support and a lockfile that disagrees",
+        "file": "jobs/validator/test/source.test.ts:140",
+        "checks": "A dependency outside the build-support profile or a disagreeing lockfile is refused.",
+        "title": "rejects a dependency the profile does not support and a lockfile that disagrees"
+      },
+      {
+        "case": "U-VALIDATOR",
+        "name": "independent certification of the fixed component refuses altered protected fixtures without executing them",
+        "file": "jobs/validator/test/validate.test.ts:291",
+        "checks": "Altered protected validation fixtures are refused before any execution.",
+        "title": "refuses altered protected fixtures without executing them"
+      },
+      {
+        "case": "IT-TEAM",
+        "name": "TestCodegenTeamFlow/a_repairable_defect_of_the_independent_validator_sends_the_team_back_to_the_coder_once;_the_repaired_source_is_certified",
+        "file": "tests/integration/team_integration_test.go:558",
+        "checks": "A left-pad dependency the coder writes is refused by the independent validator (CANDIDATE_BUILD_FAILED) before the repaired round is certified."
+      }
+    ],
+    "M1-04": [
+      {
+        "case": "U-WORKFLOW",
+        "name": "TestPreviewBuild/a_conflicting_save_keeps_the_edits:_no_build,_the_current_revision_is_named",
+        "file": "services/agent/workflow/internal/workflows/preview_test.go:158",
+        "checks": "A stale-revision save builds nothing and names the current revision."
+      },
+      {
+        "case": "U-WORKFLOW",
+        "name": "TestPreviewBuild/a_build_that_finishes_after_a_newer_save_is_stale,_never_current",
+        "file": "services/agent/workflow/internal/workflows/preview_test.go:168",
+        "checks": "A build finishing after a newer save is recorded stale and never becomes current."
+      },
+      {
+        "case": "U-CONTROL",
+        "name": "TestPreviews/a_conflict_names_the_current_revision;_a_failure_names_its_code;_a_stale_build_keeps_its_artifacts",
+        "file": "services/agent/control/internal/application/previews_test.go:111",
+        "checks": "Control records conflict with the current revision and keeps a stale build's artifacts non-current."
+      },
+      {
+        "case": "IT-STUDIO",
+        "name": "source workbench against the platform › concurrent editing: the second save conflicts, keeps its edits and saves after an explicit rebase",
+        "file": "${ANVILKIT_STUDIO_DIR}/e2e/agent-workbench.spec.ts:90",
+        "checks": "The second editor's save conflicts, its edits survive and save after an explicit rebase.",
+        "runner": "playwright",
+        "title": "concurrent editing: the second save conflicts, keeps its edits and saves after an explicit rebase"
+      }
+    ],
+    "M1-05": [
+      {
+        "case": "U-VALIDATOR",
+        "name": "independent certification of the fixed component treats a forged exit 0 as no evidence",
+        "file": "jobs/validator/test/validate.test.ts:524",
+        "checks": "A candidate exit 0 without observer evidence is not certification.",
+        "title": "treats a forged exit 0 as no evidence"
+      },
+      {
+        "case": "U-VALIDATOR",
+        "name": "independent certification of the fixed component rejects missing CSS and an unshipped resource",
+        "file": "jobs/validator/test/validate.test.ts:222",
+        "checks": "Missing CSS or an unshipped resource fails certification.",
+        "title": "rejects missing CSS and an unshipped resource"
+      },
+      {
+        "case": "U-VALIDATOR",
+        "name": "independent certification of the fixed component refuses an incompatible Host ABI as a profile problem, not a source defect",
+        "file": "jobs/validator/test/validate.test.ts:273",
+        "checks": "A wrong Host ABI is refused and classified as a profile problem.",
+        "title": "refuses an incompatible Host ABI as a profile problem, not a source defect"
+      },
+      {
+        "case": "IT-CERTIFICATION",
+        "name": "TestComponentCertificationFlow/a_forged_certification_never_creates_an_accepted_stage",
+        "file": "tests/integration/component_integration_test.go:251",
+        "checks": "Forged certified manifests (no object, foreign handle, wrong class/digest) are refused and no stage is accepted."
+      }
+    ],
+    "M1-06": [
+      {
+        "case": "U-CONTROL",
+        "name": "TestApplyReleaseBindings",
+        "file": "services/agent/control/internal/domain/release_test.go:55",
+        "checks": "A subject whose version, npm digest, source revision or Puck type differs (re-digested or not) is refused."
+      },
+      {
+        "case": "U-WORKFLOW",
+        "name": "TestReleaseWorkflow/a_stale_approval_of_another_subject_is_rejected_and_publishes_nothing",
+        "file": "services/agent/workflow/internal/workflows/release_test.go:235",
+        "checks": "An approval of another digest ends rejected APPROVAL_SUBJECT_MISMATCH with no publish or activation."
+      },
+      {
+        "case": "U-WORKFLOW",
+        "name": "TestReleaseWorkflow/an_approval_invalidated_between_the_targets_stops_further_effects",
+        "file": "services/agent/workflow/internal/workflows/release_test.go:312",
+        "checks": "An approval invalidated after npm stops the browser target and activation."
+      },
+      {
+        "case": "IT-RELEASE",
+        "name": "TestRelease",
+        "file": "tests/integration/release_integration_test.go:48",
+        "checks": "Inline scenario B: an approval of another digest ends rejected APPROVAL_SUBJECT_MISMATCH with nothing published (Pagix double)."
+      }
+    ],
+    "M1-07": [
+      {
+        "case": "U-WORKFLOW",
+        "name": "TestReleaseWorkflow/a_browser_target_whose_answer_was_lost_is_queried_under_its_original_identity,_then_activated",
+        "file": "services/agent/workflow/internal/workflows/release_test.go:258",
+        "checks": "Every browser call reuses the original effect CommandID until the answer arrives, then activation."
+      },
+      {
+        "case": "U-WORKFLOW",
+        "name": "TestReleaseWorkflow/a_browser_target_that_stays_unknown_keeps_the_release_reconciling:_no_activation",
+        "file": "services/agent/workflow/internal/workflows/release_test.go:281",
+        "checks": "A browser target that stays unknown keeps the release reconciling EFFECT_UNCERTAIN, never activated."
+      },
+      {
+        "case": "U-WORKFLOW",
+        "name": "TestPublishTarget/a_lost_answer_stays_unknown_and_the_original_identity_answers_later;_nothing_is_resent",
+        "file": "services/agent/workflow/internal/activities/release_test.go:169",
+        "checks": "The Activity keeps a lost answer unknown and resolves it by the original identity without resending."
+      }
+    ],
+    "M1-08": [
+      {
+        "case": "U-CONTROL",
+        "name": "TestReleases/publication_is_permitted_once_under_the_approval;_activation_waits_for_both_receipts",
+        "file": "services/agent/control/internal/application/releases_test.go:183",
+        "checks": "A publication permit is issued once and activation is denied RECEIPTS_REQUIRED before both receipts."
+      },
+      {
+        "case": "U-CONTROL",
+        "name": "TestReleases/a_succeeded_target_without_its_succeeded_effect_is_refused",
+        "file": "services/agent/control/internal/application/releases_test.go:207",
+        "checks": "A succeeded target whose effect ledger holds no matching receipt is refused (ErrIntegrity)."
+      },
+      {
+        "case": "U-WORKFLOW",
+        "name": "TestReleaseWorkflow/npm-only_success_is_partially_published:_never_activated,_never_republished",
+        "file": "services/agent/workflow/internal/workflows/release_test.go:246",
+        "checks": "npm-only success ends partially_published, never activated or republished."
+      },
+      {
+        "case": "U-WORKFLOW",
+        "name": "TestReleaseWorkflow/the_exact_certified_subject_is_approved,_both_targets_are_published_once_and_then_activated",
+        "file": "services/agent/workflow/internal/workflows/release_test.go:202",
+        "checks": "Activation follows exactly one publication per target under the exact approval."
+      }
+    ],
+    "M1-09": [
+      {
+        "case": "IT-STUDIO",
+        "name": "exact remote component locks › loads locked releases without a host rebuild, reserves types, keeps unknown nodes and saves/reopens the exact lock",
+        "file": "${ANVILKIT_STUDIO_DIR}/e2e/agent-workbench.spec.ts:326",
+        "checks": "Releases written while the host runs load without rebuild and a built-in type collision is reserved (remote-component-collision).",
+        "runner": "playwright",
+        "title": "loads locked releases without a host rebuild, reserves types, keeps unknown nodes and saves/reopens the exact lock"
+      },
+      {
+        "case": "IT-STUDIO",
+        "name": "TestStudioWorkbench",
+        "file": "tests/integration/studio_integration_test.go:42",
+        "checks": "Wrapper: the whole agent-workbench Playwright spec passes with no skipped case."
+      }
+    ],
+    "M1-10": [
+      {
+        "case": "IT-RELEASE",
+        "name": "TestRelease/studio_pins_and_reopens_the_released_lock",
+        "file": "tests/integration/release_integration_test.go:309",
+        "checks": "Runs Studio e2e/release.spec.ts:99 'exact release approval, publication and reopening › a page pins the activated release exactly and reopens it without substitution, keeping the node and its props'."
+      },
+      {
+        "case": "IT-STUDIO",
+        "name": "exact remote component locks › a release whose bytes do not match its lock loads as a placeholder and blocks nothing else",
+        "file": "${ANVILKIT_STUDIO_DIR}/e2e/agent-workbench.spec.ts:479",
+        "checks": "A tampered release loads as a placeholder while the rest of the page renders and edits.",
+        "runner": "playwright",
+        "title": "a release whose bytes do not match its lock loads as a placeholder and blocks nothing else"
+      },
+      {
+        "case": "IT-STUDIO",
+        "name": "exact remote component locks › loads locked releases without a host rebuild, reserves types, keeps unknown nodes and saves/reopens the exact lock",
+        "file": "${ANVILKIT_STUDIO_DIR}/e2e/agent-workbench.spec.ts:326",
+        "checks": "Saved drafts keep the exact remoteComponentLock and unknown nodes; a newer catalog release is never substituted on reopen.",
+        "runner": "playwright",
+        "title": "loads locked releases without a host rebuild, reserves types, keeps unknown nodes and saves/reopens the exact lock"
+      }
+    ],
+    "M1-11": [
+      {
+        "case": "IT-DISPATCH",
+        "name": "TestDispatchAdmission/allocation_races_cannot_exceed_the_allocation;_duplicate_and_out-of-order_usage_cannot_double-charge;_overspend_blocks_new_admission",
+        "file": "tests/integration/dispatch_integration_test.go:370",
+        "checks": "Eight calls over two Controls admit exactly 3 against one 3500 allocation, usage is charged once, overspend is retained and blocks admission."
+      },
+      {
+        "case": "U-TEAM",
+        "name": "TeamRunner one remaining aggregate allowance funds one reviewer send, never two: reservations are taken before the fan-out",
+        "file": "jobs/codegen/team/test/graph.test.ts:524",
+        "checks": "Roles share one aggregate allowance reserved before the parallel fan-out.",
+        "title": "one remaining aggregate allowance funds one reviewer send, never two: reservations are taken before the fan-out"
+      },
+      {
+        "case": "U-CONTROL",
+        "name": "TestLifecycle/the_first_permit_sets_the_active_deadline_once;_the_pool_queues_the_second_generation",
+        "file": "services/agent/control/internal/application/lifecycle_test.go:395",
+        "checks": "A repeated permit request never resets the active deadline; a queued operation keeps its original queue deadline."
+      },
+      {
+        "case": "U-CONTROL",
+        "name": "TestEffectUsesFixedActiveDeadlineAndNarrowerBounds",
+        "file": "services/agent/control/internal/domain/effect_deadline_test.go:9",
+        "checks": "Effects and attempts cannot extend the fixed active deadline or lease."
+      },
+      {
+        "case": "LOAD-SOAK",
+        "name": "soak/noDuplicateCharges",
+        "title": "\"noDuplicateCharges\":",
+        "file": "deploy/qualification/soak.py:67",
+        "checks": "No dispatch of the 4 h soak has two actual cost entries."
+      },
+      {
+        "case": "STRESS-MODEL-PROXY-SETTLEMENT",
+        "name": "reclaim versus settlement (P3.5 stress) a reclaim that precedes a settlement with usage gets one supplemental observation carrying the usage",
+        "title": "a reclaim that precedes a settlement with usage gets one supplemental observation carrying the usage",
+        "file": "services/agent/model-proxy/test/stress/settlement.stress.ts:138",
+        "checks": "Two Proxies on one store: a reclaimed call's later usage settles once, under a fresh sequence, never as a second charge."
+      }
+    ],
+    "M1-12": [
+      {
+        "case": "IT-PITR",
+        "name": "TestPointInTimeRecovery",
+        "file": "tests/integration/pitr_integration_test.go:180",
+        "checks": "After a WAL restore to a point before one obligation of each of five classes, a new epoch fences, all classes enumerate completely, findings settle on original-identity evidence and upstream sends stay 2."
+      },
+      {
+        "case": "U-CONTROL",
+        "name": "TestRecovery/two_replicas_enumerate_every_class_completely_without_duplicate_findings",
+        "file": "services/agent/control/internal/application/recovery_test.go:721",
+        "checks": "Two replicas enumerate all five classes once; missing and present-but-unknown obligations are findings."
+      },
+      {
+        "case": "IT-RECOVERY",
+        "name": "TestRecoveryReconciliation",
+        "file": "tests/integration/recovery_integration_test.go:73",
+        "checks": "A dispatch row lost after its send is found from the inventory and reconciled by RecoveryWorkflow without a resend; the operator begins, follows and lists the run through the public API (API-17) with the IdP's operator role, a non-operator and another tenant's operator are refused or learn nothing, and an evidence-less disposition is refused."
+      },
+      {
+        "case": "IT-MODEL-PROXY",
+        "name": "TestModelProxyControlledCalls/recovery_queries_the_Proxy_about_the_lost_send_under_its_original_identity_and_keeps_it_unknown",
+        "file": "tests/integration/modelproxy_integration_test.go:1054",
+        "checks": "Recovery queries the Proxy under the original identity and keeps the send unknown."
+      },
+      {
+        "case": "LOAD-CHAOS",
+        "name": "chaos/noUnresolvedPastDeadline",
+        "title": "\"noUnresolvedPastDeadline\":",
+        "file": "deploy/qualification/chaos.py:76",
+        "checks": "After each fault, no dispatch of the window is past its deadline without observation or disposition (UNKNOWN then reconciled)."
+      }
+    ],
+    "M1-13": [
+      {
+        "case": "IT-DISPATCH",
+        "name": "TestDispatchAdmission/the_same_call_admitted_concurrently_on_both_processes_is_sent_exactly_once",
+        "file": "tests/integration/dispatch_integration_test.go:214",
+        "checks": "One dispatchAllowed=true across two Control processes and one upstream send."
+      },
+      {
+        "case": "IT-TWO-CONTROLS",
+        "name": "TestTwoControlProcesses/Control_A_killed_while_the_consumer_streams:_B_completes_the_chain_once,_the_consumer_resumes_from_its_cursor",
+        "file": "tests/integration/two_controls_integration_test.go:202",
+        "checks": "Killing Control A mid-stream lets B complete once and the consumer resume from its cursor."
+      },
+      {
+        "case": "IT-MODEL-PROXY",
+        "name": "TestModelProxyControlledCalls/the_same_call_on_both_Proxies_through_both_Controls_is_sent_once",
+        "file": "tests/integration/modelproxy_integration_test.go:714",
+        "checks": "The same call through two Proxies and two Controls reaches the upstream once."
+      },
+      {
+        "case": "LOAD-CHAOS",
+        "name": "chaos/control-pod",
+        "title": "\"control-pod\": \"anvilkit-agent-control\"",
+        "file": "deploy/qualification/chaos.py:47",
+        "checks": "One of two Control Pods force-deleted under load: readiness drops and returns, every accepted operation exists once and ends, no duplicate charge."
+      },
+      {
+        "case": "LOAD-CHAOS",
+        "name": "chaos/postgresql",
+        "title": "\"postgresql\": \"db-primary\"",
+        "file": "deploy/qualification/chaos.py:48",
+        "checks": "The business PostgreSQL primary lost under load (CloudNativePG failover): no lost accepted operation, no operation with two Jobs, no duplicate charge."
+      },
+      {
+        "case": "LOAD-SOAK",
+        "name": "soak/noDuplicateSends",
+        "title": "\"noDuplicateSends\":",
+        "file": "deploy/qualification/soak.py:66",
+        "checks": "The countable upstream's receives equal the admitted model dispatches across rolling restarts."
+      },
+      {
+        "case": "STRESS-MODEL-PROXY-SETTLEMENT",
+        "name": "reclaim versus settlement (P3.5 stress) a reclaim that precedes a settlement without usage stays the only observation: one send, unknown, nothing charged",
+        "title": "a reclaim that precedes a settlement without usage stays the only observation: one send, unknown, nothing charged",
+        "file": "services/agent/model-proxy/test/stress/settlement.stress.ts:134",
+        "checks": "Two Proxies on one store, the reclaim racing the sender: one physical send, one observation."
+      },
+      {
+        "case": "IT-DISPATCH-S3-RACE",
+        "name": "TestDispatchRaceOnTheS3Inventory/a_2-way_race_over_two_Control_processes_on_the_S3_inventory_admits_one_send",
+        "file": "tests/integration/dispatch_race_integration_test.go:109",
+        "checks": "Two Control processes on the S3 inventory: of two concurrent admissions of one call identity exactly one is allowed (one dispatchAllowed=true)."
+      },
+      {
+        "case": "IT-DISPATCH-S3-RACE",
+        "name": "TestDispatchRaceOnTheS3Inventory/an_8-way_race_over_two_Control_processes_on_the_S3_inventory_admits_one_send",
+        "file": "tests/integration/dispatch_race_integration_test.go:110",
+        "checks": "Eight concurrent admissions over two Control processes on the S3 inventory: exactly one allowed."
+      }
+    ],
+    "M1-14": [
+      {
+        "case": "U-CONTROL",
+        "name": "TestLifecycle/hold,_resume_and_definition_changes_are_tracked_Updates_applied_only_as_the_Workflow_answers",
+        "file": "services/agent/control/internal/application/lifecycle_test.go:485",
+        "checks": "The fence is installed first and hold/resume/definition changes apply only when the Workflow answers."
+      },
+      {
+        "case": "U-WORKFLOW",
+        "name": "TestGenerationDefinitionChange",
+        "file": "services/agent/workflow/internal/workflows/generation_test.go:454",
+        "checks": "Change-definition Updates under expected revisions: unknown target rejected, known one applied, hold/resume ordered."
+      },
+      {
+        "case": "U-CONTROL",
+        "name": "TestLateControlReceiptPreservesCancellationAndTerminalState/canceled/change_definition/applied",
+        "file": "services/agent/control/internal/domain/generation_test.go:13",
+        "checks": "A late hold/resume/definition receipt never changes a cancel-pending or terminal operation.",
+        "title": "t.Run(string(lifecycle)+\"/\""
+      },
+      {
+        "case": "U-CONTROL-ADMISSION-P1",
+        "name": "TestSettlementRegressions/F01_late_receipts_preserve_cancellation",
+        "file": "services/agent/control/internal/application/settlement_regression_test.go:154",
+        "checks": "Late command receipts preserve a recorded cancellation."
+      }
+    ],
+    "M1-15": [
+      {
+        "case": "IT-LIFECYCLE",
+        "name": "TestPreparationAndGenerationLifecycle",
+        "file": "tests/integration/lifecycle_integration_test.go:40",
+        "checks": "One physical receive per analysis round (:154, :188), actual cost in the ledger, brief frozen as a finalized artifact."
+      },
+      {
+        "case": "U-WORKFLOW",
+        "name": "TestPreparationUnknownCallNeverCallsAgain",
+        "file": "services/agent/workflow/internal/workflows/preparation_test.go:261",
+        "checks": "An uncertain analysis call is never replaced by another call."
+      },
+      {
+        "case": "U-WORKFLOW",
+        "name": "TestPreparationContentRepairAllowance",
+        "file": "services/agent/workflow/internal/workflows/preparation_test.go:274",
+        "checks": "A content repair is a new call id within a frozen allowance."
+      },
+      {
+        "case": "U-CONTROL",
+        "name": "TestLifecycle/the_brief_freezes_the_exact_inputs;_a_new_brief_supersedes;_a_superseded_brief_starts_nothing",
+        "file": "services/agent/control/internal/application/lifecycle_test.go:324",
+        "checks": "The brief binds exact inputs and identity; a superseded brief starts nothing."
+      }
+    ],
+    "M1-16": [
+      {
+        "case": "U-WORKFLOW",
+        "name": "TestPreparationConcludesAfterTwoRounds",
+        "file": "services/agent/workflow/internal/workflows/preparation_test.go:237",
+        "checks": "Two question rounds, then the analysis must conclude."
+      },
+      {
+        "case": "U-CONTROL",
+        "name": "TestLifecycle/a_question_round_is_recorded_once_with_an_immutable_expiry_and_bounded",
+        "file": "services/agent/control/internal/application/lifecycle_test.go:245",
+        "checks": "Reentry never extends the expiry, one open round at a time, four questions refused."
+      },
+      {
+        "case": "U-WORKFLOW",
+        "name": "TestPreparationRoundAnsweredByUpdate",
+        "file": "services/agent/workflow/internal/workflows/preparation_test.go:144",
+        "checks": "A re-issued answer Update is applied once and a stale question set is rejected."
+      },
+      {
+        "case": "U-WORKFLOW",
+        "name": "TestPreparationExpiryEndsTheWait",
+        "file": "services/agent/workflow/internal/workflows/preparation_test.go:195",
+        "checks": "The wait ends at the absolute seven-day expiry recorded by Control."
+      }
+    ],
+    "M1-17": [
+      {
+        "case": "IT-KNOWLEDGE-PUBLIC",
+        "name": "TestKnowledgePublicAPI/a_snapshot_freezes_the_revision_and_search_cites_the_chunk",
+        "file": "tests/integration/knowledge_public_integration_test.go:103",
+        "checks": "The snapshot names source@1, search cites it, another tenant cannot read it."
+      },
+      {
+        "case": "IT-RETRIEVAL",
+        "name": "TestRetrieval/a_revocation_applies_to_the_frozen_snapshot_and_a_deletion_to_every_generation",
+        "file": "tests/integration/retrieval_integration_test.go:631",
+        "checks": "An ACL narrowing hides the source on the next search and a deletion purges every generation."
+      },
+      {
+        "case": "U-WORKFLOW",
+        "name": "TestContentDigestUnderTheUserScope",
+        "file": "services/agent/workflow/internal/adapters/knowledge/digest_test.go:41",
+        "checks": "The brand digest is read for exactly the referenced revision under the user's scope; unreadable, moved and deleted references are refused (fake Knowledge gRPC)."
+      },
+      {
+        "case": "U-CONTROL",
+        "name": "TestLifecycle/the_brief_freezes_the_exact_inputs;_a_new_brief_supersedes;_a_superseded_brief_starts_nothing",
+        "file": "services/agent/control/internal/application/lifecycle_test.go:324",
+        "checks": "A brief without the brand reference's digest is refused."
+      }
+    ],
+    "CAP-01": [
+      {
+        "case": "U-TEAM",
+        "name": "TeamRunner the fixed roles run in order and within bounds: plan, no invented retrieval, one coder, two parallel reviewers, validation, certified",
+        "file": "jobs/codegen/team/test/graph.test.ts:157",
+        "checks": "Fixed role order and bounded parallel reviewers.",
+        "title": "the fixed roles run in order and within bounds: plan, no invented retrieval, one coder, two parallel reviewers, validation, certified"
+      },
+      {
+        "case": "U-TEAM",
+        "name": "CodingExecutor no two source writers: a second round while one runs is refused",
+        "file": "jobs/codegen/team/test/executor.test.ts:193",
+        "checks": "Only one source writer at a time.",
+        "title": "no two source writers: a second round while one runs is refused"
+      },
+      {
+        "case": "IT-TEAM",
+        "name": "TestCodegenTeamFlow/restart_after_acceptance:_the_attempt_admits_no_new_scope,_nothing_runs_or_is_sent;_the_accepted_stage_is_readable_and_the_local_objects_prove_against_it,_an_altered_one_is_refused",
+        "file": "tests/integration/team_integration_test.go:492",
+        "checks": "A restarted attempt gets STALE_EXECUTION, sends nothing, and an altered local stage is refused STALE_STAGE."
+      },
+      {
+        "case": "IT-TEAM",
+        "name": "TestCodegenTeamFlow/a_repairable_defect_of_the_independent_validator_sends_the_team_back_to_the_coder_once;_the_repaired_source_is_certified",
+        "file": "tests/integration/team_integration_test.go:558",
+        "checks": "One bounded repair after an independent validator verdict, then certification."
+      }
+    ],
+    "CAP-02": [
+      {
+        "case": "IT-INGESTION",
+        "name": "TestIngestion/markdown_and_PDF_are_parsed_in_isolated_Jobs_and_accepted_with_provenance",
+        "file": "tests/integration/ingestion_integration_test.go:302",
+        "checks": "Markdown and PDF parse in isolated parser Jobs and are accepted with provenance."
+      },
+      {
+        "case": "IT-RETRIEVAL",
+        "name": "TestRetrieval/the_corpus_is_parsed,_indexed_as_named_dense/sparse_points_and_accepted_in_the_index_generation",
+        "file": "tests/integration/retrieval_integration_test.go:232",
+        "checks": "The corpus is indexed as named dense/sparse points in an accepted generation.",
+        "title": "the corpus is parsed, indexed as named dense/sparse points and accepted in the index generation"
+      },
+      {
+        "case": "IT-RETRIEVAL",
+        "name": "TestRetrieval/report:_no_unauthorized_disclosure,_verifiable_citations,_the_positive_control_answered",
+        "file": "tests/integration/retrieval_integration_test.go:422",
+        "checks": "Zero disclosures, every citation verifies, derived RAG thresholds hold."
+      },
+      {
+        "case": "U-KNOWLEDGE",
+        "name": "hybrid retrieval answers with numbered, verifiable citations from the readable sources of the snapshot only",
+        "file": "services/agent/knowledge/test/retrieval.test.ts:233",
+        "checks": "Citations come only from readable snapshot sources.",
+        "title": "answers with numbered, verifiable citations from the readable sources of the snapshot only"
+      },
+      {
+        "case": "U-RAG-THRESHOLDS",
+        "name": "TestRAGThresholdsRefuseADegradedRun/a_degraded_index_whose_recall_drops_below_the_bound_fails",
+        "file": "tests/integration/rag_thresholds_test.go:99",
+        "checks": "A recall below the DEVELOPMENT_ONLY bound fails the evaluation (P3.4 AC6 negative)."
+      },
+      {
+        "case": "U-RAG-THRESHOLDS",
+        "name": "TestRAGThresholdsRefuseADegradedRun/the_recorded_development_measurements_meet_the_bounds",
+        "file": "tests/integration/rag_thresholds_test.go:96",
+        "checks": "The recorded development run meets the derived bounds."
+      },
+      {
+        "case": "U-PARSER",
+        "name": "run-verification --only parser",
+        "title": "def step_parser",
+        "file": "tools/run-verification.py:446",
+        "checks": "Document parsing of the ingestion path inside the built parser image."
+      },
+      {
+        "case": "U-INFERENCE",
+        "name": "run-verification --only inference",
+        "title": "def step_inference",
+        "file": "tools/run-verification.py:453",
+        "checks": "The Inference service's embedding and reranking units."
+      }
+    ],
+    "CAP-03": [
+      {
+        "case": "IT-MEMORY",
+        "name": "TestMemory/facts_are_proposed_by_their_model,_worker_or_user_identities_and_decided_by_their_users",
+        "file": "tests/integration/memory_integration_test.go:209",
+        "checks": "Proposals by model/worker/user identities, decisions by users."
+      },
+      {
+        "case": "IT-MEMORY",
+        "name": "TestMemory/revocation,_deletion_and_the_reviewed_expiry_rule_take_effect",
+        "file": "tests/integration/memory_integration_test.go:315",
+        "checks": "Revocation, deletion and expiry take effect."
+      },
+      {
+        "case": "IT-MEMORY",
+        "name": "TestMemory/a_lost_Store_is_rebuilt_from_the_confirmed_current_facts_without_reviving_any_removal",
+        "file": "tests/integration/memory_integration_test.go:462",
+        "checks": "Projection rebuild from confirmed facts revives no removal."
+      },
+      {
+        "case": "IT-MEMORY-PITR",
+        "name": "TestMemoryRemovalRecovery/once_the_inventory_answers_every_erased_removal_is_re-applied_under_its_original_command_before_memory_serves",
+        "file": "tests/integration/memory_pitr_integration_test.go:257",
+        "checks": "Removals erased by a PITR are re-applied under their original commands before memory serves."
+      }
+    ],
+    "CAP-04": [
+      {
+        "case": "IT-MCP-CATALOG",
+        "name": "TestMCPCatalog/four-eyes_review_and_role_separation",
+        "file": "tests/integration/mcp_catalog_integration_test.go:274",
+        "checks": "Discoverer cannot approve; roles are separated."
+      },
+      {
+        "case": "IT-MCP-CATALOG",
+        "name": "TestMCPCatalog/a_grant_is_executable_only_after_Control's_receipt",
+        "file": "tests/integration/mcp_catalog_integration_test.go:294",
+        "checks": "Grants execute only after Control's receipt."
+      },
+      {
+        "case": "IT-MCP-CALLS",
+        "name": "TestMCPToolCalls/a_paid_read_is_admitted_once_and_sent_once_under_the_resource-bound_token",
+        "file": "tests/integration/mcp_calls_integration_test.go:199",
+        "checks": "One admission, one send under a resource-bound token."
+      },
+      {
+        "case": "IT-MCP-CALLS",
+        "name": "TestMCPToolCalls/a_connection_lost_after_receipt_is_UNKNOWN,_never_resent,_and_restricts_the_server",
+        "file": "tests/integration/mcp_calls_integration_test.go:319",
+        "checks": "A post-receipt loss is UNKNOWN, never resent, and restricts the server."
+      }
+    ],
+    "CAP-05": [
+      {
+        "case": "IT-BACKGROUND",
+        "name": "TestBackgroundLane/owner_request_and_outbox_to_NATS,_inbox,_relay,_BullMQ,_Worker_and_acceptance_for_both_owners",
+        "file": "tests/integration/background_integration_test.go:485",
+        "checks": "Go (MCP) and TS (Knowledge) owners through outbox, NATS, inbox, BullMQ and Worker to acceptance."
+      },
+      {
+        "case": "IT-BACKGROUND",
+        "name": "TestBackgroundLane/a_lost_queue_write_is_reconstructed_from_the_durable_requests",
+        "file": "tests/integration/background_integration_test.go:525",
+        "checks": "A lost BullMQ write is rebuilt from durable owner requests."
+      },
+      {
+        "case": "U-BACKGROUND",
+        "name": "owner queue relay commits the inbox before the ack, enqueues once, answers duplicates from the inbox",
+        "file": "services/agent/background-worker/test/relay.test.ts:83",
+        "checks": "Inbox commit precedes ack and duplicates are answered from the inbox.",
+        "title": "commits the inbox before the ack, enqueues once, answers duplicates from the inbox"
+      },
+      {
+        "case": "U-BACKGROUND",
+        "name": "owner queue relay repairs a revision gap through the owner query and reconstructs lost queue entries from durable requests",
+        "file": "services/agent/background-worker/test/relay.test.ts:146",
+        "checks": "Out-of-order revisions are repaired through the owner query.",
+        "title": "repairs a revision gap through the owner query and reconstructs lost queue entries from durable requests"
+      },
+      {
+        "case": "LOAD-CHAOS",
+        "name": "chaos/nats",
+        "title": "\"nats\": \"broker\"",
+        "file": "deploy/qualification/chaos.py:48",
+        "checks": "JetStream loses quorum under load; the outbox drains after the servers return."
+      },
+      {
+        "case": "LOAD-CHAOS",
+        "name": "chaos/valkey",
+        "title": "\"valkey\": \"queue-writes\"",
+        "file": "deploy/qualification/chaos.py:48",
+        "checks": "The queue primary lost; owners rebuild lost queue entries from durable requests."
+      }
+    ],
+    "CAP-06": [
+      {
+        "case": "IT-BACKGROUND",
+        "name": "TestBackgroundLane/SIGTERM_drains_the_worker_and_withdraws_the_owners'_readiness_before_they_stop",
+        "file": "tests/integration/background_integration_test.go:571",
+        "checks": "SIGTERM drains and withdraws readiness before stop."
+      },
+      {
+        "case": "IT-BACKGROUND",
+        "name": "TestBackgroundLane/P0.6_a_queue_ACL_password_rotates_without_restarting_Valkey",
+        "file": "tests/integration/background_integration_test.go:569",
+        "checks": "A queue credential rotates, the old one is refused, Valkey not restarted."
+      },
+      {
+        "case": "U-KNOWLEDGE",
+        "name": "lifecycle serves, rotates the secret with a probed pool swap, rejects a broken candidate and stops in order",
+        "file": "services/agent/knowledge/test/lifecycle.test.ts:111",
+        "checks": "Validated configuration replacement, secret rotation and ordered stop.",
+        "title": "serves, rotates the secret with a probed pool swap, rejects a broken candidate and stops in order"
+      },
+      {
+        "case": "U-MCP",
+        "name": "TestLifecycleGenerationsAndShutdown",
+        "file": "services/agent/mcp/internal/bootstrap/lifecycle_test.go:111",
+        "checks": "Configuration generations and bounded shutdown of the MCP owner."
+      }
+    ],
+    "CAP-07": [
+      {
+        "case": "U-CLOSURE",
+        "name": "TestBuildClosureRejectsLegacyModules",
+        "file": "tests/contracts/closure_test.go:60",
+        "checks": "The build closure contains no legacy modules or Connect-Go."
+      },
+      {
+        "case": "U-NETWORK",
+        "name": "check-network.py --offline",
+        "file": "deploy/qualification/check-network.py:147",
+        "checks": "Rendered NetworkPolicies allow exactly the communication matrix.",
+        "title": "def offline"
+      },
+      {
+        "case": "IT-IDENTITY",
+        "name": "TestWorkloadIdentityRefusals/control",
+        "file": "tests/integration/identity_integration_test.go:165",
+        "checks": "Independent workload identities: only the allowed SPIFFE workload reaches each handler.",
+        "title": "t.Run(p.name"
+      },
+      {
+        "case": "LOAD-SOAK",
+        "name": "soak/rolloutsCompleted",
+        "title": "\"rolloutsCompleted\":",
+        "file": "deploy/qualification/soak.py:71",
+        "checks": "Every application Deployment rolled out under load reaches its ready state."
+      },
+      {
+        "case": "LOAD-SOAK",
+        "name": "soak/noRestartFromLoad",
+        "title": "\"noRestartFromLoad\":",
+        "file": "deploy/qualification/soak.py:70",
+        "checks": "No application container restarts under the soak load."
+      },
+      {
+        "case": "IT-WORKFLOW-BOUNDARY",
+        "name": "TestUpgradeDrill",
+        "file": "services/agent/workflow/internal/bootstrap/upgrade_drill_integration_test.go:31",
+        "checks": "Worker Deployment Versioning: runs pinned to build A finish on A while incompatible build B becomes current; new runs land on B; no non-determinism error (the image-rollout half of TEST-05)."
+      },
+      {
+        "case": "IT-MIGRATION-TRAFFIC",
+        "name": "TestMigrationUnderTraffic",
+        "file": "tests/integration/migration_traffic_integration_test.go:99",
+        "checks": "Migration N+1 under LocalCheck traffic served by image N, then mixed N/N+1 Control processes and a worker restart: no failed admission, no lock_timeout retry, image N ready on schema N+1, every run succeeded, no non-determinism (the migration half of TEST-05)."
+      }
+    ],
+    "SEC-01": [
+      {
+        "case": "IT-IDENTITY",
+        "name": "TestWorkloadIdentityRefusals/control",
+        "file": "tests/integration/identity_integration_test.go:165",
+        "checks": "Plaintext and foreign CA refused at handshake, foreign trust domain and wrong workload PermissionDenied, no URI SAN Unauthenticated.",
+        "title": "t.Run(p.name"
+      },
+      {
+        "case": "IT-USER-AUTHZ",
+        "name": "TestUserAuthorization/tokens_not_issued_to_the_API_by_the_issuer_are_refused",
+        "file": "tests/integration/authorization_integration_test.go:84",
+        "checks": "Wrong audience, unmapped user, forged/none signature, opaque, expired and tenant-less tokens get 401."
+      },
+      {
+        "case": "U-API",
+        "name": "TestVerifier/expired",
+        "file": "services/agent/api/internal/adapters/oidcauth/oidcauth_test.go:117",
+        "checks": "A correctly signed expired token is refused ErrUnauthenticated.",
+        "title": "t.Run(name,"
+      },
+      {
+        "case": "IT-USER-AUTHZ",
+        "name": "TestUserAuthorization/an_unknown_action_is_refused",
+        "file": "tests/integration/authorization_integration_test.go:118",
+        "checks": "Command kind delete is 400 and an undeclared route 404/405."
+      },
+      {
+        "case": "U-CONTROL",
+        "name": "TestRecoveryRunsDiscloseOnlyToTheirOperators",
+        "file": "services/agent/control/internal/application/recovery_disclosure_test.go:21",
+        "checks": "API-17: a recovery run is disclosed only to an operator of its scope; another tenant's operator, a role-less member and a tenant operator reading every tenant's run get NOT_FOUND."
+      },
+      {
+        "case": "U-API",
+        "name": "TestOperatorRecoveryRoutes",
+        "file": "services/agent/api/internal/transport/http/recovery_test.go:154",
+        "checks": "API-17 routes: no token 401, no operator role 403, a tenant in the body refused, every tenant needs platform_operator, another tenant's operator 404, idempotent begin and disposition, evidence-less disposition refused, verified roles reach Control."
+      }
+    ],
+    "SEC-02": [
+      {
+        "case": "IT-DISPATCH",
+        "name": "TestDispatchAdmission/the_same_call_admitted_concurrently_on_both_processes_is_sent_exactly_once",
+        "file": "tests/integration/dispatch_integration_test.go:214",
+        "checks": "One permission and one upstream send across two Controls."
+      },
+      {
+        "case": "IT-DISPATCH",
+        "name": "TestDispatchAdmission/a_lost_first_response_is_never_restored_by_retries,_queries,_same-owner_reentry_or_a_process_restart",
+        "file": "tests/integration/dispatch_integration_test.go:252",
+        "checks": "A lost first permission is never recreated."
+      },
+      {
+        "case": "U-CONTROL",
+        "name": "TestDispatch/cancel,_grant_revocation_and_expired_authority_racing_the_inventory_write_are_rejected_by_the_second_transaction",
+        "file": "services/agent/control/internal/application/dispatch_test.go:632",
+        "checks": "A cancel racing the inventory write denies the permission in the second transaction."
+      },
+      {
+        "case": "U-TEAM",
+        "name": "Pi over the ControlledModelPort compaction is a controlled call too: the summary goes through the relay under its own identity",
+        "file": "jobs/codegen/team/test/pi.test.ts:292",
+        "checks": "Pi compaction (summary) is a separately admitted controlled call.",
+        "title": "compaction is a controlled call too: the summary goes through the relay under its own identity"
+      },
+      {
+        "case": "STRESS-MODEL-PROXY-SETTLEMENT",
+        "name": "reclaim versus settlement (P3.5 stress) a reclaim that precedes a settlement without usage stays the only observation: one send, unknown, nothing charged",
+        "title": "a reclaim that precedes a settlement without usage stays the only observation: one send, unknown, nothing charged",
+        "file": "services/agent/model-proxy/test/stress/settlement.stress.ts:134",
+        "checks": "SEC-02 'same call on two replicas': two Proxy instances race the reclaim against the sender's settlement; one physical send, one observation, nothing charged twice."
+      },
+      {
+        "case": "IT-DISPATCH-S3-RACE",
+        "name": "TestDispatchRaceOnTheS3Inventory/a_2-way_race_over_two_Control_processes_on_the_S3_inventory_admits_one_send",
+        "file": "tests/integration/dispatch_race_integration_test.go:109",
+        "checks": "Two Control processes on the S3 inventory: of two concurrent admissions of one call identity exactly one is allowed (one dispatchAllowed=true)."
+      },
+      {
+        "case": "IT-DISPATCH-S3-RACE",
+        "name": "TestDispatchRaceOnTheS3Inventory/an_8-way_race_over_two_Control_processes_on_the_S3_inventory_admits_one_send",
+        "file": "tests/integration/dispatch_race_integration_test.go:110",
+        "checks": "Eight concurrent admissions over two Control processes on the S3 inventory: exactly one allowed."
+      }
+    ],
+    "SEC-03": [
+      {
+        "case": "IT-HARNESS",
+        "name": "TestTrustedHarnessProcessFlow/the_current_instance_completes_the_trusted_flow_and_acceptance_is_idempotent",
+        "file": "tests/integration/harness_integration_test.go:294",
+        "checks": "UID 10001 gets EACCES on verdict/resources/input/environ/manifest and trusted.sock, EPERM on setuid, fd delegation CLOSED (host processes)."
+      },
+      {
+        "case": "WF-CLUSTER",
+        "name": "TestHarnessOnTheDevelopmentCluster/owner_registered_while_running,_trusted_flow_accepted,_duplicate_Pod_without_authority",
+        "file": "services/agent/workflow/internal/adapters/kubernetes/harness_integration_test.go:194",
+        "checks": "Same boundary probes inside a kind Pod (runc + seccomp); duplicate Pod NO_AUTHORITY."
+      },
+      {
+        "case": "IT-CERTIFICATION",
+        "name": "TestComponentCertificationFlow/a_forged_certification_never_creates_an_accepted_stage",
+        "file": "tests/integration/component_integration_test.go:251",
+        "checks": "Forged verdict manifests are refused."
+      },
+      {
+        "case": "U-SIDECAR",
+        "name": "TestPeerCredentialsAndDelegation",
+        "file": "jobs/shared/access-sidecar/internal/app/app_test.go:662",
+        "checks": "Wrong peer UID on candidate.sock is closed; an SCM_RIGHTS descriptor closes the connection."
+      }
+    ],
+    "SEC-04": [
+      {
+        "case": "WF-CLUSTER",
+        "name": "TestHarnessOnTheDevelopmentCluster/owner_registered_while_running,_trusted_flow_accepted,_duplicate_Pod_without_authority",
+        "file": "services/agent/workflow/internal/adapters/kubernetes/harness_integration_test.go:194",
+        "checks": "In the Pod the candidate cannot create AF_INET/AF_INET6 sockets and no probe to 127.0.0.1:9, [::1]:9 or 169.254.169.254:80 connects (:273-280)."
+      },
+      {
+        "case": "U-NETWORK",
+        "name": "check-network.py --offline",
+        "file": "deploy/qualification/check-network.py:147",
+        "checks": "No unlisted pod reaches Model Proxy, Knowledge, Control or data stores under the rendered policies.",
+        "title": "def offline"
+      },
+      {
+        "case": "IT-NETWORK",
+        "name": "check-network.py --cluster",
+        "file": "deploy/qualification/check-network.py:176",
+        "checks": "Stand-in pods on Cilium: only matrix flows connect.",
+        "title": "def cluster"
+      },
+      {
+        "case": "U-SIDECAR",
+        "name": "TestCandidateBoundary",
+        "file": "jobs/shared/access-sidecar/internal/app/app_test.go:688",
+        "checks": "UID 10001 reaches only its own socket and permitted routes."
+      }
+    ],
+    "SEC-05": [
+      {
+        "case": "U-KNOWLEDGE",
+        "name": "hybrid retrieval never leaks a lexical-only match of an unauthorized source through the sparse branch",
+        "file": "services/agent/knowledge/test/retrieval.test.ts:257",
+        "checks": "The sparse branch is ACL-filtered.",
+        "title": "never leaks a lexical-only match of an unauthorized source through the sparse branch"
+      },
+      {
+        "case": "U-KNOWLEDGE",
+        "name": "hybrid retrieval applies a revocation to a frozen snapshot on the next search without disclosing content or counts",
+        "file": "services/agent/knowledge/test/retrieval.test.ts:279",
+        "checks": "Old snapshots honor revocation without content or count leakage.",
+        "title": "applies a revocation to a frozen snapshot on the next search without disclosing content or counts"
+      },
+      {
+        "case": "U-KNOWLEDGE",
+        "name": "hybrid retrieval rechecks authorization before any text is read and again before return",
+        "file": "services/agent/knowledge/test/retrieval.test.ts:295",
+        "checks": "A revocation between search and return is caught by the rechecks.",
+        "title": "rechecks authorization before any text is read and again before return"
+      },
+      {
+        "case": "IT-RETRIEVAL",
+        "name": "TestRetrieval/a_revocation_applies_to_the_frozen_snapshot_and_a_deletion_to_every_generation",
+        "file": "tests/integration/retrieval_integration_test.go:631",
+        "checks": "End to end on Qdrant: revoked source and its marker disappear from results."
+      },
+      {
+        "case": "U-RAG-THRESHOLDS",
+        "name": "TestRAGThresholdsRefuseADegradedRun/a_disclosure_or_an_invalid_citation_fails_whatever_the_recall",
+        "file": "tests/integration/rag_thresholds_test.go:107",
+        "checks": "Any unauthorized disclosure or invalid citation fails the evaluation regardless of recall."
+      },
+      {
+        "case": "IT-RETRIEVAL",
+        "name": "TestRetrieval/a_revocation_concurrent_with_searches:_no_search_begun_after_its_commit_discloses_the_source",
+        "file": "tests/integration/retrieval_integration_test.go:559",
+        "checks": "Revocation race at integration level: six concurrent searchers on Qdrant while the ACL revocation commits; no search begun after the commit returns the source (positive control before it).",
+        "title": "a revocation concurrent with searches"
+      }
+    ],
+    "SEC-06": [
+      {
+        "case": "IT-MEMORY",
+        "name": "TestMemory/adversarial_decisions_never_confirm,_revoke_or_delete_anything",
+        "file": "tests/integration/memory_integration_test.go:244",
+        "checks": "Model/worker identities cannot decide; racing decisions have one winner; every confirmation is a user's."
+      },
+      {
+        "case": "U-KNOWLEDGE",
+        "name": "MemoryFact proposals refuses provenance the proposer cannot read now, a stale revision, a foreign subject and a past expiry",
+        "file": "services/agent/knowledge/test/memory.test.ts:110",
+        "checks": "Cross-subject proposals are refused.",
+        "title": "refuses provenance the proposer cannot read now, a stale revision, a foreign subject and a past expiry"
+      },
+      {
+        "case": "U-KNOWLEDGE",
+        "name": "memory projections never lets a stale Store write revive a revoked fact: the late writer re-applies the current state",
+        "file": "services/agent/knowledge/test/projection.test.ts:80",
+        "checks": "Out-of-order upserts do not revive revoked facts.",
+        "title": "never lets a stale Store write revive a revoked fact: the late writer re-applies the current state"
+      },
+      {
+        "case": "U-KNOWLEDGE",
+        "name": "RecallFacts never discloses a revoked, deleted or expired fact whose point is still in the index",
+        "file": "services/agent/knowledge/test/recall.test.ts:181",
+        "checks": "No recall after deletion even with a stale point.",
+        "title": "never discloses a revoked, deleted or expired fact whose point is still in the index"
+      },
+      {
+        "case": "IT-MEMORY-PITR",
+        "name": "TestMemoryRemovalRecovery/a_Knowledge_on_the_restored_database_keeps_memory_closed_while_the_removal_inventory_is_unreachable",
+        "file": "tests/integration/memory_pitr_integration_test.go:240",
+        "checks": "After a PITR, memory stays closed while the removal inventory cannot be read: no removed fact is served."
+      }
+    ],
+    "SEC-07": [
+      {
+        "case": "U-MCP",
+        "name": "TestEgress/only_checked_addresses_are_dialed;_rebinding_and_metadata_addresses_are_refused",
+        "file": "services/agent/mcp/internal/adapters/upstream/egress_test.go:83",
+        "checks": "Connection-time DNS rebinding and IPv4-mapped/literal metadata addresses are refused."
+      },
+      {
+        "case": "U-MCP",
+        "name": "TestEgress/redirects_are_refused,_bearer_tokens_stay_on_their_origin,_bodies_are_bounded",
+        "file": "services/agent/mcp/internal/adapters/upstream/egress_test.go:117",
+        "checks": "Redirects refused, inbound tokens not forwarded."
+      },
+      {
+        "case": "U-MCP",
+        "name": "TestAuthority/substituted_metadata_is_refused_before_any_token_request",
+        "file": "services/agent/mcp/internal/adapters/upstream/egress_test.go:236",
+        "checks": "Substituted resource, issuer, token endpoint or JWKS metadata is refused before any token request."
+      },
+      {
+        "case": "U-MCP",
+        "name": "TestAuthority/tokens_are_bound_to_the_resource_and_cached_per_grant_security_dimensions",
+        "file": "services/agent/mcp/internal/adapters/upstream/egress_test.go:217",
+        "checks": "Tokens are resource-bound (no cross-host use)."
+      }
+    ],
+    "SEC-08": [
+      {
+        "case": "IT-MCP-CALLS",
+        "name": "TestMCPToolCalls/schema_drift_after_review_is_refused_before_the_send",
+        "file": "tests/integration/mcp_calls_integration_test.go:284",
+        "checks": "A mutated schema is refused before the send."
+      },
+      {
+        "case": "IT-MCP-CALLS",
+        "name": "TestMCPToolCalls/a_revoked_grant_admits_no_call_and_waits_for_its_UNKNOWN_call",
+        "file": "tests/integration/mcp_calls_integration_test.go:373",
+        "checks": "No admission after revoke; REVOKED waits for the in-flight UNKNOWN call."
+      },
+      {
+        "case": "IT-MCP-CATALOG",
+        "name": "TestMCPCatalog/revocation:_MCP_denies_at_commit,_Control_fences,_REVOKED_waits_for_the_sender,_across_outages",
+        "file": "tests/integration/mcp_catalog_integration_test.go:341",
+        "checks": "Barrier holds across outages."
+      },
+      {
+        "case": "U-MCP",
+        "name": "TestCalls/a_revocation_committed_between_admission_and_the_marker_cancels_the_send",
+        "file": "services/agent/mcp/internal/application/calls_test.go:608",
+        "checks": "A revoke landing between admission and marker cancels the send."
+      }
+    ],
+    "SEC-09": [
+      {
+        "case": "U-POLICIES",
+        "name": "offline/image-other-digest",
+        "title": "\"image-other-digest\"",
+        "file": "deploy/policies/tests/mutate.py:144",
+        "checks": "Kyverno CLI evaluation refuses each substituted template (not admission)."
+      },
+      {
+        "case": "U-POLICIES",
+        "name": "offline/service-account",
+        "title": "\"service-account\"",
+        "file": "deploy/policies/tests/mutate.py:180",
+        "checks": "Kyverno CLI evaluation refuses each substituted template (not admission)."
+      },
+      {
+        "case": "U-POLICIES",
+        "name": "offline/entrypoint-changed",
+        "title": "\"entrypoint-changed\"",
+        "file": "deploy/policies/tests/mutate.py:148",
+        "checks": "Kyverno CLI evaluation refuses each substituted template (not admission)."
+      },
+      {
+        "case": "U-POLICIES",
+        "name": "offline/volume-csi",
+        "title": "\"volume-csi\"",
+        "file": "deploy/policies/tests/mutate.py:157",
+        "checks": "Kyverno CLI evaluation refuses each substituted template (not admission)."
+      },
+      {
+        "case": "U-POLICIES",
+        "name": "offline/capability-added",
+        "title": "\"capability-added\"",
+        "file": "deploy/policies/tests/mutate.py:168",
+        "checks": "Kyverno CLI evaluation refuses each substituted template (not admission)."
+      },
+      {
+        "case": "WF-CLUSTER",
+        "name": "TestHarnessOnTheDevelopmentCluster/template_substitutions_are_refused_by_the_cluster's_admission",
+        "file": "services/agent/workflow/internal/adapters/kubernetes/harness_integration_test.go:442",
+        "checks": "The development cluster's admission refuses substituted Jobs from the launcher."
+      },
+      {
+        "case": "IT-INGESTION",
+        "name": "TestIngestion/admission_refuses_a_tampered_parser_Job_even_with_the_launcher's_credentials",
+        "file": "tests/integration/ingestion_integration_test.go:417",
+        "checks": "Tampered parser Jobs are denied with the Knowledge launcher's identity."
+      },
+      {
+        "case": "SEC09-POLICIES-CLUSTER",
+        "name": "cluster ephemeralcontainers UPDATE launcher: RBAC rejection",
+        "title": "ephemeralcontainers UPDATE launcher: RBAC rejection",
+        "file": "deploy/policies/tests/mutate.py:351",
+        "checks": "The launcher's ephemeral-container injection is refused by RBAC on the cluster."
+      },
+      {
+        "case": "SEC09-POLICIES-CLUSTER",
+        "name": "cluster ephemeralcontainers UPDATE admin: policy rejection",
+        "title": "ephemeralcontainers UPDATE admin: policy rejection",
+        "file": "deploy/policies/tests/mutate.py:355",
+        "checks": "An administrator's ephemeral-container injection is refused by policy."
+      }
+    ],
+    "SEC-10": [
+      {
+        "case": "IT-INGESTION",
+        "name": "TestIngestion/an_archive_bomb_is_refused_inside_the_Job_and_recorded_as_the_parser's_verdict",
+        "file": "tests/integration/ingestion_integration_test.go:362",
+        "checks": "Archive bomb refused in the parser Job."
+      },
+      {
+        "case": "U-CONTROL",
+        "name": "TestArtifacts/an_archive_that_escapes_its_root_or_aliases_paths_is_rejected_without_being_extracted,_whatever_media_type_was_declared",
+        "file": "services/agent/control/internal/application/artifacts_test.go:339",
+        "checks": "Path escape and aliasing are rejected without extraction."
+      },
+      {
+        "case": "U-TEAM",
+        "name": "Pi's grep tool runs the image's ripgrep, offline (AC5) without any ripgrep the coder's grep fails offline: nothing is downloaded, nothing is fetched",
+        "file": "jobs/codegen/team/test/pi-offline.test.ts:217",
+        "checks": "No tool/plugin download.",
+        "title": "without any ripgrep the coder's grep fails offline: nothing is downloaded, nothing is fetched"
+      },
+      {
+        "case": "U-VALIDATOR",
+        "name": "source refusals rejects candidate build configuration and lifecycle scripts",
+        "file": "jobs/validator/test/source.test.ts:209",
+        "checks": "Candidate build configuration is refused.",
+        "title": "rejects candidate build configuration and lifecycle scripts"
+      },
+      {
+        "case": "U-PARSER",
+        "name": "run-verification --only parser",
+        "title": "def step_parser",
+        "file": "tools/run-verification.py:446",
+        "checks": "The parser Job's malicious and oversized document tests inside the built image with no network."
+      }
+    ],
+    "SEC-11": [
+      {
+        "case": "IT-PITR",
+        "name": "TestPointInTimeRecovery",
+        "file": "tests/integration/pitr_integration_test.go:180",
+        "checks": "After restore the lost sends never regain permission, the fenced identity cannot use a revived grant, nothing is resent."
+      },
+      {
+        "case": "U-CONTROL",
+        "name": "TestRecovery/an_interrupted_listing_keeps_the_cursor_and_is_never_an_empty_inventory",
+        "file": "services/agent/control/internal/application/recovery_test.go:702",
+        "checks": "A truncated listing never reopens the scope."
+      },
+      {
+        "case": "U-CONTROL",
+        "name": "TestRecovery/begin_closes_admission,_fences_active_identities_and_establishes_the_epoch_in_one_commit",
+        "file": "services/agent/control/internal/application/recovery_test.go:654",
+        "checks": "Old execution identities are fenced by the new epoch."
+      },
+      {
+        "case": "U-CONTROL",
+        "name": "TestS3Inventory/an_unreachable_backend_is_an_error,_never_an_empty_listing",
+        "file": "services/agent/control/internal/adapters/inventory/s3_test.go:142",
+        "checks": "Partial storage failure is an error, never an empty inventory (Testcontainers MinIO)."
+      },
+      {
+        "case": "IT-MEMORY-PITR",
+        "name": "TestMemoryRemovalRecovery/a_Knowledge_on_the_restored_database_keeps_memory_closed_while_the_removal_inventory_is_unreachable",
+        "file": "tests/integration/memory_pitr_integration_test.go:240",
+        "checks": "After a PITR, memory stays closed while the removal inventory cannot be read: no removed fact is served."
+      },
+      {
+        "case": "IT-MEMORY-PITR",
+        "name": "TestMemoryRemovalRecovery/once_the_inventory_answers_every_erased_removal_is_re-applied_under_its_original_command_before_memory_serves",
+        "file": "tests/integration/memory_pitr_integration_test.go:257",
+        "checks": "Every removal the restore erased is re-applied under its original command before memory serves."
+      }
+    ],
+    "SEC-12": [
+      {
+        "case": "IT-STUDIO",
+        "name": "exact remote component locks › loads locked releases without a host rebuild, reserves types, keeps unknown nodes and saves/reopens the exact lock",
+        "file": "${ANVILKIT_STUDIO_DIR}/e2e/agent-workbench.spec.ts:326",
+        "checks": "Type collision reserved, unknown nodes kept, newer catalog release not substituted.",
+        "runner": "playwright",
+        "title": "loads locked releases without a host rebuild, reserves types, keeps unknown nodes and saves/reopens the exact lock"
+      },
+      {
+        "case": "IT-STUDIO",
+        "name": "exact remote component locks › a release whose bytes do not match its lock loads as a placeholder and blocks nothing else",
+        "file": "${ANVILKIT_STUDIO_DIR}/e2e/agent-workbench.spec.ts:479",
+        "checks": "Mismatched bytes load as a placeholder.",
+        "runner": "playwright",
+        "title": "a release whose bytes do not match its lock loads as a placeholder and blocks nothing else"
+      },
+      {
+        "case": "IT-RELEASE",
+        "name": "TestRelease/studio_pins_and_reopens_the_released_lock",
+        "file": "tests/integration/release_integration_test.go:309",
+        "checks": "Runs release.spec.ts:99: the activated release is reopened without substitution, node and props kept."
+      },
+      {
+        "case": "U-VALIDATOR",
+        "name": "anvilkit-preview-v1 refuses bytes that do not match their digest, then closes on disorder",
+        "file": "jobs/validator/test/preview-origin.test.ts:136",
+        "checks": "The sandboxed preview origin refuses unverified bytes.",
+        "title": "refuses bytes that do not match their digest, then closes on disorder"
+      }
+    ]
+  },
+  "scenarios": {
+    "M1-01": "Duplicate submission, cross-tenant observation, reconnect and cancellation",
+    "M1-02": "Fixed task reaches a complete candidate and stops at limits",
+    "M1-03": "Candidate-modified configuration/dependencies/validation scripts rejected",
+    "M1-04": "Concurrent-edit conflict; preview references exact revision",
+    "M1-05": "Independent certification rejects fake exit code, missing CSS and wrong ABI",
+    "M1-06": "Any subject-field change invalidates prior approval",
+    "M1-07": "npm succeeds while browser target is unknown: query original identity only",
+    "M1-08": "Activate only when both receipts and approval match",
+    "M1-09": "Load a new remote component without rebuilding host; reject name collision",
+    "M1-10": "Exact old-page version; unavailable-component placeholder preserves props",
+    "M1-11": "Aggregate role costs; separate credits and actual cost; clocks never reset",
+    "M1-12": "Enumerate unknown external obligations after database rollback",
+    "M1-13": "Two-instance concurrency and failure-domain recovery",
+    "M1-14": "Supported commands respect definition revision/fence; stale commands cannot reverse newer state",
+    "M1-15": "Structured brief; every analysis call independently controlled",
+    "M1-16": "Grouped two rounds/three questions, original seven-day clock, duplicate Update",
+    "M1-17": "Exact source/brand/material hashes and current ACL",
+    "CAP-01": "Bounded multi-Agent team (fixed roles, bounded parallelism, one writer, combined budget, accepted-stage recovery, independent certification)",
+    "CAP-02": "RAG and vectors (ingestion, isolated parsing, dense/sparse, rerank, citations, current ACL, generations, labeled set)",
+    "CAP-03": "Long-term memory (proposal/confirmation/revocation, provenance/revision, projections, deletion)",
+    "CAP-04": "MCP marketplace and effects (discovery, review, grants, pinned protocol, real execution, uncertain effects)",
+    "CAP-05": "Background queues and event bus (reconstructible BullMQ, NATS outbox/inbox, duplicate/out-of-order recovery)",
+    "CAP-06": "Fx and configuration lifecycle (typed snapshots, validated replacement, secret rotation, bounded shutdown)",
+    "CAP-07": "Complete replacement and Kubernetes deployment (independent workloads, failure domains, backups, telemetry, supply chain)",
+    "SEC-01": "Forged tenant/actor or workload impersonation: cross-tenant request, wrong SAN/audience, expired evidence, unknown action",
+    "SEC-02": "Duplicate charges: same call on two replicas, lost grant response, cancellation race, summary bypass",
+    "SEC-03": "Candidate steals keys or forges results: secret reads, trusted-socket access, verdict tampering, PID/fd transfer",
+    "SEC-04": "Same-Pod network bypass: AF_INET, IPv6, localhost, metadata, direct Proxy/Knowledge access",
+    "SEC-05": "Cross-tenant/revoked RAG disclosure: sparse branch leakage, old snapshots, revocation race, hit-count leakage",
+    "SEC-06": "Memory poisoning: model self-confirmation, cross-subject writes, out-of-order upsert, recall after deletion",
+    "SEC-07": "MCP SSRF/credential forwarding: discovery/redirect/JWKS metadata, DNS rebinding, cross-host authorization",
+    "SEC-08": "Tool substitution or revocation race: schema mutation, old grant, calls around revoke response, in-flight calls",
+    "SEC-09": "Launcher privilege expansion: forged image/SA/command/CSI/capabilities, exec or ephemeral-container injection",
+    "SEC-10": "Malicious PDF/archive/source dependency: archive bomb, path/symlink escape, plugin download, candidate build configuration",
+    "SEC-11": "Rollback revives send rights: truncated listing, omitted call after restore, old token, partial storage failure",
+    "SEC-12": "Page imports unapproved/wrong component: old lock replaced by latest, type collision, discarded unknown props, weakened CSP"
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "$comment": "DEVELOPMENT_ONLY memory evaluation cases of P17 (DD-07 §5, SEC-06), written by the implementing agent. Facts are proposed by a model identity (or a user) and decided by the named user; the 'fate' field says what happens after confirmation. Recall cases name the reader (tenant a or b, an actor), the facts that must come back (expected) and the facts that must never come back (forbidden). Not an approved business-labeled corpus; no quality threshold is derived from it.",
+  "schemaVersion": 1,
+  "trials": 3,
+  "k": 5,
+  "project": "proj_eval",
+  "facts": [
+    {"id": "a-alice-dark", "tenant": "a", "subjectType": "actor", "subject": "alice", "origin": "model", "proposer": "agent-coder", "decider": "alice", "fate": "confirmed", "content": "Alice prefers dark mode previews in the component workbench."},
+    {"id": "a-alice-tabs", "tenant": "a", "subjectType": "actor", "subject": "alice", "origin": "model", "proposer": "agent-coder", "decider": "alice", "fate": "confirmed", "content": "Alice wants code samples indented with tabs, never with spaces."},
+    {"id": "a-alice-zh", "tenant": "a", "subjectType": "actor", "subject": "alice", "origin": "model", "proposer": "agent-coder", "decider": "alice", "fate": "confirmed", "content": "Alice 希望组件文档使用简体中文撰写。"},
+    {"id": "a-alice-own", "tenant": "a", "subjectType": "actor", "subject": "alice", "origin": "user", "proposer": "alice", "decider": "alice", "fate": "confirmed", "content": "Alice reviews pull requests every morning before standup."},
+    {"id": "a-bob-light", "tenant": "a", "subjectType": "actor", "subject": "bob", "origin": "model", "proposer": "agent-coder", "decider": "bob", "fate": "confirmed", "content": "Bob prefers light mode previews in the component workbench."},
+    {"id": "a-proj-release", "tenant": "a", "subjectType": "project", "subject": "proj_eval", "origin": "worker", "proposer": "worker-memory", "decider": "alice", "fate": "confirmed", "content": "Releases of this project are published every Thursday afternoon."},
+    {"id": "a-tenant-brand", "tenant": "a", "subjectType": "tenant", "subject": "$tenant", "origin": "model", "proposer": "agent-coder", "decider": "alice", "fate": "confirmed", "content": "The company brand color is teal #0F766E."},
+    {"id": "a-alice-revoked", "tenant": "a", "subjectType": "actor", "subject": "alice", "origin": "model", "proposer": "agent-coder", "decider": "alice", "fate": "revoked", "content": "Alice develops on a Windows laptop."},
+    {"id": "a-alice-deleted", "tenant": "a", "subjectType": "actor", "subject": "alice", "origin": "model", "proposer": "agent-coder", "decider": "alice", "fate": "deleted", "content": "Alice's home address is 12 Example Street."},
+    {"id": "a-alice-expired", "tenant": "a", "subjectType": "actor", "subject": "alice", "origin": "model", "proposer": "agent-coder", "decider": "alice", "fate": "expired", "content": "Alice is on vacation this week."},
+    {"id": "a-alice-proposed", "tenant": "a", "subjectType": "actor", "subject": "alice", "origin": "model", "proposer": "agent-coder", "decider": "", "fate": "proposed", "content": "Alice dislikes TypeScript."},
+    {"id": "a-alice-rejected", "tenant": "a", "subjectType": "actor", "subject": "alice", "origin": "model", "proposer": "agent-coder", "decider": "alice", "fate": "rejected", "content": "Alice wants every button to be red."},
+    {"id": "b-alice-dark", "tenant": "b", "subjectType": "actor", "subject": "alice", "origin": "model", "proposer": "agent-coder", "decider": "alice", "fate": "confirmed", "content": "Alice prefers dark mode previews in the component workbench."},
+    {"id": "b-tenant-brand", "tenant": "b", "subjectType": "tenant", "subject": "$tenant", "origin": "model", "proposer": "agent-coder", "decider": "alice", "fate": "confirmed", "content": "The company brand color is orange #EA580C."}
+  ],
+  "recalls": [
+    {"id": "preference-theme", "stratum": "preference", "tenant": "a", "as": "alice", "query": "Which preview theme does Alice like?", "expected": ["a-alice-dark"], "forbidden": ["b-alice-dark", "a-bob-light"]},
+    {"id": "preference-indent", "stratum": "preference", "tenant": "a", "as": "alice", "query": "How should code samples be indented?", "expected": ["a-alice-tabs"], "forbidden": []},
+    {"id": "user-stated", "stratum": "preference", "tenant": "a", "as": "alice", "query": "When does Alice review pull requests?", "expected": ["a-alice-own"], "forbidden": []},
+    {"id": "chinese", "stratum": "chinese", "tenant": "a", "as": "alice", "query": "组件文档应该用什么语言写?", "expected": ["a-alice-zh"], "forbidden": []},
+    {"id": "project-release", "stratum": "project", "tenant": "a", "as": "bob", "query": "When are releases of this project published?", "expected": ["a-proj-release"], "forbidden": ["a-alice-dark", "a-alice-tabs"]},
+    {"id": "tenant-brand-a", "stratum": "tenant-isolation", "tenant": "a", "as": "bob", "query": "What is the company brand color?", "expected": ["a-tenant-brand"], "forbidden": ["b-tenant-brand"]},
+    {"id": "tenant-brand-b", "stratum": "tenant-isolation", "tenant": "b", "as": "alice", "query": "What is the company brand color?", "expected": ["b-tenant-brand"], "forbidden": ["a-tenant-brand"]},
+    {"id": "tenant-same-content", "stratum": "tenant-isolation", "tenant": "b", "as": "alice", "query": "Which preview theme does Alice like?", "expected": ["b-alice-dark"], "forbidden": ["a-alice-dark"]},
+    {"id": "actor-private", "stratum": "authorization", "tenant": "a", "as": "alice", "query": "Does Bob prefer light mode previews?", "expected": [], "forbidden": ["a-bob-light"]},
+    {"id": "actor-private-control", "stratum": "authorization", "tenant": "a", "as": "bob", "query": "Does Bob prefer light mode previews?", "expected": ["a-bob-light"], "forbidden": ["a-alice-dark"]},
+    {"id": "revoked", "stratum": "removal", "tenant": "a", "as": "alice", "query": "Which operating system does Alice develop on?", "expected": [], "forbidden": ["a-alice-revoked"]},
+    {"id": "deleted", "stratum": "removal", "tenant": "a", "as": "alice", "query": "What is Alice's home address?", "expected": [], "forbidden": ["a-alice-deleted"]},
+    {"id": "expired", "stratum": "removal", "tenant": "a", "as": "alice", "query": "Is Alice on vacation?", "expected": [], "forbidden": ["a-alice-expired"]},
+    {"id": "unconfirmed", "stratum": "false-confirmation", "tenant": "a", "as": "alice", "query": "What does Alice think of TypeScript and red buttons?", "expected": [], "forbidden": ["a-alice-proposed", "a-alice-rejected"]},
+    {"id": "unanswerable", "stratum": "unanswerable", "tenant": "a", "as": "alice", "query": "What is the capital of Mongolia?", "expected": [], "forbidden": []}
+  ]
+}

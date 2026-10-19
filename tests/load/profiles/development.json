@@ -1,0 +1,13 @@
+{
+  "profileId": "development-v1",
+  "classification": "DEVELOPMENT_ONLY",
+  "durationSeconds": 600,
+  "drainSeconds": 900,
+  "maxErrorRatio": 0.01,
+  "scenarios": {
+    "local_check": {"ratePerSecond": 0.5, "maxInFlight": 50, "cancelRatio": 0.1, "resumeStream": true, "extraListeners": 2, "deadlineSeconds": 900},
+    "preparation": {"ratePerSecond": 0.05, "maxInFlight": 10, "resumeStream": true, "deadlineSeconds": 900},
+    "knowledge_search": {"ratePerSecond": 2, "maxInFlight": 20, "query": "brand colors and typography for the landing page", "maxContextItems": 8},
+    "mcp_catalog": {"ratePerSecond": 1, "maxInFlight": 10}
+  }
+}

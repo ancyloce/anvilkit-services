@@ -1,0 +1,29 @@
+{
+  "profileId": "soak-development-v1",
+  "classification": "DEVELOPMENT_ONLY",
+  "durationSeconds": 14400,
+  "drainSeconds": 900,
+  "maxErrorRatio": 0.01,
+  "scenarios": {
+    "local_check": {
+      "ratePerSecond": 0.2,
+      "maxInFlight": 40,
+      "cancelRatio": 0.2,
+      "resumeStream": true,
+      "extraListeners": 1,
+      "deadlineSeconds": 900,
+      "holdRatio": 0.1,
+      "holdSeconds": 30
+    },
+    "knowledge_search": {
+      "ratePerSecond": 1,
+      "maxInFlight": 10,
+      "query": "brand colors and typography for the landing page",
+      "maxContextItems": 8
+    },
+    "mcp_catalog": {
+      "ratePerSecond": 0.5,
+      "maxInFlight": 5
+    }
+  }
+}
