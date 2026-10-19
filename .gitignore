@@ -64,3 +64,8 @@ logs/
 __pycache__/
 *.egg-info/
 .pytest_cache/
+
+# Binaries `go build` leaves in the parent's test modules (the load tool, the
+# MCP fixture built from tests/integration/cmd/mcpfixture)
+/tests/load/load
+/tests/integration/mcpfixture
