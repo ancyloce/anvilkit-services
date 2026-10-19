@@ -23,6 +23,7 @@ another contracts version than its manifest pins also fails there (contract_cita
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import re
 import subprocess
@@ -41,6 +42,14 @@ COMPONENTS = ["services/agent/api", "services/agent/control", "services/agent/wo
 def git(*args: str, cwd: pathlib.Path = ROOT) -> str:
     p = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True)
     return p.stdout.strip() if p.returncode == 0 else ""
+
+
+def metadata() -> dict | None:
+    """The Git facts of a checkout without Git metadata (the disposable export of
+    tools/check-source-export.py): {"gitlinks": {path: commit}, "contractsTags":
+    {commit: [tag, ...]}}, recorded from the source repositories; None in a checkout."""
+    path = os.environ.get("ANVILKIT_DOCS_STATUS_METADATA")
+    return json.loads(pathlib.Path(path).read_text()) if path else None
 
 
 def status_of(cell: str) -> str:
@@ -67,7 +76,11 @@ def units(delivery: str) -> list[tuple[str, str]]:
 
 def contracts_tag(commit: str) -> str:
     """The go/v* tag at a contracts commit (the contracts checkout's tags), or ''."""
-    tags = git("tag", "--points-at", commit, cwd=ROOT / "contracts").split()
+    meta = metadata()
+    if meta is not None:
+        tags = next((t for c, t in meta["contractsTags"].items() if c.startswith(commit) or commit.startswith(c)), [])
+    else:
+        tags = git("tag", "--points-at", commit, cwd=ROOT / "contracts").split()
     return sorted(t for t in tags if t.startswith("go/v"))[-1] if any(t.startswith("go/v") for t in tags) else ""
 
 
@@ -105,9 +118,13 @@ def submodules() -> list[tuple[str, str, str]]:
         name = key[len("submodule."):].rsplit(".", 1)[0]
         (paths if key.endswith(".path") else urls)[name] = value
     rows = []
+    meta = metadata()
     for name, path in sorted(paths.items(), key=lambda kv: kv[1]):
-        entry = git("ls-tree", "HEAD", path).split()
-        sha = entry[2][:7] if len(entry) >= 3 and entry[1] == "commit" else "(not in HEAD)"
+        if meta is not None:
+            sha = meta["gitlinks"].get(path, "")[:7] or "(not in HEAD)"
+        else:
+            entry = git("ls-tree", "HEAD", path).split()
+            sha = entry[2][:7] if len(entry) >= 3 and entry[1] == "commit" else "(not in HEAD)"
         repo = urls.get(name, "").rstrip("/").removesuffix(".git").rsplit("/", 1)[-1]
         rows.append((path, repo, sha))
     return rows

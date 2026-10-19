@@ -44,6 +44,7 @@ import os
 import pathlib
 import re
 import io
+import json
 import shutil
 import subprocess
 import sys
@@ -437,8 +438,19 @@ def main() -> int:
         for legacy_link in submodules:
             shutil.rmtree(target / legacy_link, ignore_errors=True)
         env = dict(os.environ, GOFLAGS="-mod=readonly")
+        # The export has no Git metadata: the generated status blocks are checked
+        # against the source repositories' facts (the parent's gitlinks, the
+        # contracts' go/v* tags), recorded outside the exported tree.
+        meta_dir = tempfile.TemporaryDirectory(prefix="anvilkit-export-meta-")
+        meta = pathlib.Path(meta_dir.name) / "docs-status-metadata.json"
+        tags: dict[str, list[str]] = {}
+        for line in git("for-each-ref", "--format=%(objectname) %(*objectname) %(refname:short)", "refs/tags/go/", cwd=ROOT / "contracts").splitlines():
+            parts = line.split()
+            tags.setdefault(parts[1] if len(parts) == 3 else parts[0], []).append(parts[-1])
+        meta.write_text(json.dumps({"gitlinks": dict(sorted(repos.items())), "contractsTags": tags}))
+        docs_env = {"ANVILKIT_DOCS_STATUS_METADATA": str(meta)}
         steps: list[tuple] = [
-            ("docs", [sys.executable, "tools/check-docs.py"], target),
+            ("docs", [sys.executable, "tools/check-docs.py"], target, docs_env),
             ("contracts", [sys.executable, "tools/check-contracts.py"], target),
         ]
         # The codegen Job's repositories carry verbatim copies of the process
@@ -463,6 +475,8 @@ def main() -> int:
     finally:
         if tmp:
             tmp.cleanup()
+        if "meta_dir" in locals():
+            meta_dir.cleanup()
     for f in failures:
         print("FAIL", f)
     print(f"source export: {len(failures)} failures" + (f" (export kept at {keep})" if keep else " (disposable export removed)"))
