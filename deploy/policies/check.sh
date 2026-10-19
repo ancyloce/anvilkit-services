@@ -139,19 +139,27 @@ else
 fi
 if [ "${1:-}" = "--cluster" ]; then
   CTX=${ANVILKIT_DEV_KUBE_CONTEXT:-kind-anvilkit-dev}
+  # The administrator's context lives in the admin kubeconfig, as for the
+  # deploy/dev chart scripts; a sourced .local/dev/env.sh points KUBECONFIG
+  # at the launcher's, which has no such context, and every admin dry run
+  # would then be "rejected" for that reason instead of by a policy.
+  ADMIN_KUBECONFIG=${ANVILKIT_DEV_ADMIN_KUBECONFIG:-$HOME/.kube/config}
+  kubectl --kubeconfig "$ADMIN_KUBECONFIG" --context "$CTX" get --raw /readyz >/dev/null 2>&1 \
+    || { echo "UNEXECUTED: the administrator context $CTX does not answer through $ADMIN_KUBECONFIG" >&2; exit 2; }
   LAUNCHER=${ANVILKIT_LAUNCHER_KUBECONFIG:-$ROOT/.local/dev/launcher.kubeconfig}
   # The parser namespace's launcher is Knowledge's identity (P15/P0.7).
   PARSER_LAUNCHER=${ANVILKIT_PARSER_LAUNCHER_KUBECONFIG:-$ROOT/.local/dev/knowledge-launcher.kubeconfig}
   test -r "$LAUNCHER" || { echo "UNEXECUTED: launcher kubeconfig not found at $LAUNCHER (deploy/dev/up.sh writes it)" >&2; exit 2; }
   gvisor=yes
-  kubectl --context "$CTX" get runtimeclass gvisor >/dev/null 2>&1 || gvisor=no
+  kubectl --kubeconfig "$ADMIN_KUBECONFIG" --context "$CTX" get runtimeclass gvisor >/dev/null 2>&1 || gvisor=no
   for f in "$WORK"/cases/*.yaml; do
     case=$(basename "$f" .yaml)
     expect=$("$PY" -c "import json,sys; print(json.load(open('$WORK/cases/expectations.json'))['$case'])")
-    if { [ "$case" = valid-candidate-pod ] || [ "$case" = valid-validator-source-pod ]; } && [ "$gvisor" = no ]; then
+    if { [ "$case" = valid-candidate-pod ] || [ "$case" = valid-validator-source-pod ] || [ "$case" = valid-preview-build-pod ] || [ "$case" = valid-team-pod ]; } && [ "$gvisor" = no ]; then
       # The API server refuses a Pod whose RuntimeClass does not exist: on a
       # cluster without gVisor the candidate profile cannot be admitted at
-      # all, which is the state P09 records (the profile stays disabled).
+      # all, which is the state P09 records (the profile stays disabled);
+      # P2.4's preview-build-v1 and codegen-team-v1 Pods likewise.
       printf 'UNEXECUTED cluster %-29s no gVisor RuntimeClass on this cluster; the API server refuses the Pod before Kyverno decides\n' "$case"
       continue
     fi
@@ -163,7 +171,7 @@ if [ "${1:-}" = "--cluster" ]; then
       if out=$(kubectl --kubeconfig "$kc" create --dry-run=server -f "$f" 2>&1); then got=pass; else got=fail; fi
     else
       who=admin
-      if out=$(kubectl --context "$CTX" create --dry-run=server -f "$f" 2>&1); then got=pass; else got=fail; fi
+      if out=$(kubectl --kubeconfig "$ADMIN_KUBECONFIG" --context "$CTX" create --dry-run=server -f "$f" 2>&1); then got=pass; else got=fail; fi
     fi
     if [ "$got" = "$expect" ]; then
       reason=admitted
@@ -188,7 +196,7 @@ if [ "${1:-}" = "--cluster" ]; then
       failures=$((failures+1))
     fi
   done
-  "$PY" "$POLICIES/tests/mutate.py" --cluster-lifecycle "$WORK/resources" "$CTX" "$LAUNCHER" || failures=$((failures+1))
+  KUBECONFIG="$ADMIN_KUBECONFIG" "$PY" "$POLICIES/tests/mutate.py" --cluster-lifecycle "$WORK/resources" "$CTX" "$LAUNCHER" || failures=$((failures+1))
 fi
 echo "policy checks: $total cases, $failures failures"
 [ "$failures" -eq 0 ]
