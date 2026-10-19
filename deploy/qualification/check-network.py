@@ -164,8 +164,13 @@ def offline(extra: pathlib.Path | None) -> int:
     return 0
 
 
+def kubectl_bin() -> str | None:
+    local = ROOT / ".local/bin/kubectl"
+    return str(local) if local.exists() else shutil.which("kubectl")
+
+
 def kubectl(kubeconfig: str, *args: str, stdin: str | None = None, check: bool = True) -> subprocess.CompletedProcess:
-    return subprocess.run(["kubectl", "--kubeconfig", kubeconfig, *args], input=stdin, capture_output=True, text=True, check=check)
+    return subprocess.run([kubectl_bin() or "kubectl", "--kubeconfig", kubeconfig, *args], input=stdin, capture_output=True, text=True, check=check)
 
 
 def cluster(extra: pathlib.Path | None, kubeconfig: str, run: str) -> int:
@@ -241,6 +246,9 @@ def main() -> int:
     kubeconfig = a.kubeconfig or os.environ.get("ANVILKIT_NETWORK_KUBECONFIG")
     if not kubeconfig:
         ap.error("--cluster needs --kubeconfig (or ANVILKIT_NETWORK_KUBECONFIG)")
+    if not kubectl_bin():
+        print("UNEXECUTED: kubectl not found (.local/bin/kubectl or PATH)")
+        return 2
     return cluster(a.values, kubeconfig, a.run or time.strftime("%Y%m%dT%H%M%SZ", time.gmtime()))
 
 
