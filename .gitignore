@@ -44,8 +44,10 @@ outputs/
 /.local/compose/
 /.local/dev/
 
-# Historical documentation; docs/README.md and docs/architecture/ are the tracked baseline
-docs/archive/
+# Documentation is local-only (owner decision 2026-10-19): docs/ is never committed;
+# tools/check-docs.py and tools/check-source-export.py treat its absence in a clone as
+# UNEXECUTED, not as a failure.
+/docs/
 
 # Logs
 logs/
