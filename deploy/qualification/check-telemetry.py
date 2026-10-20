@@ -77,6 +77,18 @@ def secrets_of(creds: dict) -> dict[str, str]:
         out[creds["qdrant"]] = "Qdrant API key"
     for name, token in creds["principals"].items():
         out[token] = f"bearer principal ({name})"
+    if creds.get("grafana"):
+        out[creds["grafana"]] = "Grafana admin password"
+    for user, nk in (creds.get("nats") or {}).items():
+        out[nk["seed"]] = f"NATS NKey seed ({user})"
+    # P2.5: ContextForge's secrets and MCP's API token for it.
+    cf = creds.get("contextforge") or {}
+    for key, cls in (("jwt", "ContextForge JWT secret"), ("encryption", "ContextForge encryption secret"),
+                     ("admin", "ContextForge admin password"), ("defaultUser", "ContextForge default user password")):
+        if cf.get(key):
+            out[cf[key]] = cls
+    if (cf.get("mcpToken") or {}).get("token"):
+        out[cf["mcpToken"]["token"]] = "ContextForge API token (MCP)"
     return out
 
 

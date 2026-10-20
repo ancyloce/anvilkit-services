@@ -695,7 +695,9 @@ def admission_check(run: str) -> bool:
     identity("anvilkit-agent-workflow", "anvilkit-components", launcher)
     identity("anvilkit-agent-knowledge", "anvilkit-parsing", parser_launcher)
     try:
-        env = dict(os.environ, KUBECONFIG=str(KUBECONFIG), ANVILKIT_DEV_KUBE_CONTEXT=cfg["current-context"],
+        # check.sh reads the administrator's context from ANVILKIT_DEV_ADMIN_KUBECONFIG
+        # (default ~/.kube/config, the development foundation's): here this cluster's.
+        env = dict(os.environ, KUBECONFIG=str(KUBECONFIG), ANVILKIT_DEV_ADMIN_KUBECONFIG=str(KUBECONFIG), ANVILKIT_DEV_KUBE_CONTEXT=cfg["current-context"],
                    ANVILKIT_LAUNCHER_KUBECONFIG=str(launcher), ANVILKIT_PARSER_LAUNCHER_KUBECONFIG=str(parser_launcher),
                    ANVILKIT_POLICY_VALUES=str(values))
         p = subprocess.run(["sh", str(ROOT / "deploy/policies/check.sh"), "--cluster"], env=env, capture_output=True, text=True)

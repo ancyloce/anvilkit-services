@@ -79,6 +79,43 @@ if exp.exists():
                 if case in e:
                     e[case] = "fail"
     exp.write_text(json.dumps(e))
+# P2.4: the access sidecar's relay placements are the environment's too. With the
+# development values (argv[3]) the launcher rendered the fixtures; in the sidecar
+# container alone, the first entry of each placement name that still carries the
+# development value takes the environment's value, or is dropped where the
+# environment declares none. A mutated entry (a foreign value, valueFrom, a
+# duplicate, one in another container) keeps its development or foreign value,
+# so every negative case stays negative.
+if len(sys.argv) > 3:
+    dev = (yaml.safe_load(open(sys.argv[3])) or {}).get("sidecarPlacements") or {}
+    env = values.get("sidecarPlacements") or {}
+    names = {"modelProxyUrl": "ANVILKIT_SIDECAR_MODEL_PROXY_URL", "mcpAddress": "ANVILKIT_SIDECAR_MCP_ADDRESS",
+             "knowledgeAddress": "ANVILKIT_SIDECAR_KNOWLEDGE_ADDRESS"}
+    def place_sidecar(spec):
+        for c in (spec.get("initContainers") or []) + (spec.get("containers") or []):
+            if c.get("name") != "access-sidecar":
+                continue
+            entries = c.get("env") or []
+            for key, name in names.items():
+                if (dev.get(key) or "") == (env.get(key) or ""):
+                    continue
+                i = next((i for i, x in enumerate(entries) if x.get("name") == name), None)
+                if i is None or entries[i].get("value") != dev.get(key):
+                    continue
+                if env.get(key):
+                    entries[i] = {"name": name, "value": env[key]}
+                else:
+                    del entries[i]
+    for f in pathlib.Path(sys.argv[2]).glob("*.yaml"):
+        docs = list(yaml.safe_load_all(f.read_text()))
+        before = json.dumps(docs, sort_keys=True)
+        for d in docs:
+            if isinstance(d, dict) and d.get("kind") == "Pod":
+                place_sidecar(d["spec"])
+            elif isinstance(d, dict) and d.get("kind") == "Job":
+                place_sidecar(d["spec"]["template"]["spec"])
+        if json.dumps(docs, sort_keys=True) != before:
+            f.write_text(yaml.safe_dump_all(docs, sort_keys=False))
 PLACE
 cp -R "$FIXTURES" "$WORK/resources"
 if [ -n "${ANVILKIT_POLICY_VALUES:-}" ]; then
@@ -86,7 +123,9 @@ if [ -n "${ANVILKIT_POLICY_VALUES:-}" ]; then
 fi
 "$PY" "$POLICIES/tests/mutate.py" "$WORK/resources" "$WORK/cases"
 if [ -n "${ANVILKIT_POLICY_VALUES:-}" ]; then
-  "$PY" "$WORK/place.py" "$ANVILKIT_POLICY_VALUES" "$WORK/cases"
+  "$PY" "$WORK/place.py" "$ANVILKIT_POLICY_VALUES" "$WORK/cases" "$ROOT/deploy/dev/values/anvilkit-job-admission.yaml"
+  # The cluster lifecycle probe creates the placed resources (mutate.py has read them).
+  "$PY" "$WORK/place.py" "$ANVILKIT_POLICY_VALUES" "$WORK/resources" "$ROOT/deploy/dev/values/anvilkit-job-admission.yaml"
 fi
 # The policies are the Job-admission chart rendered with an environment's
 # values (the development foundation's unless ANVILKIT_POLICY_VALUES names

@@ -377,7 +377,10 @@ applications:
         otlp:
           grpc: {enabled: true}
           http: {enabled: true}
-      ingester: {replicas: 1}
+      # One ingester, so one copy of each span: the chart's default replication
+      # factor 3 needs at least two live ingesters, and with one every push was
+      # refused ("at least 2 live replicas required") and no trace was stored.
+      ingester: {replicas: 1, config: {replication_factor: 1}}
       distributor: {replicas: 1}
       querier: {replicas: 1}
       queryFrontend: {replicas: 1}
