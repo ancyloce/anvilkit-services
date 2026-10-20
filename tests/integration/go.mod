@@ -3,7 +3,7 @@ module github.com/ancyloce/anvilkit-services/tests/integration
 go 1.26.8
 
 require (
-	github.com/ancyloce/anvilkit-agent-contracts/go v0.1.12
+	github.com/ancyloce/anvilkit-agent-contracts/go v0.1.13
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/stretchr/testify v1.12.1
