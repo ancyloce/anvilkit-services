@@ -79,6 +79,14 @@ def must(cmd: list[str], **kw) -> str:
     return p.stdout + p.stderr
 
 
+def uncommitted(paths: list[pathlib.Path], root: pathlib.Path = ROOT) -> list[str]:
+    """The paths among these that Git has not committed as they are: a published
+    environment chart or platform chart must be reproducible from a commit."""
+    out = must(["git", "-C", str(root), "-c", "core.quotepath=off", "status", "--porcelain", "--untracked-files=all", "--",
+                *[str(x.relative_to(root)) for x in paths]])
+    return sorted(line[3:] for line in out.splitlines() if line.strip())
+
+
 def helm() -> str:
     local = ROOT / ".local/bin/helm"
     return str(local) if local.exists() else (shutil.which("helm") or "")
@@ -140,6 +148,22 @@ def root_sync_policy(development: bool, automation: dict | None) -> dict:
     return {**sync_policy(development, automation), "syncOptions": ["RespectIgnoreDifferences=true"], "retry": RETRY}
 
 
+def uncommitted_self_test() -> bool:
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        root = pathlib.Path(d)
+        git = ["git", "-C", d, "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"]
+        must(git + ["init", "-q"])
+        (root / "chart").mkdir()
+        (root / "chart/values.yaml").write_text("a: 1\n")
+        must(git + ["add", "-A"])
+        must(git + ["commit", "-q", "-m", "c"])
+        clean = uncommitted([root / "chart"], root) == []
+        (root / "chart/values.yaml").write_text("a: 2\n")
+        (root / "chart/new.yaml").write_text("b: 1\n")
+        return clean and uncommitted([root / "chart"], root) == ["chart/new.yaml", "chart/values.yaml"]
+
+
 def self_test() -> int:
     """P3.2 AC3: the release gate, the artifact rule, the reuse rule and the sync policy."""
     signed = {"status": "SIGNED", "findings": []}
@@ -160,6 +184,7 @@ def self_test() -> int:
         ("production syncs on command without a rollback window", sync_policy(False, None) == {}),
         ("production with a declared rollback window automates", "automated" in sync_policy(False, {"rollbackWindow": "30m"})),
         ("development automates", "automated" in sync_policy(True, None)),
+        ("a changed or new file under a published source is refused, a committed one is not", uncommitted_self_test()),
         ("the root retries a failed sync like its children, automated or not",
          root_sync_policy(True, None)["retry"] == RETRY and root_sync_policy(False, None)["retry"] == RETRY
          and "automated" not in root_sync_policy(False, None)),
@@ -271,6 +296,18 @@ def main() -> int:
         print("UNEXECUTED: helm and docker are required")
         return 2
     combination = yaml.safe_load((ROOT / "deploy/gitops/environments" / f"{a.environment}.yaml").read_text())
+    # What this publication packages from the checkout: the combination, the environment
+    # chart, the platform charts' sources and the values files (an --overlay is the
+    # drills' own recorded input, outside this rule).
+    sources = [ROOT / "deploy/gitops/environments" / f"{a.environment}.yaml", ROOT / "deploy/gitops/environment"]
+    for app in combination["applications"]:
+        if (app.get("chart") or {}).get("source"):
+            sources.append(ROOT / app["chart"]["source"])
+        if app.get("valuesFile"):
+            sources.append(ROOT / app["valuesFile"])
+    if dirty := uncommitted(sources):
+        print("REFUSED uncommitted changes in what this publication packages (commit them first): " + ", ".join(dirty))
+        return 1
     overlay = yaml.safe_load(a.overlay.read_text()) if a.overlay else {}
     unknown = set(overlay.get("applications") or {}) - {app["name"] for app in combination["applications"]}
     if unknown:
