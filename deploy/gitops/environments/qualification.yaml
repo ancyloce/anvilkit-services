@@ -282,8 +282,12 @@ applications:
   # alerts, the dashboards). DEVELOPMENT_ONLY sizing: one replica each, Loki in
   # single-binary mode on a volume and Tempo on its local backend; production
   # takes ENV-01/05 (sizes, retention, object storage) and ENV-10 (alert routes).
+  # Wave -31 with anvilkit-secrets: Grafana's admin credential is the
+  # anvilkit-grafana-admin Secret that chart syncs from OpenBao (wave -32), so an
+  # earlier wave would wait on it forever; the operator's CRDs still precede the
+  # ServiceMonitor of anvilkit-valkey-queue and anvilkit-observability (wave -30).
   - name: anvilkit-metrics
-    wave: -42
+    wave: -31
     layer: platform
     namespace: anvilkit-observability
     chart: {upstream: https://prometheus-community.github.io/helm-charts, name: kube-prometheus-stack, version: 91.8.2}
@@ -372,8 +376,10 @@ applications:
       querier: {replicas: 1}
       queryFrontend: {replicas: 1}
       compactor: {replicas: 1}
+  # After anvilkit-metrics (wave -31): its PodMonitors and PrometheusRules need
+  # the operator's CRDs.
   - name: anvilkit-observability
-    wave: -41
+    wave: -30
     layer: platform
     namespace: anvilkit-observability
     chart: {source: deploy/qualification/platform/observability, name: anvilkit-observability}
