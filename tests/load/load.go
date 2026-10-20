@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -15,6 +16,7 @@ import (
 	"strconv"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 )
 
@@ -32,7 +34,45 @@ type client struct {
 }
 
 func newClient(base, token string) *client {
-	return &client{base: base, token: token, http: &http.Client{Timeout: 60 * time.Second}, stream: &http.Client{}}
+	// One transport with room for every concurrent stream: Go's default keeps two
+	// idle connections per host, so the streams redialled on every open.
+	t := http.DefaultTransport.(*http.Transport).Clone()
+	t.MaxIdleConnsPerHost = 256
+	return &client{base: base, token: token, http: &http.Client{Timeout: 60 * time.Second, Transport: t}, stream: &http.Client{Transport: t}}
+}
+
+// wait sleeps d unless ctx ends first.
+func wait(ctx context.Context, d time.Duration) {
+	select {
+	case <-ctx.Done():
+	case <-time.After(d):
+	}
+}
+
+// transportClass names a request error that carried no status (a counter
+// alongside "transport", which stays the failure): where it happened and why.
+func transportClass(err error) string {
+	where := "conn"
+	var op *net.OpError
+	if errors.As(err, &op) && op.Op == "dial" {
+		where = "dial"
+	}
+	var ne net.Error
+	switch {
+	case errors.As(err, &ne) && ne.Timeout():
+		return where + ":timeout"
+	case errors.Is(err, syscall.ECONNREFUSED):
+		return where + ":refused"
+	case errors.Is(err, syscall.ECONNRESET), errors.Is(err, syscall.EPIPE):
+		return where + ":reset"
+	case errors.Is(err, syscall.EADDRNOTAVAIL):
+		return where + ":addrNotAvail"
+	case errors.Is(err, syscall.EMFILE), errors.Is(err, syscall.ENFILE):
+		return where + ":fdLimit"
+	case errors.Is(err, io.EOF), errors.Is(err, io.ErrUnexpectedEOF):
+		return where + ":eof"
+	}
+	return where + ":other"
 }
 
 // call sends one JSON request and decodes a JSON answer into out (when non-nil).
@@ -109,6 +149,7 @@ func (r *recorder) request(code int, err error) {
 	case code == 0 && err != nil:
 		r.errors++
 		r.codes["transport"]++
+		r.counters["transport:"+transportClass(err)]++
 	default:
 		r.codes[strconv.Itoa(code)]++
 		if code >= 500 {
@@ -397,6 +438,9 @@ func (r *runner) operation(ctx context.Context, s Scenario, rec *recorder, n int
 	var holding sync.WaitGroup
 	defer holding.Wait()
 	var reconnectAt time.Time
+	// Like an EventSource, a stream is reopened after the interval it advertised
+	// (`retry:`), or 500 ms before it advertised one.
+	retry := 500 * time.Millisecond
 	for {
 		resp, err := r.c.openStream(ctx, view.OperationID, lastID)
 		if err != nil {
@@ -410,7 +454,7 @@ func (r *runner) operation(ctx context.Context, s Scenario, rec *recorder, n int
 				rec.count("timedOut")
 				return
 			}
-			time.Sleep(500 * time.Millisecond)
+			wait(ctx, retry)
 			continue
 		}
 		rec.request(resp.StatusCode, nil)
@@ -418,8 +462,8 @@ func (r *runner) operation(ctx context.Context, s Scenario, rec *recorder, n int
 			rec.sample("sseRecovery", time.Since(reconnectAt))
 		}
 		done := false
-		dropForResume := false
-		readErr := readFrames(resp.Body, func(f frame) bool {
+		dropForResume, serverEnded := false, false
+		readErr := readFramesRetry(resp.Body, &retry, func(f frame) bool {
 			switch f.Event {
 			case "reset_required":
 				rec.count("resetRequired")
@@ -432,7 +476,7 @@ func (r *runner) operation(ctx context.Context, s Scenario, rec *recorder, n int
 				// stream resumes from the last event id, to any replica, after
 				// the advertised retry interval; nothing is lost.
 				rec.count("serverEnded")
-				dropForResume = true
+				dropForResume, serverEnded = true, true
 				return false
 			case "operation.changed":
 			default:
@@ -493,6 +537,11 @@ func (r *runner) operation(ctx context.Context, s Scenario, rec *recorder, n int
 			// The API ended the stream (a slow consumer or a restart): resume.
 			rec.count("streamDropped")
 		}
+		// A stream the server ended or dropped is reopened after its retry interval;
+		// the deliberate resume reconnects at once. sseRecovery measures the reopen.
+		if serverEnded || !dropForResume {
+			wait(ctx, retry)
+		}
 		reconnectAt = time.Now()
 	}
 }
@@ -545,14 +594,15 @@ func (r *runner) holdAndResume(ctx context.Context, rec *recorder, operationID, 
 // settling frame.
 func (r *runner) listen(ctx context.Context, operationID string, settled func(frame) bool) bool {
 	lastID := ""
+	retry := 500 * time.Millisecond
 	for ctx.Err() == nil {
 		resp, err := r.c.openStream(ctx, operationID, lastID)
 		if err != nil {
-			time.Sleep(500 * time.Millisecond)
+			wait(ctx, retry)
 			continue
 		}
 		seen := false
-		_ = readFrames(resp.Body, func(f frame) bool {
+		_ = readFramesRetry(resp.Body, &retry, func(f frame) bool {
 			if f.Event == "operation.changed" {
 				lastID = f.ID
 				seen = settled(f)
@@ -563,6 +613,7 @@ func (r *runner) listen(ctx context.Context, operationID string, settled func(fr
 		if seen {
 			return true
 		}
+		wait(ctx, retry)
 	}
 	return false
 }

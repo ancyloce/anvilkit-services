@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // frame is one SSE event of API-04.
@@ -35,6 +37,12 @@ func (f frame) terminal() bool {
 // stream ends. The SSE field rule: the value after the first colon minus one
 // optional leading space; comment lines are skipped.
 func readFrames(body io.Reader, fn func(frame) bool) error {
+	return readFramesRetry(body, nil, fn)
+}
+
+// readFramesRetry is readFrames that also keeps the stream's advertised
+// reconnect interval (an SSE `retry:` line, milliseconds) in retry when set.
+func readFramesRetry(body io.Reader, retry *time.Duration, fn func(frame) bool) error {
 	r := bufio.NewReader(body)
 	cur := frame{}
 	for {
@@ -58,6 +66,10 @@ func readFrames(body io.Reader, fn func(frame) bool) error {
 		k, v, _ := strings.Cut(line, ":")
 		v = strings.TrimPrefix(v, " ")
 		switch k {
+		case "retry":
+			if ms, err := strconv.Atoi(v); err == nil && ms >= 0 && retry != nil {
+				*retry = time.Duration(ms) * time.Millisecond
+			}
 		case "id":
 			cur.ID = v
 		case "event":
