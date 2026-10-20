@@ -150,6 +150,14 @@ if [ "${1:-}" = "--cluster" ]; then
   # The parser namespace's launcher is Knowledge's identity (P15/P0.7).
   PARSER_LAUNCHER=${ANVILKIT_PARSER_LAUNCHER_KUBECONFIG:-$ROOT/.local/dev/knowledge-launcher.kubeconfig}
   test -r "$LAUNCHER" || { echo "UNEXECUTED: launcher kubeconfig not found at $LAUNCHER (deploy/dev/up.sh writes it)" >&2; exit 2; }
+  # The launchers' tokens last 24 h (deploy/dev/up.sh): an expired one makes every
+  # launcher dry run "rejected" as Unauthorized instead of by a policy.
+  can_launch() {
+    [ "$(kubectl --kubeconfig "$1" -n "$2" auth can-i create jobs 2>/dev/null)" = yes ] \
+      || { echo "UNEXECUTED: the launcher identity of $1 cannot create Jobs in $2 (expired token? deploy/dev/up.sh mints it)" >&2; exit 2; }
+  }
+  can_launch "$LAUNCHER" anvilkit-components
+  can_launch "$PARSER_LAUNCHER" anvilkit-parsing
   gvisor=yes
   kubectl --kubeconfig "$ADMIN_KUBECONFIG" --context "$CTX" get runtimeclass gvisor >/dev/null 2>&1 || gvisor=no
   for f in "$WORK"/cases/*.yaml; do
