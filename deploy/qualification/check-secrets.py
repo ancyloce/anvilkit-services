@@ -199,7 +199,7 @@ def bootstrap_payloads() -> list[str]:
     fake = {"roles": {r: "pw" for r in bootstrap.ROLES}, "objectsRoot": {"user": "u", "password": "p"},
             "objects": {u: {"id": "i", "secret": "s"} for u in bootstrap.OBJECT_USERS},
             "dr": {u: {"id": "i", "secret": "s"} for u in bootstrap.DR_USERS}, "queue": "q", "qdrant": "k", "grafana": "g",
-            "principals": {"probe": "a", "tenantA": "b", "tenantB": "c", "modelProxyWorkflow": "d"},
+            "principals": {"probe": "a", "tenantA": "b", "tenantB": "c", "modelProxyWorkflow": "d", "recoveryOperator": "e", "operatorB": "f"},
             "nats": {u: {"seed": "SU", "public": "U"} for u in bootstrap.NATS_USERS},
             "contextforge": {"jwt": "j", "encryption": "e", "admin": "a", "defaultUser": "d", "mcpToken": {"token": "t", "expires": 0}}}
     findings = []

@@ -71,6 +71,13 @@ _CF = yaml.safe_load((ROOT / "deploy/qualification/platform/contextforge/values.
 CONTEXTFORGE_IMAGE = f"{_CF['image']['repository']}:{_CF['image']['tag']}@{_CF['image']['digest']}"
 CONTEXTFORGE_ADMIN = _CF["admin"]["email"]
 CONTEXTFORGE_TOKEN_MINUTES = 30 * 24 * 60
+# API-17 (F-P3.7-1): DEVELOPMENT_ONLY operator principals for the recovery routes. The
+# recovery demo runs in tenant_recovery, which owns no operation (a run fences and
+# reconciles nothing anyone else uses); tenant_b's operator proves the tenant boundary.
+RECOVERY_OPERATORS = {
+    "recoveryOperator": {"tenantId": "tenant_recovery", "projectId": "project_recovery", "actorId": "operator_recovery", "roles": ["operator"]},
+    "operatorB": {"tenantId": "tenant_b", "projectId": "project_b", "actorId": "operator_b", "roles": ["operator"]},
+}
 CONTEXTFORGE_TOKEN_RENEW = 7 * 24 * 3600
 REGISTRY = "anvilkit-dev-registry:5000"
 ARGOCD_CHART = ("https://argoproj.github.io/argo-helm", "argo-cd", "10.9.6")  # Argo CD 3.5.3
@@ -285,6 +292,10 @@ def credentials() -> dict:
             if r not in c["roles"]:
                 c["roles"][r] = token()
                 added = True
+        for name in RECOVERY_OPERATORS:  # API-17's operator principals, likewise
+            if name not in c["principals"]:
+                c["principals"][name] = token(32)
+                added = True
         if "contextforge" not in c:  # P2.5: ContextForge's secrets, likewise
             c["contextforge"] = contextforge_secrets()
             added = True
@@ -301,7 +312,8 @@ def credentials() -> dict:
          "queue": token(),
          "qdrant": token(),
          "grafana": token(),
-         "principals": {"probe": token(32), "tenantA": token(32), "tenantB": token(32), "modelProxyWorkflow": token(32)},
+         "principals": {"probe": token(32), "tenantA": token(32), "tenantB": token(32), "modelProxyWorkflow": token(32),
+                        **{name: token(32) for name in RECOVERY_OPERATORS}},
          "nats": {user: nkey() for user in NATS_USERS},
          "contextforge": contextforge_secrets()}
     c["contextforge"]["mcpToken"] = contextforge_token(c["contextforge"])
@@ -328,7 +340,8 @@ def kv_payloads(c: dict) -> dict[str, dict[str, str]]:
     kv = lambda u, prefix: f"{prefix}_ACCESS_KEY_ID={u['id']}\n{prefix}_SECRET_ACCESS_KEY={u['secret']}\n"
     principals = {p["probe"]: {"tenantId": "tenant_probe", "projectId": "project_probe", "actorId": "probe", "roles": ["author"]},
                   p["tenantA"]: {"tenantId": "tenant_a", "projectId": "project_a", "actorId": "user_a", "roles": ["author"]},
-                  p["tenantB"]: {"tenantId": "tenant_b", "projectId": "project_b", "actorId": "user_b", "roles": ["author"]}}
+                  p["tenantB"]: {"tenantId": "tenant_b", "projectId": "project_b", "actorId": "user_b", "roles": ["author"]},
+                  **{p[name]: v for name, v in RECOVERY_OPERATORS.items()}}
     return {
         "anvilkit/apps/anvilkit-agent-control": {
             "database-url": dsn("anvilkit_control_app", "anvilkit_control", r["anvilkit_control_app"]),
