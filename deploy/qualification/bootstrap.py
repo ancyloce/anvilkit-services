@@ -236,6 +236,10 @@ def credentials() -> dict:
             if u not in c["dr"]:
                 c["dr"][u] = {"id": f"anvilkit-dr-{u}", "secret": token()}
                 added = True
+        for r in ROLES:  # database roles added later (Knowledge's cleanup role, P2), likewise
+            if r not in c["roles"]:
+                c["roles"][r] = token()
+                added = True
         if added:
             path.write_text(json.dumps(c, indent=2))
         return c

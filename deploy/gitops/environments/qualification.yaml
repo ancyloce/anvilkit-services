@@ -138,6 +138,9 @@ applications:
     wave: -45
     layer: platform
     namespace: anvilkit-platform
+    # The default-deny and Job policies of the Job namespaces, which no
+    # application owns: the project permits them for this chart (P3.2 scoping).
+    destinationNamespaces: [anvilkit-components, anvilkit-parsing]
     chart: {source: deploy/qualification/platform/network, name: anvilkit-network}
     values:
       externals:

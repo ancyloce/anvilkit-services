@@ -1,6 +1,7 @@
 {{- if not .Values.environment }}{{ fail "environment is required" }}{{ end }}
 # One project for the environment: sources only from the environment's registry,
-# destinations only the namespaces the combination's applications name (and Argo
+# destinations only the namespaces the combination's applications name (each one's
+# own and those it declares it writes into, destinationNamespaces; and Argo
 # CD's own), in the cluster this Argo CD runs in. Cluster-scoped resources are
 # limited to the kinds the combination declares (clusterResources: the platform
 # charts' CRDs, webhooks, ClusterRoles, policies, issuers); outside a development
@@ -8,6 +9,9 @@
 {{- $namespaces := list .Values.argocdNamespace }}
 {{- range .Values.applications }}
 {{- $namespaces = append $namespaces .namespace }}
+{{- range (.destinationNamespaces | default list) }}
+{{- $namespaces = append $namespaces . }}
+{{- end }}
 {{- end }}
 {{- if and (not .Values.clusterResources) (not .Values.development) }}
 {{- fail "clusterResources is required outside a development combination: the cluster-scoped kinds the platform charts create" }}
