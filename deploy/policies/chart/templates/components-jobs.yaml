@@ -47,9 +47,9 @@ spec:
     - name: fixtureDigests
       expression: "['sha256:9db7b59979c38555a39def84a31fb98b5296952f9e3afd4f6f11f05b07adfab0']"
     - name: supervisorDigests
-      expression: "['sha256:262b46398818c5164c1eb7defa977cd5d9ae94092a819d28c8bf86f3878b4864', 'sha256:741fc3350e9fcd56f4eb88bb128794d9a6f782c1a291596944a44dcdcbdeb927', 'sha256:5f1326cc641442c9affd4b8c8f737545c00dc4bd09bdd5a7e79aae478128f717']"
+      expression: "['sha256:b01d6a32ae7e9695b788f9cb9c4d423b5a7033098ea1565534106d713696c05a', 'sha256:cba4ab8a4aa704c9264c3b8955d25b83796b140781a22b9ae0496b2eb248de2a', 'sha256:87e56fe1df8edd8af80f98ee600f375efb5ae0c10285a5dc6b0cd0b11357c2c4']"
     - name: sidecarDigests
-      expression: "['sha256:4ba60660d7555b7140d55e9da1d03d0354b5aced7edaa406a1f139cba3e464fb']"
+      expression: "['sha256:d96be167bf0a09e6f9922205e138a465baaeb3d7a6fb028d063cd294b2401e24']"
     - name: supervisorEnv
       expression: "['ANVILKIT_LAUNCH_ID', 'ANVILKIT_ATTEMPT_ID', 'ANVILKIT_LAUNCH_ENVELOPE']"
     - name: sidecarEnv
@@ -90,7 +90,7 @@ spec:
     - name: teamCommand
       expression: "['/usr/local/bin/anvilkit-codegen-supervisor', 'team']"
     - name: teamDigest
-      expression: "'sha256:5f1326cc641442c9affd4b8c8f737545c00dc4bd09bdd5a7e79aae478128f717'"
+      expression: "'sha256:87e56fe1df8edd8af80f98ee600f375efb5ae0c10285a5dc6b0cd0b11357c2c4'"
     # P0.8: the development-state candidate profiles this environment admits
     # without the gVisor RuntimeClass (DEVELOPMENT_ONLY; empty elsewhere).
     - name: developmentProfiles
@@ -98,7 +98,7 @@ spec:
     - name: validatorCommand
       expression: "['/usr/local/bin/node', '/anvilkit/validator/dist/job.js']"
     - name: validatorDigest
-      expression: "'sha256:741fc3350e9fcd56f4eb88bb128794d9a6f782c1a291596944a44dcdcbdeb927'"
+      expression: "'sha256:cba4ab8a4aa704c9264c3b8955d25b83796b140781a22b9ae0496b2eb248de2a'"
     # The access sidecar's workload certificate (P0.1): the one Secret volume
     # a harness Pod carries, mounted read-only into the sidecar alone.
     - name: sidecarIdentitySecret
