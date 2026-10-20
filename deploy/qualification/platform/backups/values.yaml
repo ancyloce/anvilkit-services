@@ -35,6 +35,14 @@ openbao:
   audience: openbao
 qdrant:
   url: https://anvilkit-qdrant.anvilkit-data.svc:6333
+  # A collection snapshot exists only on the peer that took it, so the job takes,
+  # downloads and deletes each one on the same peer: the first of these that
+  # answers (the server certificate's wildcard name covers each). Through the
+  # load-balanced Service the three requests reached different peers (404).
+  peers:
+    - https://anvilkit-qdrant-0.anvilkit-qdrant-headless.anvilkit-data.svc.cluster.local:6333
+    - https://anvilkit-qdrant-1.anvilkit-qdrant-headless.anvilkit-data.svc.cluster.local:6333
+    - https://anvilkit-qdrant-2.anvilkit-qdrant-headless.anvilkit-data.svc.cluster.local:6333
 objects:
   url: https://anvilkit-objects.anvilkit-data.svc:9000
   buckets: [anvilkit-artifacts, anvilkit-model-proxy, anvilkit-knowledge]

@@ -2,4 +2,4 @@ apiVersion: v2
 name: anvilkit-backups
 description: Scheduled off-cluster backups of Qdrant, OpenBao and the object store to the DR store (P3.7)
 type: application
-version: 0.1.0
+version: 0.1.1

@@ -11,9 +11,13 @@ API Deployment (a rolling restart under its PodDisruptionBudget).
 
 Everything goes through the drills' NodePort on a live worker, the way a client reaches
 the API, with the principals' bearer tokens (never printed, never in the evidence):
-  * identity and authorization: no token 401; an author (tenant_a) 403 on begin, read and
-    disposition; an operator asking for every tenant without platform_operator 403; a
-    tenant named in the body 400 (the scope is the principal's tenant);
+  * identity and authorization: no token 401; an author (tenant_a) 403 on begin, and 404 on
+    the run and on a disposition (Control discloses a run only to its own tenant's
+    operators and answers NOT_FOUND to anyone else, as TestRecoveryReconciliation shows; a
+    same-tenant non-operator disposition needs a principal this environment does not
+    have and stays with the API and Control unit tests); an operator asking for every
+    tenant without platform_operator 403; a tenant named in the body 400 (the scope is the
+    principal's tenant);
   * begin and idempotency: the operator of tenant_recovery begins a run over a past
     window (201), the same command again answers 200 with the same run, the same command
     with another body 409 IDEMPOTENCY_CONFLICT, a second command while the run is open
@@ -126,7 +130,12 @@ def main() -> int:
     out = ROOT / "outputs/qualification" / a.run / "recovery"
     out.mkdir(parents=True, exist_ok=True)
     checks: dict[str, bool | None] = {}
-    observed: dict[str, object] = {}
+    observed: dict[str, object] = {"responses": {}}
+
+    def expect(check: str, got: tuple[int, dict | None], status: int, error: str | None = None) -> tuple[int, dict | None]:
+        observed["responses"][check] = {"status": got[0], "code": code(got[1])}
+        checks[check] = got[0] == status and (error is None or code(got[1]) == error)
+        return got
     started = time.time()
 
     # The API knows the operators only after a start that read the rotated Secret.
@@ -143,17 +152,12 @@ def main() -> int:
     begin = {"commandId": f"cmd_recovery_demo_{int(started)}", "windowStart": stamp(end - 3600), "windowEnd": stamp(end),
              "clockUncertaintySeconds": 5, "reason": "qualification API-17 demo (tenant_recovery owns no operation)"}
 
-    s, _ = call(None, "POST", "/recoveries", begin)
-    checks["noTokenRefused401"] = s == 401
-    s, _ = call(author, "POST", "/recoveries", begin)
-    checks["authorRefused403"] = s == 403
-    s, _ = call(operator, "POST", "/recoveries", {**begin, "allTenants": True})
-    checks["allTenantsWithoutPlatformOperator403"] = s == 403
-    s, _ = call(operator, "POST", "/recoveries", {**begin, "tenantId": "tenant_a"})
-    checks["tenantInBody400"] = s == 400
+    expect("noTokenRefused401", call(None, "POST", "/recoveries", begin), 401)
+    expect("authorRefused403", call(author, "POST", "/recoveries", begin), 403)
+    expect("allTenantsWithoutPlatformOperator403", call(operator, "POST", "/recoveries", {**begin, "allTenants": True}), 403)
+    expect("tenantInBody400", call(operator, "POST", "/recoveries", {**begin, "tenantId": "tenant_a"}), 400)
 
-    s, run = call(operator, "POST", "/recoveries", begin)
-    checks["begin201"] = s == 201
+    s, run = expect("begin201", call(operator, "POST", "/recoveries", begin), 201)
     run_id = (run or {}).get("runId")
     observed["begin"] = {"status": s, "runId": run_id, "scopeKey": (run or {}).get("scopeKey"), "phase": (run or {}).get("phase"),
                          "recoveryEpoch": (run or {}).get("recoveryEpoch")}
@@ -162,24 +166,20 @@ def main() -> int:
         return finish(out, a.run, checks, observed, started)
     checks["scopeIsPrincipalTenant"] = (run or {}).get("scopeKey") == "tenant_recovery"
     s, again = call(operator, "POST", "/recoveries", begin)
+    observed["responses"]["repeat200SameRun"] = {"status": s, "sameRun": (again or {}).get("runId") == run_id}
     checks["repeat200SameRun"] = s == 200 and (again or {}).get("runId") == run_id
-    s, changed = call(operator, "POST", "/recoveries", {**begin, "reason": "changed"})
-    checks["changedBody409IdempotencyConflict"] = s == 409 and code(changed) == "IDEMPOTENCY_CONFLICT"
+    expect("changedBody409IdempotencyConflict", call(operator, "POST", "/recoveries", {**begin, "reason": "changed"}), 409, "IDEMPOTENCY_CONFLICT")
     s, cur = call(operator, "GET", f"/recoveries/{run_id}")
     if (cur or {}).get("phase") in ("reopened", "restricted"):
         checks["secondRun409StaleExecution"] = None
         observed["secondRun"] = "not applicable: the first run had already reached a terminal phase"
     else:
-        s, second = call(operator, "POST", "/recoveries", {**begin, "commandId": begin["commandId"] + "_second"})
-        checks["secondRun409StaleExecution"] = s == 409 and code(second) == "STALE_EXECUTION"
-        observed["secondRun"] = {"status": s, "code": code(second)}
+        expect("secondRun409StaleExecution", call(operator, "POST", "/recoveries", {**begin, "commandId": begin["commandId"] + "_second"}),
+               409, "STALE_EXECUTION")
 
-    s, _ = call(other, "GET", f"/recoveries/{run_id}")
-    checks["otherTenantRun404"] = s == 404
-    s, _ = call(other, "GET", f"/recoveries/{run_id}/findings")
-    checks["otherTenantFindings404"] = s == 404
-    s, _ = call(author, "GET", f"/recoveries/{run_id}")
-    checks["authorRead403"] = s == 403
+    expect("otherTenantRun404", call(other, "GET", f"/recoveries/{run_id}"), 404)
+    expect("otherTenantFindings404", call(other, "GET", f"/recoveries/{run_id}/findings"), 404)
+    expect("authorRead404", call(author, "GET", f"/recoveries/{run_id}"), 404)
 
     terminal = None
     deadline = time.time() + a.wait
@@ -196,7 +196,8 @@ def main() -> int:
     observed["phases"] = phases
     observed["terminal"] = {k: (terminal or {}).get(k) for k in ("phase", "fencedOperations", "unsettledFindings", "reopenedAt")}
     checks["reachedTerminalPhase"] = terminal is not None
-    checks["reopenedWithoutUnsettledFindings"] = (terminal or {}).get("phase") == "reopened" and (terminal or {}).get("unsettledFindings") == 0
+    # Sequences are decimal strings in the public contract.
+    checks["reopenedWithoutUnsettledFindings"] = (terminal or {}).get("phase") == "reopened" and str((terminal or {}).get("unsettledFindings")) == "0"
 
     s, page = call(operator, "GET", f"/recoveries/{run_id}/findings?limit=50")
     checks["findingsRead200"] = s == 200 and isinstance((page or {}).get("findings"), list)
@@ -206,14 +207,13 @@ def main() -> int:
     # Valid in every field but the evidence (evidenceRef and evidenceDigest are required).
     disposition = {"commandId": f"cmd_disp_demo_{int(started)}", "class": "model-dispatch", "obligationId": "obl_demo_unknown",
                    "decision": "confirm_not_sent", "recoveryEpoch": str((run or {}).get("recoveryEpoch") or "1")}
-    s, d = call(operator, "POST", f"/recoveries/{run_id}/dispositions", disposition)
-    checks["dispositionWithoutEvidence400"] = s == 400
-    observed["dispositionWithoutEvidence"] = {"status": s, "code": code(d)}
-    s, _ = call(author, "POST", f"/recoveries/{run_id}/dispositions", disposition)
-    checks["authorDisposition403"] = s == 403
-    s, _ = call(other, "POST", f"/recoveries/{run_id}/dispositions",
-                {**disposition, "evidenceRef": "demo://none", "evidenceDigest": "sha256:" + "0" * 64})
-    checks["otherTenantDisposition404"] = s == 404
+    expect("dispositionWithoutEvidence400", call(operator, "POST", f"/recoveries/{run_id}/dispositions", disposition), 400)
+    # The authorization checks send a request Control's argument checks accept (an
+    # obligation without a restorable identity admits only retain_exposure; those checks
+    # read nothing of the run), so only the role and the tenant can refuse it.
+    complete = {**disposition, "decision": "retain_exposure", "evidenceRef": "demo://none", "evidenceDigest": "sha256:" + "0" * 64}
+    expect("authorDispositionOtherTenant404", call(author, "POST", f"/recoveries/{run_id}/dispositions", complete), 404)
+    expect("otherTenantDisposition404", call(other, "POST", f"/recoveries/{run_id}/dispositions", complete), 404)
 
     # Audit: Control's own record of who began the run, read-only.
     row = drills.psql("anvilkit-business", "SELECT tenant_id, actor_id, command_id, scope_key FROM recovery_runs "

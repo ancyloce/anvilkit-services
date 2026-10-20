@@ -320,9 +320,9 @@ tests:
 - name: a PostgreSQL cluster whose newest base backup is older than the bound (P3.7)
   interval: 1m
   input_series:
-  - series: cnpg_collector_last_available_backup_timestamp{cluster="anvilkit-business",pod="anvilkit-business-1"}
+  - series: barman_cloud_cloudnative_pg_io_last_available_backup_timestamp{cluster="anvilkit-business",pod="anvilkit-business-1"}
     values: '0x1700'
-  - series: cnpg_collector_last_available_backup_timestamp{cluster="anvilkit-temporal",pod="anvilkit-temporal-1"}
+  - series: barman_cloud_cloudnative_pg_io_last_available_backup_timestamp{cluster="anvilkit-temporal",pod="anvilkit-temporal-1"}
     values: '0+60x1700'
   alert_rule_test:
   - eval_time: 27h

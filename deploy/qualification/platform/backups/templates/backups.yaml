@@ -37,11 +37,23 @@ data:
     case "$1" in
       qdrant)
         KEY=$(printf '%s' "$KV" | field qdrant-api-key)
-        for c in $(curl -sSf --cacert "$CA" -H "api-key: $KEY" "$QDRANT_URL/collections" | sed 's/"name":"/\n/g' | sed -n '2,$s/".*//p'); do
-          SNAP=$(curl -sSf --cacert "$CA" -H "api-key: $KEY" -X POST "$QDRANT_URL/collections/$c/snapshots?wait=true" | field name)
-          curl -sSf --cacert "$CA" -H "api-key: $KEY" -o "/work/snap/$c--$SNAP" "$QDRANT_URL/collections/$c/snapshots/$SNAP"
-          curl -sSf --cacert "$CA" -H "api-key: $KEY" -X DELETE "$QDRANT_URL/collections/$c/snapshots/$SNAP" >/dev/null
-          echo "qdrant collection $c snapshotted"
+        # A snapshot lives on the peer that took it: every request of one goes to
+        # the same peer, the first that answers.
+        PEER=""
+        for p in $QDRANT_PEERS; do
+          if curl -sSf --cacert "$CA" -H "api-key: $KEY" "$p/collections" >/dev/null 2>&1; then PEER=$p; break; fi
+        done
+        [ -n "$PEER" ] || { echo "no Qdrant peer answers" >&2; exit 1; }
+        for c in $(curl -sSf --cacert "$CA" -H "api-key: $KEY" "$PEER/collections" | sed 's/"name":"/\n/g' | sed -n '2,$s/".*//p'); do
+          # The snapshot holds only the peer's local shards: refuse an incomplete one.
+          INFO=$(curl -sSf --cacert "$CA" -H "api-key: $KEY" "$PEER/collections/$c/cluster")
+          COUNT=$(printf '%s' "$INFO" | sed -n 's/.*"shard_count":\([0-9]*\).*/\1/p')
+          LOCAL=$(printf '%s' "$INFO" | sed -n 's/.*"local_shards":\[\([^]]*\)\].*/\1/p' | grep -o '"shard_id"' | wc -l)
+          [ -n "$COUNT" ] && [ "$LOCAL" -eq "$COUNT" ] || { echo "qdrant collection $c: $PEER holds $LOCAL of ${COUNT:-?} shards; its snapshot would be incomplete" >&2; exit 1; }
+          SNAP=$(curl -sSf --cacert "$CA" -H "api-key: $KEY" -X POST "$PEER/collections/$c/snapshots?wait=true" | field name)
+          curl -sSf --cacert "$CA" -H "api-key: $KEY" -o "/work/snap/$c--$SNAP" "$PEER/collections/$c/snapshots/$SNAP"
+          curl -sSf --cacert "$CA" -H "api-key: $KEY" -X DELETE "$PEER/collections/$c/snapshots/$SNAP" >/dev/null
+          echo "qdrant collection $c snapshotted on $PEER ($COUNT of $COUNT shards)"
         done ;;
       openbao)
         curl -sSf --cacert "$CA" -H "X-Vault-Token: $TOKEN" -o /work/snap/openbao.snap "$OPENBAO_ADDR/v1/sys/storage/raft/snapshot"

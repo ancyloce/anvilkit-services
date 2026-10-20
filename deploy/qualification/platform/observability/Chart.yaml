@@ -2,4 +2,4 @@ apiVersion: v2
 name: anvilkit-observability
 description: The AnvilKit signals on the metrics stack (P3.6) - PodMonitors of the eight services, the SLO recording rules and alerts with their runbooks, and the Grafana dashboards.
 type: application
-version: 0.1.0
+version: 0.1.1

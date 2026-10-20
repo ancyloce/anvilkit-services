@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Alert-firing drill of the qualification environment (P3.6 AC2).
 
-  .local/verification-venv/bin/python deploy/qualification/alert-drill.py --run RUN [--wait 1800]
+  .local/verification-venv/bin/python deploy/qualification/alert-drill.py --run RUN [--wait 2700]
 
 Injects every AnvilKit alert's condition and proves that each alert fires and
 reaches the receiver its severity routes to. The injection is a drill Pod in
@@ -14,7 +14,9 @@ Alertmanager holds it (GET /api/v2/alerts) and records its receivers; the
 drill Pod, its ConfigMap and PodMonitor are deleted afterwards (also on
 failure). Writes outputs/qualification/<RUN>/alerts/alert-drill.json. PASS
 only when every alert of the rules fired and reached the receiver of its
-severity. It creates and deletes resources in anvilkit-observability: run it
+severity; an alert instance already active before the injection proves
+nothing and does not count (a real condition can hold an alert the drill
+then cannot raise anew). It creates and deletes resources in anvilkit-observability: run it
 only with that environment operator's authorization. Exit 0 PASS, 1 FAIL, 2
 when the metrics stack is not deployed.
 """
@@ -26,6 +28,7 @@ import pathlib
 import subprocess
 import sys
 import time
+import urllib.parse
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 KUBECONFIG = ROOT / ".local/qualification/kubeconfig"
@@ -88,6 +91,9 @@ def manifests(counter: int) -> str:
                                         "volumes": [{"name": "www", "configMap": {"name": "anvilkit-alert-drill", "items": [{"key": "metrics", "path": "metrics"}]}}]}}}},
         {"apiVersion": "monitoring.coreos.com/v1", "kind": "PodMonitor", "metadata": {"name": "anvilkit-alert-drill", "namespace": NS, "labels": {"release": "anvilkit-metrics"}},
          "spec": {"selector": {"matchLabels": {"app.kubernetes.io/name": "anvilkit-alert-drill"}},
+                  # busybox httpd sends no Content-Type, which Prometheus 3 refuses
+                  # without a fallback protocol (every scrape failed on the first run).
+                  "fallbackScrapeProtocol": "PrometheusText0.0.4",
                   # The second endpoint has no listener: its up == 0 raises AnvilKitTargetDown
                   # (the rule's namespace label is rewritten to the applications' namespace).
                   "podMetricsEndpoints": [{"port": "metrics", "path": "/metrics", "interval": "15s"},
@@ -99,7 +105,8 @@ def manifests(counter: int) -> str:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--run", required=True)
-    ap.add_argument("--wait", type=int, default=1800, help="seconds to wait for every alert (the longest `for` is 30m)")
+    ap.add_argument("--wait", type=int, default=2700,
+                    help="seconds to wait for every alert (the longest `for` is 30m, plus the Pod's start, the first scrape and evaluation)")
     a = ap.parse_args()
     try:
         proxy("anvilkit-metrics-alertmanager", 9093, "/api/v2/status")
@@ -108,21 +115,33 @@ def main() -> int:
         return 2
     out = ROOT / "outputs/qualification" / a.run / "alerts"
     out.mkdir(parents=True, exist_ok=True)
-    route = {"critical": "anvilkit-development-critical", "warning": "anvilkit-development"}
+    # The operator names an AlertmanagerConfig's receivers <namespace>/<config>/<receiver>.
+    route = {s: f"{NS}/anvilkit/{r}" for s, r in {"critical": "anvilkit-development-critical", "warning": "anvilkit-development"}.items()}
+    up = 'up{job="%s/anvilkit-alert-drill",endpoint="metrics"} == 1' % NS
     record: dict = {"run": a.run, "startedAt": NOW, "alerts": {}}
     started = time.time()
     counter = 1
     try:
+        # Instances active before the injection prove nothing: only new ones count.
+        before = proxy("anvilkit-metrics-alertmanager", 9093, "/api/v2/alerts?active=true")
+        known = {x["fingerprint"] for x in before}
+        record["activeBefore"] = sorted({x["labels"].get("alertname") for x in before} & set(CONDITIONS))
         k("apply", "-f", "-", stdin=manifests(counter))
         pending = set(CONDITIONS)
         while pending and time.time() - started < a.wait:
             # Counters advance so every increase() window sees the injection.
             counter += 100
             k("apply", "-f", "-", stdin=manifests(counter))
+            if "injectionScrapedAfterSeconds" not in record:
+                if proxy("anvilkit-metrics-prometheus", 9090, "/api/v1/query?query=" + urllib.parse.quote(up, safe=""))["data"]["result"]:
+                    record["injectionScrapedAfterSeconds"] = round(time.time() - started)
+                elif time.time() - started > 300:
+                    record["injectionScraped"] = False  # every pending alert stays notFired
+                    break
             firing = proxy("anvilkit-metrics-alertmanager", 9093, "/api/v2/alerts?active=true")
             for alert in firing:
                 name = alert["labels"].get("alertname")
-                if name in pending:
+                if name in pending and alert["fingerprint"] not in known:
                     receivers = sorted(r["name"] for r in alert.get("receivers", []))
                     severity = alert["labels"].get("severity")
                     record["alerts"][name] = {"severity": severity, "receivers": receivers, "firedAfterSeconds": round(time.time() - started),

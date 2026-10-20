@@ -131,7 +131,9 @@ def read_backends(window: int, secrets: dict[str, str], findings: list[str]) -> 
     end = int(time.time())
     start = end - window
     exported: dict[str, list[dict]] = {"logs": [], "metrics": [], "traces": []}
-    query = urllib.parse.urlencode({"query": '{namespace=~"anvilkit-.*"}', "start": f"{start}000000000", "end": f"{end}000000000", "limit": 5000, "direction": "backward"})
+    # Loki's OTLP ingestion names the resource attribute k8s.namespace.name
+    # k8s_namespace_name; a namespace label does not exist, so it matched nothing.
+    query = urllib.parse.urlencode({"query": '{k8s_namespace_name=~"anvilkit-.*"}', "start": f"{start}000000000", "end": f"{end}000000000", "limit": 5000, "direction": "backward"})
     text, n = from_loki(proxy("anvilkit-logs", 3100, f"/loki/api/v1/query_range?{query}"))
     scan("loki log lines", text, secrets, findings)
     exported["logs"].append({"resourceLogs": [{"scopeLogs": [{"logRecords": [{}] * n}]}]})

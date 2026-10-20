@@ -77,11 +77,12 @@ spec:
         - record: anvilkit:knowledge_projection_lag_seconds
           expr: max(anvilkit_knowledge_memory_projection_lag_seconds)
         # Recovery (SLO row 6): the age of the newest successful backup per store.
-        # PostgreSQL's base backups are CloudNativePG's (named anvilkit-backup-postgres-<cluster>).
+        # PostgreSQL's base backups are the Barman Cloud plugin's (named anvilkit-backup-postgres-<cluster>):
+        # CloudNativePG's own cnpg_collector_last_available_backup_timestamp stays 0 under the plugin.
         - record: anvilkit:backup_age_seconds
           expr: >-
             max by (cronjob) (time() - kube_cronjob_status_last_successful_time{cronjob=~"anvilkit-backup-.*"})
-            or max by (cronjob) (label_replace(time() - cnpg_collector_last_available_backup_timestamp, "cronjob", "anvilkit-backup-postgres-$1", "cluster", "(.+)"))
+            or max by (cronjob) (label_replace(time() - barman_cloud_cloudnative_pg_io_last_available_backup_timestamp, "cronjob", "anvilkit-backup-postgres-$1", "cluster", "(.+)"))
     - name: anvilkit-alerts
       rules:
         - alert: AnvilKitAPIErrorRatioHigh

@@ -39,7 +39,8 @@ thresholds:
 scrape:
   interval: 30s
   # P3.7: the CloudNativePG instances' metrics (port metrics, 9187): the age of
-  # each cluster's newest base backup (cnpg_collector_last_available_backup_timestamp).
+  # each cluster's newest base backup (the Barman Cloud plugin's
+  # barman_cloud_cloudnative_pg_io_last_available_backup_timestamp).
   postgres:
     enabled: true
     namespace: anvilkit-data

@@ -469,12 +469,19 @@ def role_passwords(c: dict) -> bool:
                        "-o", "jsonpath={.items[?(@.status.phase==\"Running\")].metadata.name}").split()
         if not pods:
             return False
+        # No password is sent for a role the operator has not created yet: a failing
+        # statement is logged with its text (log_min_error_statement), password included.
+        existing = set(kubectl("-n", "anvilkit-data", "exec", pods[0], "-c", "postgres", "--", "psql", "-At", "-U", "postgres", "-d", "postgres",
+                               "-c", "SELECT rolname FROM pg_roles", check=False).split())
+        if any(role not in existing for role in roles):
+            return False  # the next round retries
         sql = "".join(f"ALTER ROLE \"{role}\" WITH LOGIN PASSWORD '{c['roles'][role]}';\n" for role in roles)
         try:
+            # Neither the statements nor, should one still fail, the failing statement's text are logged.
             kubectl("-n", "anvilkit-data", "exec", "-i", pods[0], "-c", "postgres", "--", "psql", "-v", "ON_ERROR_STOP=1", "-q", "-U", "postgres", "-d", "postgres",
-                    stdin="SET log_statement = 'none';\n" + sql)
+                    stdin="SET log_statement = 'none';\nSET log_min_error_statement = 'panic';\n" + sql)
         except RuntimeError:
-            return False  # a role the operator has not created yet: the next round retries
+            return False  # the next round retries
     return True
 
 

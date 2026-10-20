@@ -54,6 +54,7 @@ spec:
                 - {name: OPENBAO_ROLE, value: {{ $.Values.openbao.role | quote }}}
                 - {name: OPENBAO_KV, value: {{ $.Values.openbao.kvPath | quote }}}
                 - {name: QDRANT_URL, value: {{ $.Values.qdrant.url | quote }}}
+                - {name: QDRANT_PEERS, value: {{ join " " $.Values.qdrant.peers | quote }}}
               resources: {requests: {cpu: 10m, memory: 32Mi}, limits: {cpu: 500m, memory: 256Mi}}
               securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: ["ALL"]}}
               volumeMounts:
