@@ -10,7 +10,8 @@ records the restore's duration and what it proved in outputs/qualification/<RUN>
   postgres-business  CloudNativePG point-in-time recovery of anvilkit-business from its
                      Barman Cloud base backup and WAL into the sibling cluster
                      anvilkit-business-pitr: a marker committed before the restore point is
-                     present, one committed after it is absent, the domain databases exist
+                     present, one committed after it is absent, the domain databases and
+                     ContextForge's exist
   postgres-temporal  the same for anvilkit-temporal: Temporal's persistence and visibility
                      databases and the anvilkit namespace row at the target
   qdrant             a collection with replication factor 3 is snapshotted, the snapshot is
@@ -248,7 +249,8 @@ def drill_postgres(source: str, dbs: list[str]) -> dict:
 
 
 def drill_postgres_business() -> dict:
-    return drill_postgres("anvilkit-business", ["anvilkit_control", "anvilkit_knowledge", "anvilkit_mcp"])
+    # P2.5: ContextForge's own database lives in the business cluster as well.
+    return drill_postgres("anvilkit-business", ["anvilkit_control", "anvilkit_knowledge", "anvilkit_mcp", "anvilkit_contextforge"])
 
 
 def drill_postgres_temporal() -> dict:

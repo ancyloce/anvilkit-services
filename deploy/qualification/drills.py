@@ -18,7 +18,8 @@ Drills (each injects one fault into the qualification cluster while a business l
                  lost: the Kubernetes API is unavailable, running Pods keep serving)
   secret-rotation  (P23-05) rotate the database credentials of Control (environment: a
                  rolling restart under its PodDisruptionBudget), Knowledge and MCP (mounted
-                 files: a new configuration generation, the old pool drained, no restart):
+                 files: a new configuration generation, the old pool drained, no restart)
+                 and ContextForge (P2.5: the synced Secret, then a rolling restart):
                  CloudNativePG applies each role's new password from its Secret; the old
                  password must be refused afterwards and every live session must use the new one
 
@@ -34,7 +35,9 @@ drill's check failed. Nothing here measures a real failure domain: every node sh
 from __future__ import annotations
 
 import argparse
+import base64
 import datetime
+import hashlib
 import json
 import os
 import pathlib
@@ -493,9 +496,13 @@ def drill_secret_rotation(load: Load) -> dict:
     creds = json.loads((STATE / "credentials.json").read_text())
     # Control reads its database URL file once at load (a rolling restart takes the
     # rotated file); Knowledge and MCP reload the mounted file as a new generation.
-    plan = [("anvilkit_control_app", "anvilkit_control", "anvilkit-agent-control"),
+    # P2.5: ContextForge reads its URL from the Secret anvilkit-secrets syncs (an
+    # environment variable): its rolling restart follows the synced Secret.
+    plan = [("anvilkit_control_app", "anvilkit_control", ("anvilkit-apps", "anvilkit-agent-control", None)),
             ("anvilkit_knowledge_app", "anvilkit_knowledge", None),
-            ("anvilkit_mcp_app", "anvilkit_mcp", None)]
+            ("anvilkit_mcp_app", "anvilkit_mcp", None),
+            ("anvilkit_contextforge", "anvilkit_contextforge",
+             ("anvilkit-platform", "anvilkit-contextforge", ("anvilkit-contextforge-database", "url", "anvilkit/sync/platform", "contextforge-database-url")))]
     fault = now()
     rows = []
     for role, db, restart in plan:
@@ -503,10 +510,19 @@ def drill_secret_rotation(load: Load) -> dict:
         old = rotate_role(creds, role)
         applied = wait_until(lambda: login_works(role, creds["roles"][role], db) and not login_works(role, old, db), 180, 3)
         if restart:
-            # The CSI driver's rotation poll (2 minutes) refreshes the file first.
-            time.sleep(150)
-            k("-n", "anvilkit-apps", "rollout", "restart", f"deployment/{restart}")
-            k("-n", "anvilkit-apps", "rollout", "status", f"deployment/{restart}", "--timeout=300s", timeout=320)
+            namespace, deployment, synced = restart
+            if synced:
+                # The synced Secret holds the rotated value (compared by digest, never read out).
+                secret, key, path, kv_key = synced
+                sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+                import bootstrap
+                want = hashlib.sha256(bootstrap.kv_payloads(creds)[path][kv_key].encode()).hexdigest()
+                wait_until(lambda: hashlib.sha256(base64.b64decode(k("-n", namespace, "get", "secret", secret, "-o", f"jsonpath={{.data.{key}}}"))).hexdigest() == want, 300, 10)
+            else:
+                # The CSI driver's rotation poll (2 minutes) refreshes the file first.
+                time.sleep(150)
+            k("-n", namespace, "rollout", "restart", f"deployment/{deployment}")
+            k("-n", namespace, "rollout", "status", f"deployment/{deployment}", "--timeout=300s", timeout=320)
         # Every session of the role was opened after the rotation: the old pool drained.
         drained = wait_until(lambda: psql("anvilkit-business", f"SELECT count(*) FROM pg_stat_activity WHERE usename = '{role}' "
                                                                f"AND backend_start < to_timestamp({started})") == "0", 300, 5)
@@ -515,7 +531,8 @@ def drill_secret_rotation(load: Load) -> dict:
         # session at a given instant, so the drill watches for one for two minutes.
         reconnected = wait_until(lambda: psql("anvilkit-business", f"SELECT count(*) FROM pg_stat_activity WHERE usename = '{role}' "
                                                                    f"AND backend_start > to_timestamp({started})") != "0", 120, 2)
-        rows.append({"role": role, "mechanism": "OpenBao, CSI file, rolling restart" if restart else "OpenBao, CSI file, configuration generation",
+        mechanism = ("OpenBao, synced Secret, rolling restart" if restart[2] else "OpenBao, CSI file, rolling restart") if restart else "OpenBao, CSI file, configuration generation"
+        rows.append({"role": role, "mechanism": mechanism,
                      "passwordAppliedAfter": round(applied - started, 1) if applied else None,
                      "oldSessionsGoneAfter": round(drained - started, 1) if drained else None,
                      "oldPasswordRefused": not login_works(role, old, db),
