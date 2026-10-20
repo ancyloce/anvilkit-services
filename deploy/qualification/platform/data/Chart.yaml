@@ -2,4 +2,4 @@ apiVersion: v2
 name: anvilkit-data
 description: CloudNativePG clusters, roles, databases and backups of the qualification environment (P23)
 type: application
-version: 0.1.2
+version: 0.1.3

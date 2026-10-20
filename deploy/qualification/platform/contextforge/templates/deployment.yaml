@@ -34,8 +34,12 @@ spec:
             - {name: PLATFORM_ADMIN_EMAIL, value: {{ .Values.admin.email | quote }}}
             - name: PLATFORM_ADMIN_PASSWORD
               valueFrom: {secretKeyRef: {name: {{ .Values.admin.password.secret.name }}, key: {{ .Values.admin.password.secret.key }}}}
+            - name: DEFAULT_USER_PASSWORD
+              valueFrom: {secretKeyRef: {name: {{ .Values.admin.defaultUserPassword.secret.name }}, key: {{ .Values.admin.defaultUserPassword.secret.key }}}}
             - name: DATABASE_URL
               valueFrom: {secretKeyRef: {name: {{ .Values.database.secret.name }}, key: {{ .Values.database.secret.key }}}}
+            - {name: DB_POOL_SIZE, value: {{ .Values.database.pool.size | quote }}}
+            - {name: DB_MAX_OVERFLOW, value: {{ .Values.database.pool.maxOverflow | quote }}}
             - name: JWT_SECRET_KEY
               valueFrom: {secretKeyRef: {name: {{ .Values.jwt.secret.name }}, key: {{ .Values.jwt.secret.key }}}}
             - name: AUTH_ENCRYPTION_SECRET
@@ -58,9 +62,14 @@ spec:
           securityContext: {{- toYaml .Values.securityContext | nindent 12 }}
           volumeMounts:
             - {name: tls, mountPath: /etc/contextforge/tls, readOnly: true}
+            - {name: trust, mountPath: /etc/anvilkit/trust, readOnly: true}
       volumes:
         - name: tls
           secret: {secretName: {{ .Release.Name }}-tls, defaultMode: 0440}
+        - name: trust
+          configMap:
+            name: {{ .Values.database.trustConfigMap }}
+            items: [{key: ca.crt, path: ca.crt}]
       {{- with .Values.topologySpreadConstraints }}
       topologySpreadConstraints: {{- toYaml . | nindent 8 }}
       {{- end }}

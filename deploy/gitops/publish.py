@@ -129,6 +129,17 @@ def sync_policy(development: bool, automation: dict | None) -> dict:
     return {}
 
 
+# The root's sync walks every wave, so one child's transient Degraded reading (a
+# fresh Certificate before cert-manager marks it Issuing) would otherwise end the
+# whole rollout, and Argo CD does not retry a failed revision on its own. The same
+# retry as the children's (environment/templates/applications.yaml).
+RETRY = {"limit": 5, "backoff": {"duration": "10s", "factor": 2, "maxDuration": "3m"}}
+
+
+def root_sync_policy(development: bool, automation: dict | None) -> dict:
+    return {**sync_policy(development, automation), "syncOptions": ["RespectIgnoreDifferences=true"], "retry": RETRY}
+
+
 def self_test() -> int:
     """P3.2 AC3: the release gate, the artifact rule, the reuse rule and the sync policy."""
     signed = {"status": "SIGNED", "findings": []}
@@ -149,6 +160,9 @@ def self_test() -> int:
         ("production syncs on command without a rollback window", sync_policy(False, None) == {}),
         ("production with a declared rollback window automates", "automated" in sync_policy(False, {"rollbackWindow": "30m"})),
         ("development automates", "automated" in sync_policy(True, None)),
+        ("the root retries a failed sync like its children, automated or not",
+         root_sync_policy(True, None)["retry"] == RETRY and root_sync_policy(False, None)["retry"] == RETRY
+         and "automated" not in root_sync_policy(False, None)),
     ]
     failures = [n for n, ok in cases if not ok]
     for n, ok in cases:
@@ -377,7 +391,7 @@ def main() -> int:
                  # Argo CD adds its own pre-delete finalizers to a child whose chart has
                  # PreDelete hooks (Kyverno): the children's finalizers are the controller's.
                  "ignoreDifferences": [{"group": "argoproj.io", "kind": "Application", "jsonPointers": ["/metadata/finalizers"]}],
-                 "syncPolicy": {**sync_policy(development, combination.get("automation")), "syncOptions": ["RespectIgnoreDifferences=true"]}},
+                 "syncPolicy": root_sync_policy(development, combination.get("automation"))},
     }
     (out / "root-application.yaml").write_text(yaml.safe_dump(root, sort_keys=False))
     record = {"schemaVersion": 1, "environment": a.environment, "run": a.run, "registry": registry, "development": development,

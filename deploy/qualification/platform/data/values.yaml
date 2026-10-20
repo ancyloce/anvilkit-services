@@ -33,6 +33,13 @@ businessRoles:
   - anvilkit_mcp_app
   - anvilkit_mcp_migrator
   - anvilkit_mcp_relay
+  # P2.5: ContextForge's own role; it owns its database and migrates its own schema.
+  - anvilkit_contextforge
+# Per-role connection limits (the role's CONNECTION LIMIT): the lock's vendor
+# reserve for ContextForge (deploy/gitops/lock.yaml connectionBudgets), which
+# its chart's pool settings stay within.
+connectionLimits:
+  anvilkit_contextforge: 20
 # P0.6: each cluster's database owner takes its password from this basic-auth
 # Secret (username, password), which anvilkit-secrets syncs from OpenBao: the
 # operator re-applies an owner's password from bootstrap.initdb.secret whenever
@@ -47,6 +54,7 @@ ownerSecrets:
 businessDatabases:
   - {name: anvilkit_knowledge, owner: anvilkit_knowledge_migrator}
   - {name: anvilkit_mcp, owner: anvilkit_mcp_migrator}
+  - {name: anvilkit_contextforge, owner: anvilkit_contextforge}
 
 # P0.6: the server certificates the clusters present (cert-manager, issued by
 # the qualification CA every workload's identity bundle carries; the clients

@@ -27,8 +27,21 @@ development:
 # encryption: its signing and at-rest encryption secrets. admin: the
 # platform administrator whose token MCP presents (minted by the bootstrap
 # from the JWT secret into OpenBao, key contextforge-token of MCP's path).
+# ContextForge refuses to start without a strong default user password as
+# well (at least 12 characters), so the admin Secret carries both.
 database:
   secret: {name: "", key: url}
+  # The pool of every gunicorn worker (DB_POOL_SIZE, DB_MAX_OVERFLOW; the
+  # image's defaults are 200 and 10). replicas x workers x (size + overflow)
+  # must fit connectionBudget, the lock's "vendor" reserve of the business
+  # cluster (deploy/gitops/lock.yaml connectionBudgets), which the data chart
+  # also sets as the role's connection limit.
+  pool: {size: 4, maxOverflow: 1}
+  connectionBudget: 20
+  # The CA bundle the DSN's sslrootcert names (sslmode=verify-full against
+  # the business cluster's server certificate): a ConfigMap with key ca.crt,
+  # mounted at /etc/anvilkit/trust like the services' bundle.
+  trustConfigMap: ""
 jwt:
   secret: {name: "", key: jwt-secret}
 encryption:
@@ -37,6 +50,8 @@ admin:
   email: platform-admin@anvilkit.invalid
   password:
     secret: {name: "", key: password}
+  defaultUserPassword:
+    secret: {name: "", key: default-user-password}
 
 # The serving certificate: a cert-manager Certificate from the platform
 # issuer; MCP verifies it against the trust bundle and serverName.
@@ -59,8 +74,11 @@ resources:
 podDisruptionBudget:
   minAvailable: 1
 
+# The image runs as 10001:10001; the serving certificate's Secret is mounted
+# 0440, so the Pod's group must own it (fsGroup) for the key to be readable.
 podSecurityContext:
   runAsNonRoot: true
+  fsGroup: 10001
   seccompProfile: {type: RuntimeDefault}
 securityContext:
   allowPrivilegeEscalation: false

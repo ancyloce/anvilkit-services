@@ -200,7 +200,8 @@ def bootstrap_payloads() -> list[str]:
             "objects": {u: {"id": "i", "secret": "s"} for u in bootstrap.OBJECT_USERS},
             "dr": {u: {"id": "i", "secret": "s"} for u in bootstrap.DR_USERS}, "queue": "q", "qdrant": "k", "grafana": "g",
             "principals": {"probe": "a", "tenantA": "b", "tenantB": "c", "modelProxyWorkflow": "d"},
-            "nats": {u: {"seed": "SU", "public": "U"} for u in bootstrap.NATS_USERS}}
+            "nats": {u: {"seed": "SU", "public": "U"} for u in bootstrap.NATS_USERS},
+            "contextforge": {"jwt": "j", "encryption": "e", "admin": "a", "defaultUser": "d", "mcpToken": {"token": "t", "expires": 0}}}
     findings = []
     paths = {path for _, _, path in bootstrap.OPENBAO_ROLES}
     for path, data in bootstrap.kv_payloads(fake).items():
@@ -211,7 +212,8 @@ def bootstrap_payloads() -> list[str]:
                 hit = m.group(0)
                 if hit != "sslmode=verify-full":
                     findings.append(f"OpenBao kv/{path} {key}: {hit}")
-            if value.startswith("postgres://") and f"sslrootcert={bootstrap.TRUST}" not in value:
+            # Every PostgreSQL URL form (postgres://, postgresql://, SQLAlchemy's postgresql+psycopg://).
+            if re.match(r"postgres(ql)?(\+\w+)?://", value) and f"sslrootcert={bootstrap.TRUST}" not in value:
                 findings.append(f"OpenBao kv/{path} {key}: a DSN without the trust bundle")
     for path in paths - set(bootstrap.kv_payloads(fake)):
         findings.append(f"OpenBao role path kv/{path}: nothing written there")

@@ -54,6 +54,9 @@ spec:
       - name: {{ . }}
         ensure: present
         login: true
+        {{- with index ($.Values.connectionLimits | default dict) . }}
+        connectionLimit: {{ . }}
+        {{- end }}
       {{- end }}
 ---
 apiVersion: postgresql.cnpg.io/v1

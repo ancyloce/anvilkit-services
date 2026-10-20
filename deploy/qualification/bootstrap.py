@@ -7,13 +7,15 @@ After deploy/qualification/cluster.sh up, tools/release-artifacts.py --run RUN a
 deploy/gitops/publish.py --environment qualification --run RUN:
   1. credentials: .local/qualification/credentials.json (0600), generated once; every
      database role, object-store user, queue password, NATS NKey and DEVELOPMENT_ONLY
-     bearer principal of the environment. Never printed, never in Git or argv: they
-     reach OpenBao and the database through kubectl's standard input.
+     bearer principal of the environment, ContextForge's secrets and MCP's API token
+     for it (P2.5). Never printed, never in Git or argv: they reach OpenBao and the
+     database through kubectl's standard input.
   2. the components node-pool label on the workers and the namespaces. P0.6: no
      Kubernetes Secret with credential material: the earlier runs' bootstrap Secrets
      are deleted, the workloads read their credentials from OpenBao through the CSI
      driver (the service charts' SecretProviderClasses, anvilkit-secrets for the
-     third-party charts that read only Secrets).
+     third-party charts that read only Secrets). MCP's catalog role bindings
+     (anvilkit-mcp-roles, public).
   3. the DR store outside the cluster: buckets for base backups/WAL, Control's
      obligation inventory, Knowledge's memory removal inventory (its user lists,
      reads and creates, never deletes) and the restore drills' snapshots, one user
@@ -62,6 +64,14 @@ KUBECTL = str(ROOT / ".local/bin/kubectl")
 HELM = str(ROOT / ".local/bin/helm")
 MC = "minio/mc@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727"
 NATS_BOX = "natsio/nats-box:0.19.0@sha256:00f10dd4156f28ece84bb3a52cf356ef220ebaa0494310caa90dec184d9e2b89"
+# P2.5: the reviewed ContextForge image and administrator, from its chart (one source
+# with the lock row contextforge); its own token tool mints MCP's API token. The token
+# lives 30 days; the first run within 7 days of its expiry mints the next one.
+_CF = yaml.safe_load((ROOT / "deploy/qualification/platform/contextforge/values.yaml").read_text())
+CONTEXTFORGE_IMAGE = f"{_CF['image']['repository']}:{_CF['image']['tag']}@{_CF['image']['digest']}"
+CONTEXTFORGE_ADMIN = _CF["admin"]["email"]
+CONTEXTFORGE_TOKEN_MINUTES = 30 * 24 * 60
+CONTEXTFORGE_TOKEN_RENEW = 7 * 24 * 3600
 REGISTRY = "anvilkit-dev-registry:5000"
 ARGOCD_CHART = ("https://argoproj.github.io/argo-helm", "argo-cd", "10.9.6")  # Argo CD 3.5.3
 BUSINESS = "anvilkit-business-rw.anvilkit-data.svc.cluster.local:5432"
@@ -114,7 +124,7 @@ OPENBAO_EXTRA = {"anvilkit-backups": 'path "sys/storage/raft/snapshot" { capabil
 NAMESPACES = ["anvilkit-apps", "anvilkit-components", "anvilkit-parsing", "anvilkit-data", "anvilkit-platform", "anvilkit-observability"]
 ROLES = ["anvilkit_control_app", "anvilkit_control_migrator", "anvilkit_knowledge_app", "anvilkit_knowledge_migrator",
          "anvilkit_knowledge_relay", "anvilkit_knowledge_forwarder", "anvilkit_knowledge_cleanup", "anvilkit_knowledge_store_migrator", "anvilkit_knowledge_store",
-         "anvilkit_mcp_app", "anvilkit_mcp_migrator", "anvilkit_mcp_relay", "temporal"]
+         "anvilkit_mcp_app", "anvilkit_mcp_migrator", "anvilkit_mcp_relay", "anvilkit_contextforge", "temporal"]
 # Each CloudNativePG cluster's database owner (bootstrap.initdb.owner). The operator
 # re-applies an owner's password from bootstrap.initdb.secret whenever its instance
 # manager starts and whenever that Secret changes, so the owners' passwords reach the
@@ -213,6 +223,41 @@ def nkey() -> dict[str, str]:
     return {"seed": seed, "public": public}
 
 
+def strong_password() -> str:
+    """A password ContextForge's own policy accepts (12 characters or more, three of
+    upper case, lower case, digits and special characters)."""
+    return f"Ak-{token(16)}-Pw!"
+
+
+def contextforge_secrets() -> dict[str, str]:
+    """P2.5: ContextForge's signing and at-rest encryption secrets, its platform
+    administrator's password and the default user password it requires to start."""
+    return {"jwt": token(32), "encryption": token(32), "admin": strong_password(), "defaultUser": strong_password()}
+
+
+def contextforge_token(cf: dict) -> dict:
+    """P2.5: MCP's API token for ContextForge, the platform administrator's token signed
+    with the JWT secret by the vendor's own tool (mcpgateway.utils.create_jwt_token, as
+    the catalog integration test mints it) in the pinned image without a network; the
+    secrets reach the container as environment variables only, the token leaves it on
+    its standard output."""
+    import base64
+    env = {"JWT_SECRET_KEY": cf["jwt"], "AUTH_ENCRYPTION_SECRET": cf["encryption"],
+           "PLATFORM_ADMIN_PASSWORD": cf["admin"], "DEFAULT_USER_PASSWORD": cf["defaultUser"]}
+    cmd = ["docker", "run", "--rm", "--network", "none"]
+    for k in env:
+        cmd += ["-e", k]
+    p = subprocess.run(cmd + ["--entrypoint", "python", CONTEXTFORGE_IMAGE, "-m", "mcpgateway.utils.create_jwt_token",
+                              "-u", CONTEXTFORGE_ADMIN, "--admin", "--exp", str(CONTEXTFORGE_TOKEN_MINUTES)],
+                       capture_output=True, text=True, env={**os.environ, **env})
+    lines = p.stdout.strip().splitlines()
+    parts = lines[-1].split(".") if p.returncode == 0 and lines else []
+    if len(parts) != 3:
+        raise RuntimeError(f"ContextForge token: the token tool failed (exit {p.returncode})")
+    claims = json.loads(base64.urlsafe_b64decode(parts[1] + "=" * (-len(parts[1]) % 4)))
+    return {"token": lines[-1], "expires": int(claims["exp"])}
+
+
 def credentials() -> dict:
     path = STATE / "credentials.json"
     if path.exists():
@@ -240,6 +285,12 @@ def credentials() -> dict:
             if r not in c["roles"]:
                 c["roles"][r] = token()
                 added = True
+        if "contextforge" not in c:  # P2.5: ContextForge's secrets, likewise
+            c["contextforge"] = contextforge_secrets()
+            added = True
+        if c["contextforge"].get("mcpToken", {}).get("expires", 0) - time.time() < CONTEXTFORGE_TOKEN_RENEW:
+            c["contextforge"]["mcpToken"] = contextforge_token(c["contextforge"])
+            added = True
         if added:
             path.write_text(json.dumps(c, indent=2))
         return c
@@ -251,7 +302,9 @@ def credentials() -> dict:
          "qdrant": token(),
          "grafana": token(),
          "principals": {"probe": token(32), "tenantA": token(32), "tenantB": token(32), "modelProxyWorkflow": token(32)},
-         "nats": {user: nkey() for user in NATS_USERS}}
+         "nats": {user: nkey() for user in NATS_USERS},
+         "contextforge": contextforge_secrets()}
+    c["contextforge"]["mcpToken"] = contextforge_token(c["contextforge"])
     old = os.umask(0o077)
     try:
         path.write_text(json.dumps(c, indent=2))
@@ -270,7 +323,7 @@ def dsn(role: str, db: str, password: str) -> str:
 def kv_payloads(c: dict) -> dict[str, dict[str, str]]:
     """Every workload's credentials by KV v2 path (kv/<path>): the keys the charts'
     SecretProviderClasses name (one file each) and the Secrets anvilkit-secrets syncs."""
-    r, o, dr, n, p = c["roles"], c["objects"], c["dr"], c["nats"], c["principals"]
+    r, o, dr, n, p, cf = c["roles"], c["objects"], c["dr"], c["nats"], c["principals"], c["contextforge"]
     queue = f"rediss://default:{c['queue']}@{QUEUE}"
     kv = lambda u, prefix: f"{prefix}_ACCESS_KEY_ID={u['id']}\n{prefix}_SECRET_ACCESS_KEY={u['secret']}\n"
     principals = {p["probe"]: {"tenantId": "tenant_probe", "projectId": "project_probe", "actorId": "probe", "roles": ["author"]},
@@ -302,7 +355,9 @@ def kv_payloads(c: dict) -> dict[str, dict[str, str]]:
             "database-url": dsn("anvilkit_mcp_app", "anvilkit_mcp", r["anvilkit_mcp_app"]),
             "nats-creds": n["mcp-forwarder"]["seed"],
             "relay-database-url": dsn("anvilkit_mcp_relay", "anvilkit_mcp", r["anvilkit_mcp_relay"]),
-            "relay-queue-url": queue, "relay-nats-creds": n["mcp-relay"]["seed"]},
+            "relay-queue-url": queue, "relay-nats-creds": n["mcp-relay"]["seed"],
+            # P2.5: the platform administrator's API token MCP presents to ContextForge.
+            "contextforge-token": cf["mcpToken"]["token"]},
         "anvilkit/apps/anvilkit-agent-model-proxy": {
             "store-access-key-id": o["MODEL_PROXY"]["id"], "store-secret-access-key": o["MODEL_PROXY"]["secret"]},
         "anvilkit/apps/anvilkit-agent-background-worker": {"queue-url": queue},
@@ -319,7 +374,14 @@ def kv_payloads(c: dict) -> dict[str, dict[str, str]]:
             "valkey-password": c["queue"], "qdrant-api-key": c["qdrant"],
             "objects-root-user": c["objectsRoot"]["user"], "objects-root-password": c["objectsRoot"]["password"],
             **{f"objects-{u.lower().replace('_', '-')}-{k}": v for u, x in o.items() for k, v in (("access-key-id", x["id"]), ("secret-access-key", x["secret"]))}},
-        "anvilkit/sync/platform": {"temporal-db-password": r["temporal"], "probe-token": p["probe"]},
+        "anvilkit/sync/platform": {
+            "temporal-db-password": r["temporal"], "probe-token": p["probe"],
+            # P2.5: ContextForge's Secrets (its chart reads existing Secrets). The database URL is
+            # SQLAlchemy's psycopg 3 form (the image ships no psycopg2) on its own role and database.
+            "contextforge-database-url": (f"postgresql+psycopg://anvilkit_contextforge:{r['anvilkit_contextforge']}@{BUSINESS}"
+                                          f"/anvilkit_contextforge?sslmode=verify-full&sslrootcert={TRUST}"),
+            "contextforge-jwt-secret": cf["jwt"], "contextforge-encryption-secret": cf["encryption"],
+            "contextforge-admin-password": cf["admin"], "contextforge-default-user-password": cf["defaultUser"]},
         # P3.7: the scheduled backups' run-time credentials (read by the Job itself).
         "anvilkit/platform/backups": {"dr-access-key-id": dr["snapshots"]["id"], "dr-secret-access-key": dr["snapshots"]["secret"],
                                       "objects-access-key-id": o["BACKUP"]["id"], "objects-secret-access-key": o["BACKUP"]["secret"],
@@ -330,6 +392,22 @@ def kv_payloads(c: dict) -> dict[str, dict[str, str]]:
             "api-principals": json.dumps(principals),
             "model-proxy-principals": json.dumps({p["modelProxyWorkflow"]: {"principalId": "anvilkit-agent-workflow", "kind": "workflow"}})},
     }
+
+
+def mcp_roles() -> None:
+    """P2.5: MCP's catalog role bindings (anvilkit-mcp-roles, key roles.json: a JSON array
+    of {tenantId, actorId, role}). DEVELOPMENT_ONLY until the IdP's groups are the source
+    (ENV-02): the operator's reviewed bindings in .local/qualification/mcp-roles.json when
+    present, otherwise none (nobody may discover, review, disable, grant or reconcile).
+    Public material: a ConfigMap."""
+    src = STATE / "mcp-roles.json"
+    bindings = json.loads(src.read_text()) if src.exists() else []
+    if not isinstance(bindings, list) or any(not isinstance(b, dict) or set(b) != {"tenantId", "actorId", "role"} for b in bindings):
+        raise SystemExit(f"{src.relative_to(ROOT)}: a JSON array of {{tenantId, actorId, role}} is required")
+    kubectl("apply", "-f", "-", stdin=json.dumps({"apiVersion": "v1", "kind": "ConfigMap",
+                                                  "metadata": {"name": "anvilkit-mcp-roles", "namespace": "anvilkit-apps",
+                                                               "labels": {"app.kubernetes.io/part-of": "anvilkit"}},
+                                                  "data": {"roles.json": json.dumps(bindings)}}))
 
 
 def retire_bootstrap_secrets() -> None:
@@ -670,6 +748,7 @@ def main() -> int:
     for ns in NAMESPACES:
         kubectl("apply", "-f", "-", stdin=json.dumps({"apiVersion": "v1", "kind": "Namespace",
                                                       "metadata": {"name": ns, "labels": {"app.kubernetes.io/part-of": "anvilkit"}}}))
+    mcp_roles()
     retire_bootstrap_secrets()
     nats_auth(c)
     print("earlier bootstrap Secrets retired; NATS users published (public keys)", flush=True)

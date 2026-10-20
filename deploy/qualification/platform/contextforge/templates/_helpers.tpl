@@ -17,7 +17,7 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- if not .Values.image.digest }}
 {{- fail "image.digest is required: the reviewed ContextForge image is pinned by digest" }}
 {{- end }}
-{{- range $name, $s := dict "database" .Values.database.secret "jwt" .Values.jwt.secret "encryption" .Values.encryption.secret "admin.password" .Values.admin.password.secret }}
+{{- range $name, $s := dict "database" .Values.database.secret "jwt" .Values.jwt.secret "encryption" .Values.encryption.secret "admin.password" .Values.admin.password.secret "admin.defaultUserPassword" .Values.admin.defaultUserPassword.secret }}
 {{- if not $s.name }}{{ fail (printf "%s.secret.name is required: an existing Secret (nothing is created by this chart)" $name) }}{{ end }}
 {{- end }}
 {{- if not .Values.tls.issuerRef.name }}
@@ -25,5 +25,12 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 {{- if lt (int .Values.replicaCount) 2 }}
 {{- fail "replicaCount must be at least 2 (lock.yaml contextforge: two replicas)" }}
+{{- end }}
+{{- if not .Values.database.trustConfigMap }}
+{{- fail "database.trustConfigMap is required: the CA bundle the DSN's sslrootcert verifies the database against" }}
+{{- end }}
+{{- $connections := mul (int .Values.replicaCount) (int .Values.workers) (add (int .Values.database.pool.size) (int .Values.database.pool.maxOverflow)) }}
+{{- if gt (int $connections) (int .Values.database.connectionBudget) }}
+{{- fail (printf "replicaCount x workers x (pool.size + pool.maxOverflow) = %d exceeds database.connectionBudget %d (lock.yaml vendor reserve)" (int $connections) (int .Values.database.connectionBudget)) }}
 {{- end }}
 {{- end -}}
