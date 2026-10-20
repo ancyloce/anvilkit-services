@@ -61,7 +61,7 @@
     "initContainers": [
       {
         "name": "stage-in",
-        "image": "localhost:5001/anvilkit-parser@sha256:bacdc6abe47d68906cd8469035da4f5d7fa9b2df8849610643bf902151028a19",
+        "image": "localhost:5001/anvilkit-parser@sha256:3d94a17975174a317e502b66bb044f90f4eb80b2f26f46c52475b15ed33d8aba",
         "command": [
           "/usr/local/bin/anvilkit-stage",
           "in"
@@ -69,11 +69,11 @@
         "env": [
           {
             "name": "ANVILKIT_PARSE_ENVELOPE",
-            "value": "{\"schemaVersion\":1,\"launchId\":\"parse-0123456789abcdef0123456789abcdef\",\"launchKey\":\"parse-0123456789abcdef0123456789abcdef\",\"taskId\":\"task_0123456789abcdef\",\"generation\":\"1\",\"attempt\":\"1\",\"profileId\":\"parser-docling-dev-v1\",\"profileRevision\":\"2\",\"jobKind\":\"parser\",\"deadline\":\"2026-10-08T12:00:00Z\",\"input\":{\"digest\":\"sha256:0000000000000000000000000000000000000000000000000000000000000000\",\"sizeBytes\":\"6\",\"mediaType\":\"text/markdown\"}}"
+            "value": "{\"schemaVersion\":1,\"launchId\":\"parse-0123456789abcdef0123456789abcdef\",\"launchKey\":\"parse-0123456789abcdef0123456789abcdef\",\"taskId\":\"task_0123456789abcdef\",\"generation\":\"1\",\"attempt\":\"1\",\"profileId\":\"parser-docling-dev-v1\",\"profileRevision\":\"3\",\"jobKind\":\"parser\",\"deadline\":\"2026-10-08T12:00:00Z\",\"input\":{\"digest\":\"sha256:0000000000000000000000000000000000000000000000000000000000000000\",\"sizeBytes\":\"6\",\"mediaType\":\"text/markdown\"}}"
           },
           {
             "name": "ANVILKIT_PARSER_LIMITS",
-            "value": "{\"parserName\":\"docling\",\"parserVersion\":\"2.130.0\",\"mediaTypes\":[\"application/pdf\",\"text/plain\",\"text/markdown\",\"text/html\",\"application/vnd.openxmlformats-officedocument.wordprocessingml.document\"],\"maxInputBytes\":33554432,\"maxPages\":200,\"maxDecompressedBytes\":134217728,\"maxDecompressionRatio\":100,\"maxArchiveEntries\":2000,\"maxOutputBytes\":33554432,\"maxChunks\":5000,\"chunker\":{\"chunkerId\":\"docling-hierarchical\",\"revision\":\"1\",\"maxChunkChars\":2000}}"
+            "value": "{\"parserName\":\"docling\",\"parserVersion\":\"2.132.0\",\"mediaTypes\":[\"application/pdf\",\"text/plain\",\"text/markdown\",\"text/html\",\"application/vnd.openxmlformats-officedocument.wordprocessingml.document\"],\"maxInputBytes\":33554432,\"maxPages\":200,\"maxDecompressedBytes\":134217728,\"maxDecompressionRatio\":100,\"maxArchiveEntries\":2000,\"maxOutputBytes\":33554432,\"maxChunks\":5000,\"chunker\":{\"chunkerId\":\"docling-hierarchical\",\"revision\":\"1\",\"maxChunkChars\":2000}}"
           }
         ],
         "securityContext": {
@@ -116,18 +116,18 @@
       },
       {
         "name": "parse",
-        "image": "localhost:5001/anvilkit-parser@sha256:bacdc6abe47d68906cd8469035da4f5d7fa9b2df8849610643bf902151028a19",
+        "image": "localhost:5001/anvilkit-parser@sha256:3d94a17975174a317e502b66bb044f90f4eb80b2f26f46c52475b15ed33d8aba",
         "command": [
           "/usr/local/bin/anvilkit-parse"
         ],
         "env": [
           {
             "name": "ANVILKIT_PARSE_ENVELOPE",
-            "value": "{\"schemaVersion\":1,\"launchId\":\"parse-0123456789abcdef0123456789abcdef\",\"launchKey\":\"parse-0123456789abcdef0123456789abcdef\",\"taskId\":\"task_0123456789abcdef\",\"generation\":\"1\",\"attempt\":\"1\",\"profileId\":\"parser-docling-dev-v1\",\"profileRevision\":\"2\",\"jobKind\":\"parser\",\"deadline\":\"2026-10-08T12:00:00Z\",\"input\":{\"digest\":\"sha256:0000000000000000000000000000000000000000000000000000000000000000\",\"sizeBytes\":\"6\",\"mediaType\":\"text/markdown\"}}"
+            "value": "{\"schemaVersion\":1,\"launchId\":\"parse-0123456789abcdef0123456789abcdef\",\"launchKey\":\"parse-0123456789abcdef0123456789abcdef\",\"taskId\":\"task_0123456789abcdef\",\"generation\":\"1\",\"attempt\":\"1\",\"profileId\":\"parser-docling-dev-v1\",\"profileRevision\":\"3\",\"jobKind\":\"parser\",\"deadline\":\"2026-10-08T12:00:00Z\",\"input\":{\"digest\":\"sha256:0000000000000000000000000000000000000000000000000000000000000000\",\"sizeBytes\":\"6\",\"mediaType\":\"text/markdown\"}}"
           },
           {
             "name": "ANVILKIT_PARSER_LIMITS",
-            "value": "{\"parserName\":\"docling\",\"parserVersion\":\"2.130.0\",\"mediaTypes\":[\"application/pdf\",\"text/plain\",\"text/markdown\",\"text/html\",\"application/vnd.openxmlformats-officedocument.wordprocessingml.document\"],\"maxInputBytes\":33554432,\"maxPages\":200,\"maxDecompressedBytes\":134217728,\"maxDecompressionRatio\":100,\"maxArchiveEntries\":2000,\"maxOutputBytes\":33554432,\"maxChunks\":5000,\"chunker\":{\"chunkerId\":\"docling-hierarchical\",\"revision\":\"1\",\"maxChunkChars\":2000}}"
+            "value": "{\"parserName\":\"docling\",\"parserVersion\":\"2.132.0\",\"mediaTypes\":[\"application/pdf\",\"text/plain\",\"text/markdown\",\"text/html\",\"application/vnd.openxmlformats-officedocument.wordprocessingml.document\"],\"maxInputBytes\":33554432,\"maxPages\":200,\"maxDecompressedBytes\":134217728,\"maxDecompressionRatio\":100,\"maxArchiveEntries\":2000,\"maxOutputBytes\":33554432,\"maxChunks\":5000,\"chunker\":{\"chunkerId\":\"docling-hierarchical\",\"revision\":\"1\",\"maxChunkChars\":2000}}"
           }
         ],
         "securityContext": {
@@ -176,7 +176,7 @@
     "containers": [
       {
         "name": "stage-out",
-        "image": "localhost:5001/anvilkit-parser@sha256:bacdc6abe47d68906cd8469035da4f5d7fa9b2df8849610643bf902151028a19",
+        "image": "localhost:5001/anvilkit-parser@sha256:3d94a17975174a317e502b66bb044f90f4eb80b2f26f46c52475b15ed33d8aba",
         "command": [
           "/usr/local/bin/anvilkit-stage",
           "out"
@@ -184,11 +184,11 @@
         "env": [
           {
             "name": "ANVILKIT_PARSE_ENVELOPE",
-            "value": "{\"schemaVersion\":1,\"launchId\":\"parse-0123456789abcdef0123456789abcdef\",\"launchKey\":\"parse-0123456789abcdef0123456789abcdef\",\"taskId\":\"task_0123456789abcdef\",\"generation\":\"1\",\"attempt\":\"1\",\"profileId\":\"parser-docling-dev-v1\",\"profileRevision\":\"2\",\"jobKind\":\"parser\",\"deadline\":\"2026-10-08T12:00:00Z\",\"input\":{\"digest\":\"sha256:0000000000000000000000000000000000000000000000000000000000000000\",\"sizeBytes\":\"6\",\"mediaType\":\"text/markdown\"}}"
+            "value": "{\"schemaVersion\":1,\"launchId\":\"parse-0123456789abcdef0123456789abcdef\",\"launchKey\":\"parse-0123456789abcdef0123456789abcdef\",\"taskId\":\"task_0123456789abcdef\",\"generation\":\"1\",\"attempt\":\"1\",\"profileId\":\"parser-docling-dev-v1\",\"profileRevision\":\"3\",\"jobKind\":\"parser\",\"deadline\":\"2026-10-08T12:00:00Z\",\"input\":{\"digest\":\"sha256:0000000000000000000000000000000000000000000000000000000000000000\",\"sizeBytes\":\"6\",\"mediaType\":\"text/markdown\"}}"
           },
           {
             "name": "ANVILKIT_PARSER_LIMITS",
-            "value": "{\"parserName\":\"docling\",\"parserVersion\":\"2.130.0\",\"mediaTypes\":[\"application/pdf\",\"text/plain\",\"text/markdown\",\"text/html\",\"application/vnd.openxmlformats-officedocument.wordprocessingml.document\"],\"maxInputBytes\":33554432,\"maxPages\":200,\"maxDecompressedBytes\":134217728,\"maxDecompressionRatio\":100,\"maxArchiveEntries\":2000,\"maxOutputBytes\":33554432,\"maxChunks\":5000,\"chunker\":{\"chunkerId\":\"docling-hierarchical\",\"revision\":\"1\",\"maxChunkChars\":2000}}"
+            "value": "{\"parserName\":\"docling\",\"parserVersion\":\"2.132.0\",\"mediaTypes\":[\"application/pdf\",\"text/plain\",\"text/markdown\",\"text/html\",\"application/vnd.openxmlformats-officedocument.wordprocessingml.document\"],\"maxInputBytes\":33554432,\"maxPages\":200,\"maxDecompressedBytes\":134217728,\"maxDecompressionRatio\":100,\"maxArchiveEntries\":2000,\"maxOutputBytes\":33554432,\"maxChunks\":5000,\"chunker\":{\"chunkerId\":\"docling-hierarchical\",\"revision\":\"1\",\"maxChunkChars\":2000}}"
           }
         ],
         "securityContext": {
