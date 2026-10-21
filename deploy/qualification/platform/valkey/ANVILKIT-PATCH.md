@@ -33,3 +33,15 @@ check reached the servers' TLS port as plain RESP (the servers logged `packet le
 servers read DOWN and the master endpoint refused its clients. With `tls.enabled` the rule is
 `tcp-check connect default`, which takes the server line's `check-ssl`, `verify required ca-file …`
 and `check-sni`. The chart version carries the suffix `-anvilkit.4`.
+
+Change 5, in `templates/statefulset.yaml`: the init container started the server configuration
+with `touch` and only appended to it, but `/tmp/valkey` is an emptyDir, which a node restart keeps
+along with the Pod. Every restart therefore appended to the previous file, including the `# Generated
+by CONFIG REWRITE` section where Sentinel had written `replicaof <another server>`. A server the
+script makes a replica appends its own `replicaof`, which wins as the last one. The server it makes
+master appends none, so it started as a replica of a server that was itself a replica. After every
+host reboot of the qualification environment (2026-10-20 and 2026-10-21, three times), no server was
+master and every Sentinel failover aborted (`-failover-abort-no-good-slave`), until an operator ran
+`REPLICAOF NO ONE`. The script now empties the file first (`: >`) and writes the whole configuration
+from the Sentinels' current view, as it already did on a fresh Pod. The chart version carries the
+suffix `-anvilkit.5`.

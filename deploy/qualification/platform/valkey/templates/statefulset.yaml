@@ -54,8 +54,10 @@ spec:
               POD_ORDINAL=$(hostname | sed 's/.*-//')
               MY_HOSTNAME=$(hostname)
 
-              # Create config file
-              touch /tmp/valkey/valkey.conf
+              # Create config file, empty: /tmp/valkey is an emptyDir that outlives a node
+              # restart, and a replicaof that Sentinel's CONFIG REWRITE left in it would
+              # otherwise survive below what this script appends (ANVILKIT-PATCH.md, change 5)
+              : > /tmp/valkey/valkey.conf
 
               echo "Pod ordinal: $POD_ORDINAL, hostname: $MY_HOSTNAME"
 
