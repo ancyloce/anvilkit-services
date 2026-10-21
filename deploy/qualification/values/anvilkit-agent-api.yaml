@@ -33,7 +33,9 @@ topologySpreadConstraints:
       matchLabels:
         app.kubernetes.io/name: anvilkit-agent-api
 control:
-  address: anvilkit-agent-control.anvilkit-apps.svc.cluster.local:9101
+  # D-8: the headless Service names every Control replica; the API balances
+  # its calls and streams over them (round_robin).
+  address: anvilkit-agent-control-headless.anvilkit-apps.svc.cluster.local:9101
 auth:
   mode: fixture
   principalsSecret:

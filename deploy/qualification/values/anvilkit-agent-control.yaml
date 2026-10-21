@@ -90,6 +90,14 @@ telemetry:
 # P0.1: the workload identity issued by the qualification PKI (anvilkit-pki).
 identity:
   trustDomain: anvilkit.qualification
+  # D-8: connections age out after 5 minutes, so the API's round_robin client
+  # re-resolves the headless Service and spreads new calls over every replica
+  # (a scale-out takes effect within minutes); an aged connection keeps its
+  # open event streams for 30 more minutes, and a stream cut then ends with an
+  # `end` frame the client resumes from (API-04). 35 minutes stay under the
+  # chart's 1h bound on a connection that outlives a trust change.
+  maxConnectionAge: 5m
+  maxConnectionAgeGrace: 30m
   certificate:
     issuerRef:
       name: anvilkit-qualification-ca
