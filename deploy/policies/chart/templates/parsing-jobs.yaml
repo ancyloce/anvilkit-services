@@ -46,7 +46,7 @@ spec:
   variables:
     # Qualified parser image digests: contracts/jobs/profiles.json.
     - name: parserDigests
-      expression: "['sha256:3d94a17975174a317e502b66bb044f90f4eb80b2f26f46c52475b15ed33d8aba']"
+      expression: "['sha256:2ec4b4bee7c4aa5ab3571e6078f1790aaffb5d3c7f249b7f5829a6c0d01297ce']"
     - name: env
       expression: "['ANVILKIT_PARSE_ENVELOPE', 'ANVILKIT_PARSER_LIMITS']"
     - name: inits

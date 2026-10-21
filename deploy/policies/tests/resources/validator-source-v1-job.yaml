@@ -37,8 +37,8 @@ spec:
         - name: ANVILKIT_ATTEMPT_ID
           value: att_policy
         - name: ANVILKIT_LAUNCH_ENVELOPE
-          value: '{"attemptId":"att_policy","component":{"componentId":"cmp_policy","packageName":"@anvilkit/hero-policy","puckType":"Hero","sourceRevision":"3"},"deadline":"2026-09-16T12:10:00Z","executionEpoch":"1","inputs":[{"digest":"sha256:5555555555555555555555555555555555555555555555555555555555555555","handle":"h_policy_source","name":"source"}],"jobKind":"validator","launchEpoch":"1","launchId":"lch_policy","launchKey":"policy-validator-source-v1","operationId":"op_policy","profileId":"validator-source-v1","profileRevision":"4","schemaVersion":1}'
-        image: localhost:5001/anvilkit-validator@sha256:cba4ab8a4aa704c9264c3b8955d25b83796b140781a22b9ae0496b2eb248de2a
+          value: '{"attemptId":"att_policy","component":{"componentId":"cmp_policy","packageName":"@anvilkit/hero-policy","puckType":"Hero","sourceRevision":"3"},"deadline":"2026-09-16T12:10:00Z","executionEpoch":"1","inputs":[{"digest":"sha256:5555555555555555555555555555555555555555555555555555555555555555","handle":"h_policy_source","name":"source"}],"jobKind":"validator","launchEpoch":"1","launchId":"lch_policy","launchKey":"policy-validator-source-v1","operationId":"op_policy","profileId":"validator-source-v1","profileRevision":"5","schemaVersion":1}'
+        image: localhost:5001/anvilkit-validator@sha256:9a5dfdc5ffbd65ff45649a2ab89816f6f84a67bb30c3f81c93e461e28dcd319f
         name: supervisor
         resources:
           limits:
@@ -90,7 +90,7 @@ spec:
               apiVersion: v1
               fieldPath: metadata.uid
         - name: ANVILKIT_SIDECAR_LAUNCH_ENVELOPE
-          value: '{"attemptId":"att_policy","component":{"componentId":"cmp_policy","packageName":"@anvilkit/hero-policy","puckType":"Hero","sourceRevision":"3"},"deadline":"2026-09-16T12:10:00Z","executionEpoch":"1","inputs":[{"digest":"sha256:5555555555555555555555555555555555555555555555555555555555555555","handle":"h_policy_source","name":"source"}],"jobKind":"validator","launchEpoch":"1","launchId":"lch_policy","launchKey":"policy-validator-source-v1","operationId":"op_policy","profileId":"validator-source-v1","profileRevision":"4","schemaVersion":1}'
+          value: '{"attemptId":"att_policy","component":{"componentId":"cmp_policy","packageName":"@anvilkit/hero-policy","puckType":"Hero","sourceRevision":"3"},"deadline":"2026-09-16T12:10:00Z","executionEpoch":"1","inputs":[{"digest":"sha256:5555555555555555555555555555555555555555555555555555555555555555","handle":"h_policy_source","name":"source"}],"jobKind":"validator","launchEpoch":"1","launchId":"lch_policy","launchKey":"policy-validator-source-v1","operationId":"op_policy","profileId":"validator-source-v1","profileRevision":"5","schemaVersion":1}'
         - name: ANVILKIT_SIDECAR_MODEL_PROXY_URL
           value: https://anvilkit-agent-model-proxy.anvilkit-apps.svc.cluster.local:9103
         - name: ANVILKIT_SIDECAR_MCP_ADDRESS
