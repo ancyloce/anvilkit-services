@@ -25,6 +25,9 @@ CTX=kind-anvilkit-dev
 NS=anvilkit-apps
 IMAGE=anvilkit-agent-control:dev
 ACTION=${1:-install}
+# ANVILKIT_DEV_CONTROL_EXTRA_VALUES: an optional second values file layered over the dev values
+# (e.g. a DEVELOPMENT_ONLY smoke overlay); a later run without it reverts to the dev values alone.
+EXTRA_VALUES=${ANVILKIT_DEV_CONTROL_EXTRA_VALUES:-}
 export PATH="$PATH:$(go env GOPATH)/bin:$ROOT/.local/bin"
 # The cluster administrator's kubeconfig (kind's context), not the launcher
 # identity that .local/dev/env.sh exports as KUBECONFIG for the services.
@@ -60,6 +63,7 @@ case "$ACTION" in
       --dry-run=client -o yaml | kubectl --context "$CTX" apply -f - >/dev/null
     helm --kube-context "$CTX" upgrade --install anvilkit-agent-control "$SVC/deploy/chart" -n "$NS" \
       -f "$ROOT/deploy/dev/values/anvilkit-agent-control.yaml" \
+      ${EXTRA_VALUES:+-f "$EXTRA_VALUES"} \
       --set "temporal.address=${ANVILKIT_DEV_TEMPORAL_ADDRESS_CLUSTER}" \
       --set "events.nats.url=${ANVILKIT_DEV_NATS_URL_CLUSTER}" \
       --set "inventory.s3.endpoint=${ANVILKIT_DEV_ARTIFACTS_ENDPOINT_CLUSTER}" \

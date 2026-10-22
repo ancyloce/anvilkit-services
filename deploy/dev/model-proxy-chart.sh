@@ -26,6 +26,9 @@ CTX=kind-anvilkit-dev
 NS=anvilkit-apps
 IMAGE=anvilkit-agent-model-proxy:dev
 ACTION=${1:-install}
+# ANVILKIT_DEV_MODEL_PROXY_EXTRA_VALUES: an optional second values file layered over the dev values
+# (e.g. a DEVELOPMENT_ONLY smoke overlay); a later run without it reverts to the dev values alone.
+EXTRA_VALUES=${ANVILKIT_DEV_MODEL_PROXY_EXTRA_VALUES:-}
 export PATH="$PATH:$(go env GOPATH)/bin:$ROOT/.local/bin"
 export KUBECONFIG=${ANVILKIT_DEV_ADMIN_KUBECONFIG:-$HOME/.kube/config}
 
@@ -47,6 +50,7 @@ case "$ACTION" in
       --from-file=principals.json="$ANVILKIT_MODEL_PROXY_PRINCIPALS_FILE" --dry-run=client -o yaml | kubectl --context "$CTX" apply -f - >/dev/null
     helm --kube-context "$CTX" upgrade --install anvilkit-agent-model-proxy "$SVC/deploy/chart" -n "$NS" \
       -f "$ROOT/deploy/dev/values/anvilkit-agent-model-proxy.yaml" \
+      ${EXTRA_VALUES:+-f "$EXTRA_VALUES"} \
       --set "store.s3.endpoint=${ANVILKIT_DEV_ARTIFACTS_ENDPOINT_CLUSTER}" \
       --set-string "podAnnotations.anvilkit\.io/image-id=${IMAGE_ID}" --wait --timeout 180s
     kubectl --context "$CTX" -n "$NS" get deploy,pod,svc -l app.kubernetes.io/name=anvilkit-agent-model-proxy

@@ -24,6 +24,9 @@ CTX=kind-anvilkit-dev
 NS=anvilkit-apps
 IMAGE=anvilkit-agent-workflow:dev
 ACTION=${1:-install}
+# ANVILKIT_DEV_WORKFLOW_EXTRA_VALUES: an optional second values file layered over the dev values
+# (e.g. a DEVELOPMENT_ONLY smoke overlay); a later run without it reverts to the dev values alone.
+EXTRA_VALUES=${ANVILKIT_DEV_WORKFLOW_EXTRA_VALUES:-}
 export PATH="$PATH:$(go env GOPATH)/bin:$ROOT/.local/bin"
 # The cluster administrator's kubeconfig (kind's context), not the launcher
 # identity that .local/dev/env.sh exports as KUBECONFIG for the services.
@@ -41,6 +44,7 @@ case "$ACTION" in
     kubectl --context "$CTX" get namespace "$NS" >/dev/null 2>&1 || kubectl --context "$CTX" create namespace "$NS" >/dev/null
     helm --kube-context "$CTX" upgrade --install anvilkit-agent-workflow "$SVC/deploy/chart" -n "$NS" \
       -f "$ROOT/deploy/dev/values/anvilkit-agent-workflow.yaml" \
+      ${EXTRA_VALUES:+-f "$EXTRA_VALUES"} \
       --set "temporal.address=${ANVILKIT_DEV_TEMPORAL_ADDRESS_CLUSTER}" \
       --set "buildId=dev-${IMAGE_ID#sha256:}" \
       --set-string "podAnnotations.anvilkit\.io/image-id=${IMAGE_ID}" --wait --timeout 180s

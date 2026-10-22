@@ -1,0 +1,26 @@
+# DEVELOPMENT_ONLY overlay for deploy/dev/workflow-chart.sh
+# (ANVILKIT_DEV_WORKFLOW_EXTRA_VALUES): the API-driven generation smoke of
+# 2026-10-22. One replica (the Pagix/Knowledge double keeps its lease and
+# registration state in a Pod-local directory), the in-cluster Model Proxy
+# as the worker's model placement and as the Job sidecar's relay placement
+# (exactly the value the admission policy admits), the development profiles
+# this environment may launch (codegen-team-dev-v1 for the team,
+# validator-source-dev-v1 for the generation's certification), and the
+# double's directory on a writable volume (the root filesystem is read-only).
+replicaCount: 1
+modelProxy:
+  address: https://anvilkit-agent-model-proxy.anvilkit-apps.svc.cluster.local:9103
+extraEnv:
+  - name: ANVILKIT_WORKFLOW_SIDECAR_MODEL_PROXY_URL
+    value: https://anvilkit-agent-model-proxy.anvilkit-apps.svc.cluster.local:9103
+extraVolumes:
+  - name: pagix-double
+    emptyDir: {}
+extraVolumeMounts:
+  - name: pagix-double
+    mountPath: /var/lib/anvilkit/pagix
+config:
+  kubernetes:
+    enabled_profiles: [local-check-v1, codegen-team-dev-v1, validator-source-dev-v1]
+  lifecycle:
+    pagix_double_dir: /var/lib/anvilkit/pagix

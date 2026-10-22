@@ -1,0 +1,32 @@
+# DEVELOPMENT_ONLY overlay for deploy/dev/control-chart.sh
+# (ANVILKIT_DEV_CONTROL_EXTRA_VALUES): the API-driven generation smoke of
+# 2026-10-22. The dev validator profile for the generation's certification
+# (no gVisor on kind), bounded analysis and generation funding under the
+# USD 5 ceiling (scale-6 USD), and the DEVELOPMENT_ONLY price observation and
+# route authorization of the Proxy's real route controlled-openai-v1
+# (provider/model as the Proxy overlay binds them). The prices are a
+# deliberately overstated ceiling for the budget guard, never an invoice.
+config:
+  profiles:
+    preparation:
+      funding: { currency: USD, amount: "2000000" }
+    generation:
+      validator_profile: validator-source-dev-v1
+      funding: { currency: USD, amount: "3000000" }
+  dispatch:
+    development:
+      enabled: true
+      prices:
+        - revision: smoke-api-deepseek-flash
+          kind: model
+          route: controlled-openai-v1
+          provider: deepseek
+          model: deepseek-flash
+          currency: USD
+          effective_from: 2026-01-01T00:00:00Z
+          effective_until: 2027-01-01T00:00:00Z
+          per_million: { input_units: "1000000", output_units: "3000000", reasoning_units: "3000000", cached_input_units: "100000" }
+          max_exposure: "1000000"
+      authorized_routes:
+        - tenant_id: tenant_a
+          route_id: controlled-openai-v1
