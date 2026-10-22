@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "registryRevision": "14",
+  "registryRevision": "15",
   "description": "P22 requirement traceability (delivery.md P22): every M1, CAP and SEC requirement maps to executable cases and to explicit NOT_RUN entries naming what is missing. A case binds its suite, selector, the reviewed profiles it exercises, its time budget and the gates it contributes evidence to; contributing evidence never closes a gate. tools/run-evaluation.py checks, runs and reports it.",
   "requirements": {
     "M1": [
@@ -336,19 +336,17 @@
       "runner": "command",
       "dir": "tests/load",
       "argv": [
-        "go",
-        "run",
-        ".",
-        "--profile",
-        "profiles/development.json",
-        "--run",
+        "sh",
+        "-c",
+        "GOWORK=off go build -o ../../.local/bin/anvilkit-load . && exec ../../.local/bin/anvilkit-load --profile profiles/development.json --run \"$1\"",
+        "anvilkit-load",
         "${ANVILKIT_QUALIFICATION_RUN}"
       ],
       "requires": [
         "qualification-run"
       ],
       "report": "exit-code",
-      "description": "P3.5 AC1: the load tool (tests/load) at the profile's arrival rates against the API named by ANVILKIT_LOAD_API_URL with ANVILKIT_LOAD_TOKEN, the cluster readout from ANVILKIT_LOAD_PROMETHEUS_URL; exit 2 (NOT_RUN) when a scenario or the readout was not exercised"
+      "description": "P3.5 AC1: the load tool (tests/load) at the profile's arrival rates against the API named by ANVILKIT_LOAD_API_URL with ANVILKIT_LOAD_TOKEN, the cluster readout from ANVILKIT_LOAD_PROMETHEUS_URL; exit 2 (NOT_RUN) when a scenario or the readout was not exercised. The tool is built and exec'd rather than run with `go run`, which reports every non-zero exit of the program as its own exit 1 and would turn the tool's 2 into a FAIL (LOAD-CAPACITY of 2026-10-21)"
     },
     "soak": {
       "runner": "command",

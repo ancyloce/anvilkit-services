@@ -23,7 +23,10 @@ var clusterQueries = []struct {
 	{"controlDbPoolUtilization", `max(anvilkit_control_db_pool_acquired_connections / anvilkit_control_db_pool_max_connections)`, "gauge"},
 	{"unresolvedObligationOldestSeconds", `max(anvilkit_control_unresolved_obligation_oldest_seconds)`, "gauge"},
 	{"capacityRefusals", `sum(anvilkit_control_capacity_refusals_total)`, "delta"},
-	{"modelProxySenderLost", `sum(anvilkit_model_proxy_call_outcomes_total{error_code="SENDER_LOST"})`, "delta"},
+	// The outcomes counter has a series only for label values it has counted, so a
+	// scraped Model Proxy that never lost a sender reads 0 through its always-present
+	// pending gauge; an unscraped one stays missing.
+	{"modelProxySenderLost", `sum(anvilkit_model_proxy_call_outcomes_total{error_code="SENDER_LOST"}) or 0 * sum(anvilkit_model_proxy_pending_observations)`, "delta"},
 	{"appPodRestarts", `sum(kube_pod_container_status_restarts_total{namespace="anvilkit-apps"})`, "delta"},
 }
 
