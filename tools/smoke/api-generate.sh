@@ -40,7 +40,7 @@ python3 tools/smoke/api-generate.py --api "http://127.0.0.1:$port" --evidence "$
 if [ $status -eq 0 ]; then
   # The delivered source through the trusted validator's build and one browser render, locally.
   src="$evidence/generated-source"
-  rev=$(python3 -c "import json;print(json.load(open('$evidence/summary.json'))['source']['headers'].get('AnvilKit-Source-Revision','1'))")
+  rev=$(python3 -c "import json;print(json.load(open('$evidence/summary.json'))['source']['headers'].get('anvilkit-source-revision','1'))")
   cid=$(python3 -c "import json;d=json.load(open('$src/component.json'));print(d['componentId'])")
   ptype=$(python3 -c "import json;d=json.load(open('$src/component.json'));print(d['puckType'])")
   pname=$(python3 -c "import json;d=json.load(open('$src/package.json'));print(d['name'])")

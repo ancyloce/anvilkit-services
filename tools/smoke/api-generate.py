@@ -253,7 +253,13 @@ def main() -> int:
         summary["generation"] = {"operationId": gen_id, "briefId": brief_id}
         print(f"generation {gen_id} accepted (lifecycle {view['lifecycle']})", flush=True)
         deadline = time.time() + a.generation_timeout
-        c.follow(gen_id, lambda f: lifecycle_of(f) in ("succeeded", "failed", "canceled"), deadline)
+        # A run whose settlement waits on an unresolved obligation (an uncertain
+        # send) stays reconciling until a recovery disposition: the smoke stops
+        # following there and reports it instead of waiting for its timeout.
+        def gen_stop(f):
+            payload = f.get("payload", {})
+            return lifecycle_of(f) in ("succeeded", "failed", "canceled") or (lifecycle_of(f) == "reconciling" and bool(payload.get("failureCode")))
+        c.follow(gen_id, gen_stop, deadline)
         view = c.view(gen_id)
         save("generation-view.json", view)
         summary["generation"].update({"lifecycle": view["lifecycle"], "phase": view.get("phase"), "failureCode": view.get("failureCode"), "revision": view.get("revision")})
@@ -266,10 +272,11 @@ def main() -> int:
         req.add_header("Authorization", "Bearer " + c.token)
         with urllib.request.urlopen(req, timeout=120) as resp:
             tar_bytes = resp.read()
-            headers = {k: v for k, v in resp.headers.items() if k.lower().startswith("anvilkit-")}
+            # Header names are case-insensitive (the server writes Anvilkit-Source-*): keep them normalized.
+            headers = {k.lower(): v for k, v in resp.headers.items() if k.lower().startswith("anvilkit-")}
         digest = "sha256:" + hashlib.sha256(tar_bytes).hexdigest()
-        if headers.get("AnvilKit-Source-Digest") and headers["AnvilKit-Source-Digest"] != digest:
-            return finish(1, f"source digest mismatch: header {headers['AnvilKit-Source-Digest']} body {digest}")
+        if headers.get("anvilkit-source-digest") and headers["anvilkit-source-digest"] != digest:
+            return finish(1, f"source digest mismatch: header {headers['anvilkit-source-digest']} body {digest}")
         (evidence / "source.tar").write_bytes(tar_bytes)
         out = evidence / "generated-source"
         out.mkdir(exist_ok=True)
@@ -278,7 +285,7 @@ def main() -> int:
             tar.extractall(out, members=members, filter="data")
             files = sorted(m.name for m in members)
         summary["source"] = {"digest": digest, "bytes": len(tar_bytes), "headers": headers, "files": files}
-        print(f"source: {len(tar_bytes)} bytes, digest {digest}, revision {headers.get('AnvilKit-Source-Revision')}, files {files}", flush=True)
+        print(f"source: {len(tar_bytes)} bytes, digest {digest}, revision {headers.get('anvilkit-source-revision')}, files {files}", flush=True)
         summary["result"] = "PASS"
         return finish(0)
     except ApiError as error:
