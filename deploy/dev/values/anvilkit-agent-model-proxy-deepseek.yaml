@@ -39,7 +39,7 @@ config:
       max_exposure:
         currency: USD
         amount: '1000000'
-      max_deadline: 1h
+      max_deadline: 24h
       max_frame_bytes: 65536
       max_output_bytes: 1048576
       max_frames: 4096
