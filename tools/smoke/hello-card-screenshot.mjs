@@ -22,7 +22,7 @@ function arg(name, def) {
 const validatorDir = path.resolve(arg("--validator"));
 const artifacts = path.resolve(arg("--artifacts"));
 const componentJson = path.resolve(arg("--component-json"));
-const title = arg("--title", "AnvilKit smoke test passed");
+const titleArg = arg("--title", "");
 const out = path.resolve(arg("--out", "screenshot.png"));
 
 const require = createRequire(path.join(validatorDir, "package.json"));
@@ -33,6 +33,12 @@ const hostFiles = ["react.js", "react-jsx-runtime.js", "react-dom.js", "react-do
 const component = JSON.parse(readFileSync(componentJson, "utf8"));
 const cssFiles = readdirSync(artifacts).filter((f) => f.endsWith(".css"));
 const firstTextField = (component.editableFields ?? []).find((f) => f.type === "text")?.name ?? "title";
+// Without --title, the component's own default of its first text field is the expected text.
+const title = titleArg || String((component.editableFields ?? []).find((f) => f.type === "text")?.default ?? "");
+if (!title) {
+	process.stdout.write(`${JSON.stringify({ visible: false, text: "", error: "no --title and no text field default in component.json" })}\n`);
+	process.exit(1);
+}
 const puckType = component.puckType;
 
 const origin = "https://smoke.anvilkit.invalid";

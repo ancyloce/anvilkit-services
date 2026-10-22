@@ -63,7 +63,7 @@ def main() -> int:
     out.parent.mkdir(parents=True, exist_ok=True)
     fd = os.open(out, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w") as f:
-        f.write(key + "\n")
+        f.write(key)  # no trailing newline: a Kubernetes Secret created from the file carries the bytes exactly
     print(f"credential written to {out} (0600, {len(key)} characters, version {data.get('data', {}).get('metadata', {}).get('version')})")
     return 0
 
