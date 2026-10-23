@@ -120,7 +120,10 @@ class Client:
                             with log.open("a") as f:
                                 f.write(json.dumps({"receivedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), **frame}) + "\n")
                             payload = (frame["data"] or {}).get("payload", {}) if isinstance(frame["data"], dict) else {}
-                            print(f"  sse {operation_id} id={frame['id'] or '-'} {frame['event']} lifecycle={payload.get('lifecycle')} phase={payload.get('phase')} failure={payload.get('failureCode') or ''}", flush=True)
+                            # Plan 0005 Phase 2: the attempt-bound facts (step, visit, attempt ordinal), the
+                            # accepted verdict and the coordinator's node boundary travel on the frame.
+                            facts = " ".join(f"{k}={payload[k]}" for k in ("step", "visit", "attemptOrdinal", "verdict", "verdictCode", "node", "nodeState", "round", "outcomeCode") if payload.get(k) not in (None, ""))
+                            print(f"  sse {operation_id} id={frame['id'] or '-'} {frame['event']} lifecycle={payload.get('lifecycle')} phase={payload.get('phase')} failure={payload.get('failureCode') or ''} {facts}".rstrip(), flush=True)
                             if frame["id"]:
                                 last_id = frame["id"]
                             if isinstance(frame["data"], dict):
