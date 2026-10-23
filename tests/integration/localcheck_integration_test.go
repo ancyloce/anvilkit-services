@@ -553,6 +553,25 @@ func TestLocalCheckChain(t *testing.T) {
 		// operation's last event; the stream ends only after it.
 		require.Equal(t, "finance:settled", last.Data["transitionId"], "frames: %v", phases(frames))
 		require.Equal(t, []string{"intake", "accepted", "scheduled", "attempt_open", "launch_prepared", "running", "result_accepted", "closed"}, phases(frames[:len(frames)-1]))
+		// Plan 0005 Phase 2: the attempt transitions carry the attempt's step,
+		// visit and ordinal, the accepted result its verdict; the intake
+		// transitions carry none of them.
+		for _, f := range frames {
+			payload, _ := f.Data["payload"].(map[string]any)
+			switch payload["phase"] {
+			case "attempt_open", "launch_prepared", "running", "result_accepted", "closed":
+				require.Equal(t, "local-check", payload["step"], "frame %v", f.ID)
+				require.Equal(t, "0", payload["visit"], "frame %v", f.ID)
+				require.Equal(t, "1", payload["attemptOrdinal"], "frame %v", f.ID)
+			default:
+				require.NotContains(t, payload, "step", "frame %v", f.ID)
+			}
+			if payload["phase"] == "result_accepted" {
+				require.Equal(t, "certified", payload["verdict"], "frame %v", f.ID)
+			} else {
+				require.NotContains(t, payload, "verdict", "frame %v", f.ID)
+			}
+		}
 		for i := 1; i < len(frames); i++ {
 			require.Less(t, frames[i-1].ID, frames[i].ID, "event ids are strictly increasing")
 		}
