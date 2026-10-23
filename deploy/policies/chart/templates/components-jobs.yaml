@@ -47,7 +47,7 @@ spec:
     - name: fixtureDigests
       expression: "['sha256:9db7b59979c38555a39def84a31fb98b5296952f9e3afd4f6f11f05b07adfab0']"
     - name: supervisorDigests
-      expression: "['sha256:b01d6a32ae7e9695b788f9cb9c4d423b5a7033098ea1565534106d713696c05a', 'sha256:9a5dfdc5ffbd65ff45649a2ab89816f6f84a67bb30c3f81c93e461e28dcd319f', 'sha256:53cb19d66072dcb677d4e0878cefe074733f7f4167a5b33119a01cb153eab968', 'sha256:b314e9fd64b1bcc9513fd66ea1a3cbbb8b99e90b0b21664f5294eac49f2aa03d']"
+      expression: "['sha256:b01d6a32ae7e9695b788f9cb9c4d423b5a7033098ea1565534106d713696c05a', 'sha256:9a5dfdc5ffbd65ff45649a2ab89816f6f84a67bb30c3f81c93e461e28dcd319f', 'sha256:53cb19d66072dcb677d4e0878cefe074733f7f4167a5b33119a01cb153eab968', 'sha256:fb19e4f3c6eef1804b043ac0dcada31644a3ea8be07b9ac70c4b43a9d01b372c']"
     - name: sidecarDigests
       expression: "['sha256:d96be167bf0a09e6f9922205e138a465baaeb3d7a6fb028d063cd294b2401e24']"
     - name: supervisorEnv
@@ -91,11 +91,11 @@ spec:
       expression: "['/usr/local/bin/anvilkit-codegen-supervisor', 'team']"
     # One digest per team profile (contracts/jobs/profiles.json): the
     # production profile codegen-team-v1 (disabled) and its development twin
-    # codegen-team-dev-v1 (revision 10, the Pi 1.4.0 image) pin different images.
+    # codegen-team-dev-v1 (revision 11, the Pi 1.4.0 image with the amended coder prompt) pin different images.
     - name: teamDigest
       expression: "'sha256:53cb19d66072dcb677d4e0878cefe074733f7f4167a5b33119a01cb153eab968'"
     - name: teamDevDigest
-      expression: "'sha256:b314e9fd64b1bcc9513fd66ea1a3cbbb8b99e90b0b21664f5294eac49f2aa03d'"
+      expression: "'sha256:fb19e4f3c6eef1804b043ac0dcada31644a3ea8be07b9ac70c4b43a9d01b372c'"
     # P0.8: the development-state candidate profiles this environment admits
     # without the gVisor RuntimeClass (DEVELOPMENT_ONLY; empty elsewhere).
     - name: developmentProfiles
