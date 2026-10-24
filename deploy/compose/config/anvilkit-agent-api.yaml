@@ -1,0 +1,38 @@
+# Reviewed, secret-free configuration of anvilkit-agent-api for the Compose placement
+# (deploy/compose; DEVELOPMENT_ONLY). Rendered from the service chart's config
+# template with the development values of deploy/dev/values and adapted to the
+# Compose service names; placements (addresses, listeners, secret files) come
+# from the allowlisted ANVILKIT_* environment in compose.yaml. Mounted read-only
+# at /etc/anvilkit/anvilkit-agent-api/config.yaml.
+control:
+  address: 127.0.0.1:9101
+  identity:
+    mode: mtls
+    mtls:
+      server_name: anvilkit-agent-control
+development:
+  enabled: true
+http:
+  body_limit_bytes: 262144
+  listen: 127.0.0.1:9100
+  read_header_timeout: 10s
+  shutdown_timeout: 20s
+identity:
+  ca_file: /etc/anvilkit/identity/ca.crt
+  cert_file: /etc/anvilkit/identity/tls.crt
+  key_file: /etc/anvilkit/identity/tls.key
+knowledge:
+  identity:
+    mode: mtls
+    mtls:
+      server_name: anvilkit-agent-knowledge
+mcp:
+  identity:
+    mode: mtls
+    mtls:
+      server_name: anvilkit-agent-mcp
+sse:
+  frame_buffer: 64
+  heartbeat_interval: 15s
+  slow_consumer_grace: 5s
+  write_timeout: 10s

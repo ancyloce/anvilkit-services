@@ -1,0 +1,101 @@
+# Reviewed, secret-free configuration of anvilkit-agent-control for the Compose placement
+# (deploy/compose; DEVELOPMENT_ONLY). Rendered from the service chart's config
+# template with the development values of deploy/dev/values and adapted to the
+# Compose service names; placements (addresses, listeners, secret files) come
+# from the allowlisted ANVILKIT_* environment in compose.yaml. Mounted read-only
+# at /etc/anvilkit/anvilkit-agent-control/config.yaml.
+artifacts:
+  backend: s3
+  capability_ttl: 15m
+  max_object_bytes: 67108864
+  max_window: 24h
+  s3:
+    path_style: true
+    prefix: artifacts
+    qualify_on_start: true
+    region: default
+database:
+  max_conns: 8
+development:
+  enabled: true
+dispatch:
+  authority_freshness: 30s
+  development:
+    authorized_routes:
+    - route_id: controlled-openai-v1
+      tenant_id: tenant_a
+    enabled: true
+    prices:
+    - currency: USD
+      effective_from: '2026-01-01T00:00:00Z'
+      effective_until: '2027-01-01T00:00:00Z'
+      kind: model
+      max_exposure: '1000000'
+      model: deepseek-flash
+      per_million:
+        cached_input_units: '100000'
+        input_units: '1000000'
+        output_units: '3000000'
+        reasoning_units: '3000000'
+      provider: deepseek
+      revision: smoke-api-deepseek-flash
+      route: controlled-openai-v1
+events:
+  enabled: true
+  nats:
+    tls:
+      mode: development
+  retention: 168h
+  wake: true
+grpc:
+  control_capacity: 32
+  execution_capacity: 64
+  identity:
+    ca_file: /etc/anvilkit/identity/ca.crt
+    cert_file: /etc/anvilkit/identity/tls.crt
+    key_file: /etc/anvilkit/identity/tls.key
+    max_connection_age: 1h
+    max_connection_age_grace: 30s
+    mode: mtls
+    reload_interval: 5s
+    trust_domain: anvilkit.local
+  listen: 127.0.0.1:9101
+  shutdown_timeout: 20s
+health:
+  listen: 0.0.0.0:9113
+inventory:
+  backend: s3
+  s3:
+    path_style: true
+    prefix: control
+    qualify_on_start: true
+    region: default
+model_proxy:
+  identity:
+    mode: mtls
+    mtls:
+      ca_file: /etc/anvilkit/identity/ca.crt
+      cert_file: /etc/anvilkit/identity/tls.crt
+      key_file: /etc/anvilkit/identity/tls.key
+      server_name: anvilkit-agent-model-proxy
+profiles:
+  generation:
+    funding:
+      amount: '3000000'
+      currency: USD
+    validator_profile: validator-source-dev-v1
+  local_check_deadline: 15m
+  preparation:
+    funding:
+      amount: '2000000'
+      currency: USD
+recovery:
+  enumeration_page: 500
+relay:
+  interval: 500ms
+temporal:
+  address: 127.0.0.1:27233
+  namespace: anvilkit
+  task_queue: anvilkit-workflow
+  tls:
+    mode: development

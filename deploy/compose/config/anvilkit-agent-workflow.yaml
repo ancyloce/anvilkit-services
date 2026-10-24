@@ -1,0 +1,64 @@
+# Reviewed, secret-free configuration of anvilkit-agent-workflow for the Compose placement
+# (deploy/compose; DEVELOPMENT_ONLY). Rendered from the service chart's config
+# template with the development values of deploy/dev/values and adapted to the
+# Compose service names; placements (addresses, listeners, secret files) come
+# from the allowlisted ANVILKIT_* environment in compose.yaml. Mounted read-only
+# at /etc/anvilkit/anvilkit-agent-workflow/config.yaml.
+control:
+  address: 127.0.0.1:9101
+  identity:
+    mode: mtls
+    mtls:
+      server_name: anvilkit-agent-control
+development:
+  enabled: true
+execution:
+  cleanup:
+    create_request_lifetime: 3m
+    max_attempts: 2
+    reconcile_initial_interval: 5s
+    reconcile_max_duration: 24h
+    reconcile_max_interval: 1m
+    timeout: 3m
+    unresolved_settle_window: 60s
+  control_activity_timeout: 30s
+  control_retry_initial: 1s
+  control_retry_max_attempts: 6
+  control_retry_max_interval: 30s
+  launch_window: 2m
+  observe_heartbeat_timeout: 30s
+  observe_max_attempts: 3
+health:
+  listen: 127.0.0.1:9102
+identity:
+  ca_file: /etc/anvilkit/identity/ca.crt
+  cert_file: /etc/anvilkit/identity/tls.crt
+  key_file: /etc/anvilkit/identity/tls.key
+kubernetes:
+  candidate_seccomp_profile: anvilkit/candidate.json
+  enabled_profiles:
+  - local-check-v1
+  namespace: anvilkit-components
+  sidecar:
+    identity_mode: mtls
+    identity_secret: anvilkit-job-access-sidecar-identity
+lifecycle:
+  pagix_double_dir: /var/lib/anvilkit/pagix
+model_proxy:
+  identity:
+    mode: mtls
+    mtls:
+      server_name: anvilkit-agent-model-proxy
+shutdown_timeout: 30s
+temporal:
+  address: 127.0.0.1:27233
+  build_id: dev
+  control_task_queue: anvilkit-workflow-control
+  namespace: anvilkit
+  task_queue: anvilkit-workflow
+  tls:
+    mode: development
+  versioning:
+    deployment_name: anvilkit-agent-workflow
+    enabled: false
+  worker_identity: anvilkit-agent-workflow

@@ -1,0 +1,436 @@
+# Reviewed, secret-free configuration of anvilkit-agent-model-proxy for the Compose placement
+# (deploy/compose; DEVELOPMENT_ONLY). Rendered from the service chart's config
+# template with the development values of deploy/dev/values and adapted to the
+# Compose service names; placements (addresses, listeners, secret files) come
+# from the allowlisted ANVILKIT_* environment in compose.yaml. Mounted read-only
+# at /etc/anvilkit/anvilkit-agent-model-proxy/config.yaml.
+control:
+  admission_retry:
+    initial: 500ms
+    max_attempts: 5
+    max_interval: 5s
+  identity:
+    mode: mtls
+    mtls:
+      ca_file: /etc/anvilkit/control-mtls/ca.crt
+      cert_file: /etc/anvilkit/control-mtls/tls.crt
+      key_file: /etc/anvilkit/control-mtls/tls.key
+      server_name: anvilkit-agent-control
+  timeout: 15s
+development:
+  enabled: true
+http:
+  listen: 127.0.0.1:9103
+  max_body_bytes: 4194304
+  request_header_timeout: 10s
+  shutdown_timeout: 330s
+  slow_consumer_grace: 10s
+  sse_heartbeat: 15s
+identity:
+  mode: mtls
+  mtls:
+    ca_file: /etc/anvilkit/model-proxy-mtls/ca.crt
+    cert_file: /etc/anvilkit/model-proxy-mtls/tls.crt
+    key_file: /etc/anvilkit/model-proxy-mtls/tls.key
+    principals:
+    - kind: workflow
+      principal_id: anvilkit-agent-workflow
+      spiffe_id: spiffe://anvilkit.local/ns/anvilkit-apps/sa/anvilkit-agent-workflow
+    - kind: sidecar
+      principal_id: anvilkit-job-access-sidecar
+      spiffe_id: spiffe://anvilkit.local/ns/anvilkit-components/sa/anvilkit-job-access-sidecar
+    - kind: control
+      principal_id: anvilkit-agent-control
+      spiffe_id: spiffe://anvilkit.local/ns/anvilkit-apps/sa/anvilkit-agent-control
+  owner: anvilkit-agent-model-proxy
+observation:
+  reclaim_grace: 30s
+  retry_initial: 1s
+  retry_max_interval: 30s
+  sweep_interval: 30s
+routes:
+- api: openai-completions
+  base_url: https://api.deepseek.com
+  credential_env: ANVILKIT_MODEL_PROXY_CREDENTIAL_DEEPSEEK
+  enabled: false
+  id: controlled-openai-v1
+  limits:
+    max_deadline: 24h
+    max_evidence_bytes: 4194304
+    max_exposure:
+      amount: '1000000'
+      currency: USD
+    max_frame_bytes: 65536
+    max_frames: 4096
+    max_output_bytes: 1048576
+    max_output_tokens: 4096
+    upstream_timeout: 4m
+  model: deepseek-flash
+  provider: deepseek
+  tools:
+  - description: Reads the frozen brief.
+    input_schema:
+      additionalProperties: false
+      properties:
+        section:
+          maxLength: 64
+          type: string
+      type: object
+    name: read_brief
+  - description: Submits the structured requirements of the requested component.
+    input_schema:
+      additionalProperties: false
+      properties:
+        acceptance:
+          items:
+            maxLength: 1000
+            type: string
+          maxItems: 32
+          type: array
+        componentName:
+          pattern: ^[A-Z][A-Za-z0-9]{0,63}$
+          type: string
+        constraints:
+          items:
+            maxLength: 1000
+            type: string
+          maxItems: 32
+          type: array
+        content:
+          maxLength: 8000
+          minLength: 1
+          type: string
+        editableFields:
+          items:
+            additionalProperties: false
+            properties:
+              default:
+                maxLength: 2000
+                type: string
+              name:
+                maxLength: 64
+                minLength: 1
+                type: string
+              type:
+                enum:
+                - text
+                - richtext
+                - image
+                - link
+                - number
+                - boolean
+                - color
+                type: string
+            required:
+            - name
+            - type
+            type: object
+          maxItems: 32
+          type: array
+        interaction:
+          maxLength: 4000
+          type: string
+        packageName:
+          pattern: ^(@[a-z0-9-]+/)?[a-z0-9][a-z0-9._-]{0,212}$
+          type: string
+        purpose:
+          maxLength: 2000
+          minLength: 1
+          type: string
+        unknowns:
+          items:
+            maxLength: 1000
+            type: string
+          maxItems: 16
+          type: array
+      required:
+      - componentName
+      - packageName
+      - purpose
+      - content
+      - interaction
+      - editableFields
+      - constraints
+      - acceptance
+      - unknowns
+      type: object
+    name: submit_requirements
+  - description: Asks at most three grouped clarification questions when the request is insufficient.
+    input_schema:
+      additionalProperties: false
+      properties:
+        questions:
+          items:
+            additionalProperties: false
+            properties:
+              id:
+                pattern: ^q[1-9]$
+                type: string
+              text:
+                maxLength: 2000
+                minLength: 1
+                type: string
+            required:
+            - id
+            - text
+            type: object
+          maxItems: 3
+          minItems: 1
+          type: array
+      required:
+      - questions
+      type: object
+    name: ask_questions
+  - description: Submits the finite structured plan of the component (the Planner's only output).
+    input_schema:
+      additionalProperties: false
+      properties:
+        componentId:
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$
+          type: string
+        packageName:
+          maxLength: 214
+          type: string
+        puckType:
+          pattern: ^[A-Z][A-Za-z0-9]{0,63}$
+          type: string
+        steps:
+          items:
+            additionalProperties: false
+            properties:
+              detail:
+                maxLength: 4000
+                minLength: 1
+                type: string
+              files:
+                items:
+                  maxLength: 512
+                  minLength: 1
+                  type: string
+                maxItems: 32
+                type: array
+              id:
+                pattern: ^[a-z0-9-]{1,32}$
+                type: string
+              title:
+                maxLength: 200
+                minLength: 1
+                type: string
+            required:
+            - id
+            - title
+            - files
+            - detail
+            type: object
+          maxItems: 12
+          minItems: 1
+          type: array
+        version:
+          pattern: ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$
+          type: string
+      required:
+      - componentId
+      - puckType
+      - packageName
+      - version
+      - steps
+      type: object
+    name: submit_plan
+  - description: Submits review findings with severities, file references and remediations, and the review verdict.
+    input_schema:
+      additionalProperties: false
+      properties:
+        findings:
+          items:
+            additionalProperties: false
+            properties:
+              file:
+                maxLength: 512
+                minLength: 1
+                type: string
+              id:
+                pattern: ^[A-Za-z0-9-]{1,32}$
+                type: string
+              line:
+                minimum: 1
+                type: integer
+              remediation:
+                maxLength: 2000
+                minLength: 1
+                type: string
+              severity:
+                enum:
+                - blocker
+                - major
+                - minor
+              summary:
+                maxLength: 1000
+                minLength: 1
+                type: string
+            required:
+            - id
+            - severity
+            - file
+            - summary
+            - remediation
+            type: object
+          maxItems: 64
+          type: array
+        verdict:
+          enum:
+          - pass
+          - repair
+      required:
+      - verdict
+      - findings
+      type: object
+    name: submit_findings
+  - description: Submits the answer to a retrieval question with the ids of the returned evidence it cites.
+    input_schema:
+      additionalProperties: false
+      properties:
+        answer:
+          maxLength: 8000
+          minLength: 1
+          type: string
+        citations:
+          items:
+            maxLength: 128
+            minLength: 1
+            type: string
+          maxItems: 32
+          type: array
+      required:
+      - answer
+      - citations
+      type: object
+    name: submit_retrieval
+  - description: Read the contents of a file. Supports text files and images (jpg, png, gif, webp, bmp). Images are sent as
+      attachments. For text files, output is truncated to 2000 lines or 50KB (whichever is hit first). Use offset/limit for
+      large files. When you need the full file, continue with offset until complete.
+    input_schema:
+      properties:
+        limit:
+          description: Maximum number of lines to read
+          type: number
+        offset:
+          description: Line number to start reading from (1-indexed)
+          type: number
+        path:
+          description: Path to the file to read (relative or absolute)
+          type: string
+      required:
+      - path
+      type: object
+    name: read
+  - description: Write content to a file. Creates the file if it doesn't exist, overwrites if it does. Automatically creates
+      parent directories.
+    input_schema:
+      properties:
+        content:
+          description: Content to write to the file
+          type: string
+        path:
+          description: Path to the file to write (relative or absolute)
+          type: string
+      required:
+      - path
+      - content
+      type: object
+    name: write
+  - description: Edit a single file using exact text replacement. Every edits[].oldText must match a unique, non-overlapping
+      region of the original file. If two changes affect the same block or nearby lines, merge them into one edit instead
+      of emitting overlapping edits. Do not include large unchanged regions just to connect distant changes.
+    input_schema:
+      properties:
+        edits:
+          description: One or more targeted replacements. Each edit is matched against the original file, not incrementally.
+            Do not include overlapping or nested edits. If two changes touch the same block or nearby lines, merge them into
+            one edit instead.
+          items:
+            properties:
+              newText:
+                description: Replacement text for this targeted edit.
+                type: string
+              oldText:
+                description: Exact text for one targeted replacement. It must be unique in the original file and must not
+                  overlap with any other edits[].oldText in the same call.
+                type: string
+            required:
+            - oldText
+            - newText
+            type: object
+          type: array
+        path:
+          description: Path to the file to edit (relative or absolute)
+          type: string
+      required:
+      - path
+      - edits
+      type: object
+    name: edit
+  - description: List directory contents. Returns entries sorted alphabetically, with '/' suffix for directories. Includes
+      dotfiles. Output is truncated to 500 entries or 50KB (whichever is hit first).
+    input_schema:
+      properties:
+        limit:
+          description: 'Maximum number of entries to return (default: 500)'
+          type: number
+        path:
+          description: 'Directory to list (default: current directory)'
+          type: string
+      type: object
+    name: ls
+  - description: Search file contents for a pattern. Returns matching lines with file paths and line numbers. Respects .gitignore.
+      Output is truncated to 100 matches or 50KB (whichever is hit first). Long lines are truncated to 500 chars.
+    input_schema:
+      properties:
+        context:
+          description: 'Number of lines to show before and after each match (default: 0)'
+          type: number
+        glob:
+          description: Filter files by glob pattern, e.g. '*.ts' or '**/*.spec.ts'
+          type: string
+        ignoreCase:
+          description: 'Case-insensitive search (default: false)'
+          type: boolean
+        limit:
+          description: 'Maximum number of matches to return (default: 100)'
+          type: number
+        literal:
+          description: 'Treat pattern as literal string instead of regex (default: false)'
+          type: boolean
+        path:
+          description: 'Directory or file to search (default: current directory)'
+          type: string
+        pattern:
+          description: Search pattern (regex or literal string)
+          type: string
+      required:
+      - pattern
+      type: object
+    name: grep
+  - description: Search for files by glob pattern. Returns matching file paths relative to the search directory. Respects
+      .gitignore. Output is truncated to 1000 results or 50KB (whichever is hit first).
+    input_schema:
+      properties:
+        limit:
+          description: 'Maximum number of results (default: 1000)'
+          type: number
+        path:
+          description: 'Directory to search in (default: current directory)'
+          type: string
+        pattern:
+          description: Glob pattern to match files, e.g. '*.ts', '**/*.json', or 'src/**/*.spec.ts'
+          type: string
+      required:
+      - pattern
+      type: object
+    name: find
+store:
+  backend: s3
+  s3:
+    path_style: true
+    prefix: model-proxy
+    qualify_on_start: true
+    region: default

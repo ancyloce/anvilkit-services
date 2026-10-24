@@ -1,0 +1,604 @@
+# Single-server deployment of the replacement system with Docker Compose
+# (DEVELOPMENT_ONLY placement; no Kubernetes). One instance per service, every
+# owned image a CI-published release image pinned by digest (images.env, derived
+# from the SIGNED release manifest by images.sh), the same foundation images as
+# deploy/dev/compose.yaml, secrets as restricted files under ${ANVILKIT_HOME}/secrets
+# (up.sh generates them), workload certificates from the openssl PKI of pki.sh under
+# ${ANVILKIT_HOME}/certs. Internal ports stay private: only the API (9100) and the
+# operations ports of the foundation are published, all on 127.0.0.1 (reach them
+# over an SSH tunnel). Not HA, not the qualified platform, not production.
+name: anvilkit
+
+x-logging: &logging
+  driver: json-file
+  options: { max-size: "20m", max-file: "5" }
+
+x-service: &service
+  restart: unless-stopped
+  logging: *logging
+  read_only: true
+  security_opt: ["no-new-privileges:true"]
+  cap_drop: [ALL]
+
+secrets:
+  control-app-dsn: { file: "${ANVILKIT_HOME:-/srv/anvilkit}/secrets/control-app-dsn" }
+  control-migrator-dsn: { file: "${ANVILKIT_HOME:-/srv/anvilkit}/secrets/control-migrator-dsn" }
+  knowledge-app-dsn: { file: "${ANVILKIT_HOME:-/srv/anvilkit}/secrets/knowledge-app-dsn" }
+  knowledge-migrator-dsn: { file: "${ANVILKIT_HOME:-/srv/anvilkit}/secrets/knowledge-migrator-dsn" }
+  knowledge-relay-dsn: { file: "${ANVILKIT_HOME:-/srv/anvilkit}/secrets/knowledge-relay-dsn" }
+  knowledge-forwarder-dsn: { file: "${ANVILKIT_HOME:-/srv/anvilkit}/secrets/knowledge-forwarder-dsn" }
+  knowledge-store-dsn: { file: "${ANVILKIT_HOME:-/srv/anvilkit}/secrets/knowledge-store-dsn" }
+  knowledge-store-migrator-dsn: { file: "${ANVILKIT_HOME:-/srv/anvilkit}/secrets/knowledge-store-migrator-dsn" }
+  knowledge-cleanup-dsn: { file: "${ANVILKIT_HOME:-/srv/anvilkit}/secrets/knowledge-cleanup-dsn" }
+  mcp-app-dsn: { file: "${ANVILKIT_HOME:-/srv/anvilkit}/secrets/mcp-app-dsn" }
+  mcp-migrator-dsn: { file: "${ANVILKIT_HOME:-/srv/anvilkit}/secrets/mcp-migrator-dsn" }
+  mcp-relay-dsn: { file: "${ANVILKIT_HOME:-/srv/anvilkit}/secrets/mcp-relay-dsn" }
+  queue-url: { file: "${ANVILKIT_HOME:-/srv/anvilkit}/secrets/queue-url" }
+  qdrant-api-key: { file: "${ANVILKIT_HOME:-/srv/anvilkit}/secrets/qdrant-api-key" }
+  api-principals: { file: "${ANVILKIT_HOME:-/srv/anvilkit}/secrets/api-principals.json" }
+  launcher-kubeconfig: { file: "${ANVILKIT_HOME:-/srv/anvilkit}/secrets/launcher.kubeconfig" }
+  artifacts-access-key-id: { file: "${ANVILKIT_HOME:-/srv/anvilkit}/secrets/artifacts-access-key-id" }
+  artifacts-secret-access-key: { file: "${ANVILKIT_HOME:-/srv/anvilkit}/secrets/artifacts-secret-access-key" }
+  inventory-access-key-id: { file: "${ANVILKIT_HOME:-/srv/anvilkit}/secrets/inventory-access-key-id" }
+  inventory-secret-access-key: { file: "${ANVILKIT_HOME:-/srv/anvilkit}/secrets/inventory-secret-access-key" }
+  model-proxy-store-access-key-id: { file: "${ANVILKIT_HOME:-/srv/anvilkit}/secrets/model-proxy-store-access-key-id" }
+  model-proxy-store-secret-access-key: { file: "${ANVILKIT_HOME:-/srv/anvilkit}/secrets/model-proxy-store-secret-access-key" }
+  knowledge-objects-credentials: { file: "${ANVILKIT_HOME:-/srv/anvilkit}/secrets/minio-knowledge.env" }
+  knowledge-removals-credentials: { file: "${ANVILKIT_HOME:-/srv/anvilkit}/secrets/minio-removals.env" }
+
+volumes:
+  postgres-data:
+  minio-data:
+  nats-data:
+  valkey-queue-data:
+  qdrant-data:
+  pagix-double:
+
+services:
+  # ---- foundation (the pinned images of deploy/dev/compose.yaml) ----------
+  postgres:
+    image: postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
+    restart: unless-stopped
+    logging: *logging
+    env_file: ${ANVILKIT_HOME:-/srv/anvilkit}/secrets/postgres.env
+    ports: ["127.0.0.1:25432:5432"]
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ../dev/postgres-init.sh:/docker-entrypoint-initdb.d/10-anvilkit.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d anvilkit_control"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 10s
+    deploy: { resources: { limits: { cpus: "2", memory: 2g } } }
+
+  temporal-schema:
+    image: temporalio/admin-tools:1.31.2@sha256:dbc5fcd6ee8f0f4d808bf765af9a87dea9d8a283abfdcfbd2fc148496ba66107
+    logging: *logging
+    env_file: ${ANVILKIT_HOME:-/srv/anvilkit}/secrets/temporal.env
+    environment: { SQL_PLUGIN: postgres12, SQL_HOST: postgres, SQL_PORT: "5432" }
+    entrypoint: ["/bin/sh", "/setup/temporal-setup.sh", "schemas"]
+    volumes: ["../dev/temporal-setup.sh:/setup/temporal-setup.sh:ro"]
+    depends_on: { postgres: { condition: service_healthy } }
+
+  temporal:
+    image: temporalio/server:1.31.2@sha256:6b02e5176631c8d28f010735a3a73c69423a9adbcfad7e5dfe23836c904b7e26
+    restart: unless-stopped
+    logging: *logging
+    env_file: ${ANVILKIT_HOME:-/srv/anvilkit}/secrets/temporal.env
+    environment:
+      DB: postgres12
+      DB_PORT: "5432"
+      POSTGRES_SEEDS: postgres
+      DBNAME: temporal
+      VISIBILITY_DBNAME: temporal_visibility
+      BIND_ON_IP: 0.0.0.0
+      TEMPORAL_BROADCAST_ADDRESS: 127.0.0.1
+      NUM_HISTORY_SHARDS: "4"
+    ports: ["127.0.0.1:27233:7233"]
+    volumes: ["../dev/temporal-dynamicconfig.yaml:/etc/temporal/config/dynamicconfig/docker.yaml:ro"]
+    depends_on: { temporal-schema: { condition: service_completed_successfully } }
+    healthcheck:
+      test: ["CMD", "nc", "-z", "127.0.0.1", "7233"]
+      interval: 5s
+      timeout: 3s
+      retries: 40
+    deploy: { resources: { limits: { cpus: "2", memory: 2g } } }
+
+  temporal-namespace:
+    image: temporalio/admin-tools:1.31.2@sha256:dbc5fcd6ee8f0f4d808bf765af9a87dea9d8a283abfdcfbd2fc148496ba66107
+    profiles: [setup]
+    logging: *logging
+    entrypoint: ["/bin/sh", "/setup/temporal-setup.sh", "namespace"]
+    volumes: ["../dev/temporal-setup.sh:/setup/temporal-setup.sh:ro"]
+    depends_on: { temporal: { condition: service_healthy } }
+
+  minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+    restart: unless-stopped
+    logging: *logging
+    command: ["server", "/data"]
+    env_file: ${ANVILKIT_HOME:-/srv/anvilkit}/secrets/minio.env
+    ports: ["127.0.0.1:29000:9000"]
+    volumes: ["minio-data:/data"]
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 3s
+      retries: 40
+      start_period: 10s
+    deploy: { resources: { limits: { cpus: "1", memory: 1g } } }
+
+  minio-setup:
+    image: minio/mc@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727
+    profiles: [setup]
+    logging: *logging
+    env_file:
+      - ${ANVILKIT_HOME:-/srv/anvilkit}/secrets/minio.env
+      - ${ANVILKIT_HOME:-/srv/anvilkit}/secrets/minio-inventory.env
+      - ${ANVILKIT_HOME:-/srv/anvilkit}/secrets/minio-model-proxy.env
+      - ${ANVILKIT_HOME:-/srv/anvilkit}/secrets/minio-knowledge.env
+      - ${ANVILKIT_HOME:-/srv/anvilkit}/secrets/minio-removals.env
+    entrypoint: ["/bin/sh", "/setup/minio-setup.sh"]
+    volumes: ["../dev/minio-setup.sh:/setup/minio-setup.sh:ro"]
+    depends_on: { minio: { condition: service_healthy } }
+
+  nats:
+    image: nats:2.12.4-alpine@sha256:31c6ed3b2da61645aaa3ad9217b5a52b34b6ebd555ecb71259cd7723c59ae1ea
+    restart: unless-stopped
+    logging: *logging
+    command: ["--jetstream", "--store_dir", "/data", "--name", "anvilkit", "--http_port", "8222"]
+    volumes: ["nats-data:/data"]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8222/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    deploy: { resources: { limits: { cpus: "1", memory: 512m } } }
+
+  nats-setup:
+    image: natsio/nats-box:0.19.0@sha256:00f10dd4156f28ece84bb3a52cf356ef220ebaa0494310caa90dec184d9e2b89
+    profiles: [setup]
+    logging: *logging
+    environment: { NATS_URL: nats://nats:4222 }
+    entrypoint: ["/bin/sh", "/setup/nats-setup.sh"]
+    volumes:
+      - ../dev/nats-setup.sh:/setup/nats-setup.sh:ro
+      - ../dev/nats:/setup/nats:ro
+    depends_on: { nats: { condition: service_healthy } }
+
+  valkey-queue:
+    image: valkey/valkey:9.0.2-alpine@sha256:68677f85c863830af7836ff07c4a13b7f085ebeff62f4dedb71499ca27d229f2
+    restart: unless-stopped
+    logging: *logging
+    command: ["valkey-server", "--appendonly", "yes", "--save", "", "--maxmemory", "384mb", "--maxmemory-policy", "noeviction"]
+    volumes: ["valkey-queue-data:/data"]
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    deploy: { resources: { limits: { cpus: "1", memory: 512m } } }
+
+  valkey-cache:
+    image: valkey/valkey:9.0.2-alpine@sha256:68677f85c863830af7836ff07c4a13b7f085ebeff62f4dedb71499ca27d229f2
+    restart: unless-stopped
+    logging: *logging
+    command: ["valkey-server", "--save", "", "--maxmemory", "384mb", "--maxmemory-policy", "allkeys-lru"]
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    deploy: { resources: { limits: { cpus: "1", memory: 512m } } }
+
+  qdrant:
+    image: qdrant/qdrant:v1.19.0@sha256:057ee3a8da769fe7310dd3537b4dc7583bf87a95ce8ac43c0af5a46bc580d1fc
+    restart: unless-stopped
+    logging: *logging
+    env_file: ${ANVILKIT_HOME:-/srv/anvilkit}/secrets/qdrant.env
+    environment: { QDRANT__TELEMETRY_DISABLED: "true" }
+    volumes: ["qdrant-data:/qdrant/storage"]
+    healthcheck:
+      test: ["CMD", "bash", "-c", ":> /dev/tcp/127.0.0.1/6333"]
+      interval: 5s
+      timeout: 3s
+      retries: 40
+    deploy: { resources: { limits: { cpus: "2", memory: 2g } } }
+
+  # P0.3 DEVELOPMENT_ONLY issuer (the API runs auth.mode fixture here; the
+  # issuer is kept so an oidc placement can be switched on without redeploy).
+  oidc:
+    image: ghcr.io/navikt/mock-oauth2-server:2.2.1@sha256:2418020949eefdf15e64e5dff74eaa7614de382ed7276564adb2c9b57f864169
+    restart: unless-stopped
+    logging: *logging
+    environment: { JSON_CONFIG_PATH: /etc/anvilkit-oidc/config.json }
+    ports: ["127.0.0.1:25556:8080"]
+    volumes: ["../dev/oidc/config.json:/etc/anvilkit-oidc/config.json:ro"]
+    deploy: { resources: { limits: { cpus: "1", memory: 512m } } }
+
+  # ---- migrations (one-shots; up.sh runs them in order) -------------------
+  control-migration:
+    image: ${IMAGE_CONTROL:?images.env}
+    profiles: [setup]
+    logging: *logging
+    entrypoint: ["/usr/local/bin/anvilkit-migration"]
+    environment: { ANVILKIT_MIGRATION_DSN_FILE: /run/secrets/control-migrator-dsn, ANVILKIT_MIGRATION_DEVELOPMENT: "true" }
+    secrets: [control-migrator-dsn]
+    depends_on: { postgres: { condition: service_healthy } }
+
+  knowledge-migration:
+    image: ${IMAGE_MIGRATION:?images.env}
+    profiles: [setup]
+    logging: *logging
+    command: ["-domain", "knowledge"]
+    environment: { ANVILKIT_MIGRATION_DSN_FILE: /run/secrets/knowledge-migrator-dsn, ANVILKIT_MIGRATION_DEVELOPMENT: "true" }
+    secrets: [knowledge-migrator-dsn]
+    depends_on: { postgres: { condition: service_healthy } }
+
+  mcp-migration:
+    image: ${IMAGE_MIGRATION:?images.env}
+    profiles: [setup]
+    logging: *logging
+    command: ["-domain", "mcp"]
+    environment: { ANVILKIT_MIGRATION_DSN_FILE: /run/secrets/mcp-migrator-dsn, ANVILKIT_MIGRATION_DEVELOPMENT: "true" }
+    secrets: [mcp-migrator-dsn]
+    depends_on: { postgres: { condition: service_healthy } }
+
+  knowledge-store-migration:
+    image: ${IMAGE_KNOWLEDGE:?images.env}
+    profiles: [setup]
+    logging: *logging
+    entrypoint: ["node", "/anvilkit/knowledge/dist/storemigrate.js"]
+    environment: { ANVILKIT_KNOWLEDGE_STORE_MIGRATION_URL_FILE: /run/secrets/knowledge-store-migrator-dsn, ANVILKIT_KNOWLEDGE_STORE_MIGRATION_DEVELOPMENT: "true" }
+    secrets: [knowledge-store-migrator-dsn]
+    depends_on: { postgres: { condition: service_healthy } }
+
+  # ---- the eight services (release images by digest; see images.env) ------
+  anvilkit-agent-control:
+    <<: *service
+    image: ${IMAGE_CONTROL:?images.env}
+    user: "65532:65532"
+    environment:
+      ANVILKIT_CONTROL_CONFIG: /etc/anvilkit/anvilkit-agent-control/config.yaml
+      ANVILKIT_CONTROL_LISTEN: 0.0.0.0:9101
+      ANVILKIT_CONTROL_HEALTH_LISTEN: 0.0.0.0:9113
+      ANVILKIT_CONTROL_TEMPORAL_ADDRESS: temporal:7233
+      ANVILKIT_CONTROL_DATABASE_URL_FILE: /run/secrets/control-app-dsn
+      ANVILKIT_CONTROL_INVENTORY_S3_ENDPOINT: http://minio:9000
+      ANVILKIT_CONTROL_INVENTORY_S3_BUCKET: anvilkit-inventory
+      ANVILKIT_CONTROL_INVENTORY_S3_ACCESS_KEY_ID_FILE: /run/secrets/inventory-access-key-id
+      ANVILKIT_CONTROL_INVENTORY_S3_SECRET_ACCESS_KEY_FILE: /run/secrets/inventory-secret-access-key
+      ANVILKIT_CONTROL_ARTIFACTS_S3_ENDPOINT: http://minio:9000
+      ANVILKIT_CONTROL_ARTIFACTS_S3_BUCKET: anvilkit-artifacts
+      ANVILKIT_CONTROL_ARTIFACTS_S3_ACCESS_KEY_ID_FILE: /run/secrets/artifacts-access-key-id
+      ANVILKIT_CONTROL_ARTIFACTS_S3_SECRET_ACCESS_KEY_FILE: /run/secrets/artifacts-secret-access-key
+      ANVILKIT_CONTROL_NATS_URL: nats://nats:4222
+      GOMEMLIMIT: 400MiB
+    secrets: [control-app-dsn, inventory-access-key-id, inventory-secret-access-key, artifacts-access-key-id, artifacts-secret-access-key]
+    volumes:
+      - ./config/anvilkit-agent-control.yaml:/etc/anvilkit/anvilkit-agent-control/config.yaml:ro
+      - ${ANVILKIT_HOME:-/srv/anvilkit}/certs/anvilkit-agent-control:/etc/anvilkit/identity:ro
+    depends_on:
+      postgres: { condition: service_healthy }
+      temporal: { condition: service_healthy }
+      minio: { condition: service_healthy }
+      nats: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:9113/readyz"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 20s
+    deploy: { resources: { limits: { cpus: "2", memory: 512m } } }
+
+  anvilkit-agent-api:
+    <<: *service
+    image: ${IMAGE_API:?images.env}
+    user: "65532:65532"
+    environment:
+      ANVILKIT_API_CONFIG: /etc/anvilkit/anvilkit-agent-api/config.yaml
+      ANVILKIT_API_LISTEN: 0.0.0.0:9100
+      ANVILKIT_API_CONTROL_ADDRESS: anvilkit-agent-control:9101
+      ANVILKIT_API_KNOWLEDGE_ADDRESS: anvilkit-agent-knowledge:9105
+      ANVILKIT_API_MCP_ADDRESS: anvilkit-agent-mcp:9106
+      ANVILKIT_API_AUTH_MODE: fixture
+      ANVILKIT_API_PRINCIPALS_FILE: /run/secrets/api-principals
+    secrets: [api-principals]
+    ports: ["127.0.0.1:9100:9100"]
+    volumes:
+      - ./config/anvilkit-agent-api.yaml:/etc/anvilkit/anvilkit-agent-api/config.yaml:ro
+      - ${ANVILKIT_HOME:-/srv/anvilkit}/certs/anvilkit-agent-api:/etc/anvilkit/identity:ro
+    depends_on:
+      anvilkit-agent-control: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:9100/readyz"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 15s
+    deploy: { resources: { limits: { cpus: "1", memory: 256m } } }
+
+  # The Workflow's launcher is the fixed-template Kubernetes port; this
+  # placement has no cluster and no other execution backend, so the launcher
+  # identity is a kubeconfig naming no reachable API server: the worker
+  # starts and runs the model-call Activities, and every Job launch
+  # (LocalCheck, codegen, validator) fails at CreateJob. Recorded as a
+  # blocker in README.md; nothing here pretends otherwise.
+  anvilkit-agent-workflow:
+    <<: *service
+    image: ${IMAGE_WORKFLOW:?images.env}
+    user: "65532:65532"
+    environment:
+      ANVILKIT_WORKFLOW_CONFIG: /etc/anvilkit/anvilkit-agent-workflow/config.yaml
+      ANVILKIT_WORKFLOW_TEMPORAL_ADDRESS: temporal:7233
+      ANVILKIT_WORKFLOW_CONTROL_ADDRESS: anvilkit-agent-control:9101
+      ANVILKIT_WORKFLOW_LAUNCH_BACKEND: compose-no-cluster
+      ANVILKIT_WORKFLOW_IMAGE_REGISTRY: ${ANVILKIT_IMAGE_REGISTRY:?images.env}
+      ANVILKIT_WORKFLOW_SIDECAR_CONTROL_ADDRESS: anvilkit-agent-control:9101
+      ANVILKIT_WORKFLOW_KUBECONFIG: /run/secrets/launcher-kubeconfig
+      ANVILKIT_WORKFLOW_BUILD_ID: ${ANVILKIT_RELEASE:?images.env}
+      ANVILKIT_WORKFLOW_HEALTH_LISTEN: 0.0.0.0:9102
+      ANVILKIT_WORKFLOW_MODEL_PROXY_ADDRESS: https://anvilkit-agent-model-proxy:9103
+      ANVILKIT_WORKFLOW_SIDECAR_MODEL_PROXY_URL: https://anvilkit-agent-model-proxy:9103
+      ANVILKIT_WORKFLOW_PAGIX_DOUBLE_DIR: /var/lib/anvilkit/pagix
+    secrets: [launcher-kubeconfig]
+    volumes:
+      - ./config/anvilkit-agent-workflow.yaml:/etc/anvilkit/anvilkit-agent-workflow/config.yaml:ro
+      - ${ANVILKIT_HOME:-/srv/anvilkit}/certs/anvilkit-agent-workflow:/etc/anvilkit/identity:ro
+      - pagix-double:/var/lib/anvilkit/pagix
+    depends_on:
+      anvilkit-agent-control: { condition: service_healthy }
+      temporal: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:9102/readyz"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 20s
+    deploy: { resources: { limits: { cpus: "2", memory: 512m } } }
+
+  anvilkit-agent-model-proxy:
+    <<: *service
+    image: ${IMAGE_MODEL_PROXY:?images.env}
+    user: "65532:65532"
+    environment:
+      ANVILKIT_MODEL_PROXY_CONFIG: /etc/anvilkit/anvilkit-agent-model-proxy/config.yaml
+      ANVILKIT_MODEL_PROXY_CONTRACTS_DIR: /anvilkit/contracts
+      ANVILKIT_MODEL_PROXY_LISTEN: 0.0.0.0:9103
+      ANVILKIT_MODEL_PROXY_HEALTH_LISTEN: 0.0.0.0:9104
+      ANVILKIT_MODEL_PROXY_CONTROL_ADDRESS: anvilkit-agent-control:9101
+      ANVILKIT_MODEL_PROXY_STORE_S3_ENDPOINT: http://minio:9000
+      ANVILKIT_MODEL_PROXY_STORE_S3_BUCKET: anvilkit-model-proxy
+      ANVILKIT_MODEL_PROXY_STORE_S3_ACCESS_KEY_ID_FILE: /run/secrets/model-proxy-store-access-key-id
+      ANVILKIT_MODEL_PROXY_STORE_S3_SECRET_ACCESS_KEY_FILE: /run/secrets/model-proxy-store-secret-access-key
+    # The provider credential, when the operator delivers one, comes from
+    # this restricted file (ANVILKIT_MODEL_PROXY_CREDENTIAL_<NAME>=…) and the
+    # route in config/anvilkit-agent-model-proxy.yaml is enabled; absent, the
+    # route stays unserved and every call is refused (PROFILE_UNQUALIFIED).
+    env_file:
+      - path: ${ANVILKIT_HOME:-/srv/anvilkit}/secrets/model-proxy-credentials.env
+        required: false
+    secrets: [model-proxy-store-access-key-id, model-proxy-store-secret-access-key]
+    volumes:
+      - ./config/anvilkit-agent-model-proxy.yaml:/etc/anvilkit/anvilkit-agent-model-proxy/config.yaml:ro
+      - ${ANVILKIT_HOME:-/srv/anvilkit}/certs/anvilkit-agent-model-proxy:/etc/anvilkit/model-proxy-mtls:ro
+      - ${ANVILKIT_HOME:-/srv/anvilkit}/certs/anvilkit-agent-model-proxy:/etc/anvilkit/control-mtls:ro
+    depends_on:
+      anvilkit-agent-control: { condition: service_healthy }
+      minio: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:9104/readyz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    deploy: { resources: { limits: { cpus: "2", memory: 512m } } }
+
+  anvilkit-agent-inference:
+    <<: *service
+    image: ${IMAGE_INFERENCE:?images.env}
+    user: "10001:10001"
+    environment:
+      ANVILKIT_INFERENCE_CONFIG: /etc/anvilkit/anvilkit-agent-inference/config.yaml
+      ANVILKIT_INFERENCE_LISTEN: 0.0.0.0:9108
+      ANVILKIT_INFERENCE_TLS_CERT_FILE: /etc/anvilkit/tls/tls.crt
+      ANVILKIT_INFERENCE_TLS_KEY_FILE: /etc/anvilkit/tls/tls.key
+    tmpfs: ["/tmp:size=256m"]
+    volumes:
+      - ./config/anvilkit-agent-inference.yaml:/etc/anvilkit/anvilkit-agent-inference/config.yaml:ro
+      - ${ANVILKIT_HOME:-/srv/anvilkit}/certs/anvilkit-agent-inference:/etc/anvilkit/tls:ro
+    healthcheck:
+      test: ["CMD", "/opt/venv/bin/python", "-c", "import ssl,urllib.request;c=ssl._create_unverified_context();urllib.request.urlopen('https://127.0.0.1:9108/readyz',context=c,timeout=4)"]
+      interval: 15s
+      timeout: 6s
+      retries: 8
+      start_period: 120s
+    deploy: { resources: { limits: { cpus: "4", memory: 6g } } }
+
+  anvilkit-agent-knowledge:
+    <<: *service
+    image: ${IMAGE_KNOWLEDGE:?images.env}
+    user: "65532:65532"
+    environment:
+      ANVILKIT_KNOWLEDGE_CONFIG: /etc/anvilkit/anvilkit-agent-knowledge/config.yaml
+      ANVILKIT_KNOWLEDGE_LISTEN: 0.0.0.0:9105
+      ANVILKIT_KNOWLEDGE_HEALTH_LISTEN: 0.0.0.0:9115
+      ANVILKIT_KNOWLEDGE_DATABASE_URL_FILE: /run/secrets/knowledge-app-dsn
+      ANVILKIT_KNOWLEDGE_IDENTITY_CERT_FILE: /etc/anvilkit/identity/tls.crt
+      ANVILKIT_KNOWLEDGE_IDENTITY_KEY_FILE: /etc/anvilkit/identity/tls.key
+      ANVILKIT_KNOWLEDGE_IDENTITY_CA_FILE: /etc/anvilkit/identity/ca.crt
+      ANVILKIT_KNOWLEDGE_CONTROL_ADDRESS: anvilkit-agent-control:9101
+      ANVILKIT_KNOWLEDGE_OBJECTS_ENDPOINT: http://minio:9000
+      ANVILKIT_KNOWLEDGE_OBJECTS_STAGE_ENDPOINT: http://minio:9000
+      ANVILKIT_KNOWLEDGE_OBJECTS_CREDENTIALS_FILE: /run/secrets/knowledge-objects-credentials
+      ANVILKIT_KNOWLEDGE_REMOVALS_ENDPOINT: http://minio:9000
+      ANVILKIT_KNOWLEDGE_REMOVALS_CREDENTIALS_FILE: /run/secrets/knowledge-removals-credentials
+      ANVILKIT_KNOWLEDGE_INFERENCE_URL: https://anvilkit-agent-inference:9108
+      ANVILKIT_KNOWLEDGE_QDRANT_URL: http://qdrant:6333
+      ANVILKIT_KNOWLEDGE_QDRANT_API_KEY_FILE: /run/secrets/qdrant-api-key
+      ANVILKIT_KNOWLEDGE_STORE_DATABASE_URL_FILE: /run/secrets/knowledge-store-dsn
+      ANVILKIT_KNOWLEDGE_CLEANUP_DATABASE_URL_FILE: /run/secrets/knowledge-cleanup-dsn
+    secrets: [knowledge-app-dsn, knowledge-objects-credentials, knowledge-removals-credentials, qdrant-api-key, knowledge-store-dsn, knowledge-cleanup-dsn]
+    volumes:
+      - ./config/anvilkit-agent-knowledge.yaml:/etc/anvilkit/anvilkit-agent-knowledge/config.yaml:ro
+      - ${ANVILKIT_HOME:-/srv/anvilkit}/certs/anvilkit-agent-knowledge:/etc/anvilkit/identity:ro
+      - ${ANVILKIT_HOME:-/srv/anvilkit}/certs/ca:/etc/anvilkit/inference-ca:ro
+    depends_on:
+      postgres: { condition: service_healthy }
+      qdrant: { condition: service_healthy }
+      minio: { condition: service_healthy }
+      anvilkit-agent-control: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:9115/readyz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    deploy: { resources: { limits: { cpus: "2", memory: 1g } } }
+
+  knowledge-forwarder:
+    <<: *service
+    image: ${IMAGE_KNOWLEDGE_FORWARDER:?images.env}
+    user: "65532:65532"
+    environment:
+      ANVILKIT_FORWARDER_DATABASE_URL_FILE: /run/secrets/knowledge-forwarder-dsn
+      ANVILKIT_FORWARDER_NATS_URL: nats://nats:4222
+      ANVILKIT_FORWARDER_CONSUMER_GROUP: anvilkit-agent-knowledge-forwarder
+      ANVILKIT_FORWARDER_HEALTH_LISTEN: 0.0.0.0:9125
+      ANVILKIT_FORWARDER_NATS_TLS_MODE: development
+      ANVILKIT_FORWARDER_DEVELOPMENT_ENABLED: "true"
+    secrets: [knowledge-forwarder-dsn]
+    depends_on:
+      postgres: { condition: service_healthy }
+      nats: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:9125/readyz"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 15s
+    deploy: { resources: { limits: { cpus: "0.5", memory: 128m } } }
+
+  knowledge-relay:
+    <<: *service
+    image: ${IMAGE_BACKGROUND_WORKER:?images.env}
+    user: "65532:65532"
+    command: ["relay"]
+    environment:
+      ANVILKIT_BACKGROUND_WORKER_CONFIG: /etc/anvilkit/anvilkit-agent-background-worker/config.yaml
+      ANVILKIT_BACKGROUND_WORKER_RELAY_OWNER: knowledge
+      ANVILKIT_BACKGROUND_WORKER_KNOWLEDGE_ADDRESS: anvilkit-agent-knowledge:9105
+      ANVILKIT_BACKGROUND_WORKER_HEALTH_LISTEN: 0.0.0.0:9126
+      ANVILKIT_BACKGROUND_WORKER_NATS_URL: nats://nats:4222
+      ANVILKIT_BACKGROUND_WORKER_NATS_TLS_MODE: development
+      ANVILKIT_BACKGROUND_WORKER_RELAY_DATABASE_URL_FILE: /run/secrets/knowledge-relay-dsn
+      ANVILKIT_BACKGROUND_WORKER_QUEUE_URL_FILE: /run/secrets/queue-url
+      ANVILKIT_BACKGROUND_WORKER_IDENTITY_MODE: mtls
+      ANVILKIT_BACKGROUND_WORKER_IDENTITY_CERT_FILE: /etc/anvilkit/identity/tls.crt
+      ANVILKIT_BACKGROUND_WORKER_IDENTITY_KEY_FILE: /etc/anvilkit/identity/tls.key
+      ANVILKIT_BACKGROUND_WORKER_IDENTITY_CA_FILE: /etc/anvilkit/identity/ca.crt
+      ANVILKIT_BACKGROUND_WORKER_OWNER_SERVER_NAME: anvilkit-agent-knowledge
+    secrets: [knowledge-relay-dsn, queue-url]
+    volumes:
+      - ./config/anvilkit-agent-background-worker.yaml:/etc/anvilkit/anvilkit-agent-background-worker/config.yaml:ro
+      - ${ANVILKIT_HOME:-/srv/anvilkit}/certs/anvilkit-agent-knowledge:/etc/anvilkit/identity:ro
+    depends_on:
+      anvilkit-agent-knowledge: { condition: service_healthy }
+      valkey-queue: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:9126/readyz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    deploy: { resources: { limits: { cpus: "0.5", memory: 256m } } }
+
+  anvilkit-agent-mcp:
+    <<: *service
+    image: ${IMAGE_MCP:?images.env}
+    user: "65532:65532"
+    environment:
+      ANVILKIT_MCP_CONFIG: /etc/anvilkit/anvilkit-agent-mcp/config.yaml
+      ANVILKIT_MCP_LISTEN: 0.0.0.0:9106
+      ANVILKIT_MCP_HEALTH_LISTEN: 0.0.0.0:9116
+      ANVILKIT_MCP_DATABASE_URL_FILE: /run/secrets/mcp-app-dsn
+      ANVILKIT_MCP_NATS_URL: nats://nats:4222
+      ANVILKIT_MCP_CONTROL_ADDRESS: anvilkit-agent-control:9101
+    secrets: [mcp-app-dsn]
+    volumes:
+      - ./config/anvilkit-agent-mcp.yaml:/etc/anvilkit/anvilkit-agent-mcp/config.yaml:ro
+      - ${ANVILKIT_HOME:-/srv/anvilkit}/certs/anvilkit-agent-mcp:/etc/anvilkit/identity:ro
+    depends_on:
+      postgres: { condition: service_healthy }
+      nats: { condition: service_healthy }
+      anvilkit-agent-control: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:9116/readyz"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 20s
+    deploy: { resources: { limits: { cpus: "1", memory: 384m } } }
+
+  mcp-relay:
+    <<: *service
+    image: ${IMAGE_BACKGROUND_WORKER:?images.env}
+    user: "65532:65532"
+    command: ["relay"]
+    environment:
+      ANVILKIT_BACKGROUND_WORKER_CONFIG: /etc/anvilkit/anvilkit-agent-background-worker/config.yaml
+      ANVILKIT_BACKGROUND_WORKER_RELAY_OWNER: mcp
+      ANVILKIT_BACKGROUND_WORKER_MCP_ADDRESS: anvilkit-agent-mcp:9106
+      ANVILKIT_BACKGROUND_WORKER_HEALTH_LISTEN: 0.0.0.0:9126
+      ANVILKIT_BACKGROUND_WORKER_NATS_URL: nats://nats:4222
+      ANVILKIT_BACKGROUND_WORKER_NATS_TLS_MODE: development
+      ANVILKIT_BACKGROUND_WORKER_RELAY_DATABASE_URL_FILE: /run/secrets/mcp-relay-dsn
+      ANVILKIT_BACKGROUND_WORKER_QUEUE_URL_FILE: /run/secrets/queue-url
+      ANVILKIT_BACKGROUND_WORKER_IDENTITY_MODE: mtls
+      ANVILKIT_BACKGROUND_WORKER_IDENTITY_CERT_FILE: /etc/anvilkit/identity/tls.crt
+      ANVILKIT_BACKGROUND_WORKER_IDENTITY_KEY_FILE: /etc/anvilkit/identity/tls.key
+      ANVILKIT_BACKGROUND_WORKER_IDENTITY_CA_FILE: /etc/anvilkit/identity/ca.crt
+      ANVILKIT_BACKGROUND_WORKER_OWNER_SERVER_NAME: anvilkit-agent-mcp
+    secrets: [mcp-relay-dsn, queue-url]
+    volumes:
+      - ./config/anvilkit-agent-background-worker.yaml:/etc/anvilkit/anvilkit-agent-background-worker/config.yaml:ro
+      - ${ANVILKIT_HOME:-/srv/anvilkit}/certs/anvilkit-agent-mcp:/etc/anvilkit/identity:ro
+    depends_on:
+      anvilkit-agent-mcp: { condition: service_healthy }
+      valkey-queue: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:9126/readyz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    deploy: { resources: { limits: { cpus: "0.5", memory: 256m } } }
+
+  anvilkit-agent-background-worker:
+    <<: *service
+    image: ${IMAGE_BACKGROUND_WORKER:?images.env}
+    user: "65532:65532"
+    command: ["worker"]
+    environment:
+      ANVILKIT_BACKGROUND_WORKER_CONFIG: /etc/anvilkit/anvilkit-agent-background-worker/config.yaml
+      ANVILKIT_BACKGROUND_WORKER_HEALTH_LISTEN: 0.0.0.0:9127
+      ANVILKIT_BACKGROUND_WORKER_QUEUE_URL_FILE: /run/secrets/queue-url
+      ANVILKIT_BACKGROUND_WORKER_KNOWLEDGE_ADDRESS: anvilkit-agent-knowledge:9105
+      ANVILKIT_BACKGROUND_WORKER_MCP_ADDRESS: anvilkit-agent-mcp:9106
+    secrets: [queue-url]
+    volumes:
+      - ./config/anvilkit-agent-background-worker.yaml:/etc/anvilkit/anvilkit-agent-background-worker/config.yaml:ro
+      - ${ANVILKIT_HOME:-/srv/anvilkit}/certs/anvilkit-agent-background-worker:/etc/anvilkit/identity:ro
+    depends_on:
+      valkey-queue: { condition: service_healthy }
+      anvilkit-agent-knowledge: { condition: service_healthy }
+      anvilkit-agent-mcp: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:9127/readyz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    deploy: { resources: { limits: { cpus: "1", memory: 384m } } }

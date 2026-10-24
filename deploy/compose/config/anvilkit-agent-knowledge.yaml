@@ -1,0 +1,67 @@
+# Reviewed, secret-free configuration of anvilkit-agent-knowledge for the Compose placement
+# (deploy/compose; DEVELOPMENT_ONLY). Rendered from the service chart's config
+# template with the development values of deploy/dev/values and adapted to the
+# Compose service names; placements (addresses, listeners, secret files) come
+# from the allowlisted ANVILKIT_* environment in compose.yaml. Mounted read-only
+# at /etc/anvilkit/anvilkit-agent-knowledge/config.yaml.
+apollo:
+  app_id: anvilkit-agent-knowledge
+  mode: disabled
+control:
+  identity:
+    mode: mtls
+    server_name: anvilkit-agent-control
+  timeout: 5s
+database:
+  max_conn: 8
+development:
+  enabled: true
+grpc:
+  capacity: 64
+  identity:
+    ca_file: /etc/anvilkit/identity/ca.crt
+    cert_file: /etc/anvilkit/identity/tls.crt
+    key_file: /etc/anvilkit/identity/tls.key
+    max_connection_age: 1h
+    mode: mtls
+    reload_interval: 5s
+  listen: 127.0.0.1:9105
+  shutdown_timeout: 20s
+health:
+  listen: 127.0.0.1:9115
+inference:
+  dimensions: 1024
+  embedding_profile: bge-m3-v1
+  embedding_revision: 5617a9f61b028005a4858fdac845db406aefb181
+  max_batch: 32
+  rerank_profile: bge-reranker-v2-m3-v1
+  rerank_revision: 953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e
+  timeout: 30s
+  tls:
+    ca_file: /etc/anvilkit/inference-ca/ca.crt
+    mode: tls
+objects:
+  bucket: anvilkit-knowledge
+  region: us-east-1
+outbox:
+  consumer_group: anvilkit-agent-knowledge-forwarder
+parser:
+  deadline_grace: 30s
+  kube_timeout: 10s
+  namespace: anvilkit-parsing
+  node_pool: parsing
+  poll_interval: 1s
+  presign_ttl: 15m
+  profile: ''
+  seccomp_profile: anvilkit/candidate.json
+reload:
+  drain_limit: 30s
+  interval: 2s
+sources:
+  max_bytes: 33554432
+tasks:
+  max_attempts: 3
+  max_input_bytes: 65536
+  max_lease: 10m
+  retry_delay: 5s
+  sweep_interval: 2s

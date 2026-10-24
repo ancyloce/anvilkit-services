@@ -1,0 +1,32 @@
+# Reviewed, secret-free configuration of anvilkit-agent-inference for the Compose placement
+# (deploy/compose; DEVELOPMENT_ONLY). Rendered from the service chart's config
+# template with the development values of deploy/dev/values and adapted to the
+# Compose service names; placements (addresses, listeners, secret files) come
+# from the allowlisted ANVILKIT_* environment in compose.yaml. Mounted read-only
+# at /etc/anvilkit/anvilkit-agent-inference/config.yaml.
+apollo:
+  mode: disabled
+development:
+  enabled: true
+embedding:
+  batch_size: 16
+  max_inputs: 64
+  max_request_chars: 262144
+  passage_max_tokens: 2048
+  profile_id: bge-m3-v1
+  query_max_tokens: 512
+max_body_bytes: 4194304
+queue:
+  max_pending_items: 512
+  max_wait_ms: 5
+  request_timeout_ms: 30000
+rerank:
+  batch_size: 16
+  max_candidates: 64
+  max_request_chars: 262144
+  max_tokens: 1024
+  profile_id: bge-reranker-v2-m3-v1
+shutdown_timeout_s: 20
+tls:
+  mode: tls
+torch_threads: 4

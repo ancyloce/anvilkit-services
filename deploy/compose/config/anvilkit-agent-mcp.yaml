@@ -1,0 +1,69 @@
+# Reviewed, secret-free configuration of anvilkit-agent-mcp for the Compose placement
+# (deploy/compose; DEVELOPMENT_ONLY). Rendered from the service chart's config
+# template with the development values of deploy/dev/values and adapted to the
+# Compose service names; placements (addresses, listeners, secret files) come
+# from the allowlisted ANVILKIT_* environment in compose.yaml. Mounted read-only
+# at /etc/anvilkit/anvilkit-agent-mcp/config.yaml.
+apollo:
+  app_id: anvilkit-agent-mcp
+  mode: disabled
+barrier:
+  reconcile_age: 5s
+  reconcile_interval: 2s
+calls:
+  max_response_bytes: 1048576
+  qualified_routes: []
+  reconcile_age: 2m
+  reconcile_interval: 2s
+  send_timeout: 60s
+  wait: 30s
+catalog:
+  allowed_hosts: []
+  contextforge:
+    timeout: 60s
+  private_hosts: []
+  refresh_interval: 6h
+control:
+  identity:
+    mode: mtls
+    mtls:
+      server_name: anvilkit-agent-control
+  timeout: 5s
+database:
+  max_conn: 8
+development:
+  enabled: true
+grpc:
+  capacity: 64
+  identity:
+    ca_file: /etc/anvilkit/identity/ca.crt
+    cert_file: /etc/anvilkit/identity/tls.crt
+    key_file: /etc/anvilkit/identity/tls.key
+    max_connection_age: 1h
+    mode: mtls
+    reload_interval: 5s
+  listen: 127.0.0.1:9106
+  shutdown_timeout: 20s
+health:
+  listen: 127.0.0.1:9116
+outbox:
+  ack_deadline: 30s
+  batch_size: 100
+  consumer_group: anvilkit-agent-mcp-forwarder
+  forwarder_enabled: true
+  nats:
+    name: anvilkit-agent-mcp
+    publish_timeout: 5s
+    tls:
+      mode: development
+  poll_interval: 500ms
+  resend_interval: 1s
+reload:
+  drain_limit: 30s
+  interval: 2s
+tasks:
+  max_attempts: 3
+  max_input_bytes: 65536
+  max_lease: 10m
+  retry_delay: 5s
+  sweep_interval: 2s
