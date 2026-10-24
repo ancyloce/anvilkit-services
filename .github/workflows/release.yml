@@ -69,11 +69,20 @@ jobs:
       - name: Build, scan, SBOM, sign and attest (refuses dirty inputs; BLOCKED on any finding)
         env:
           IDENTITY: https://github.com/${{ github.workflow_ref }}
+        # --only names the ten owned images (and the eight charts of the same
+        # names): the fixed Job images and the platform mirror are taken at the
+        # digests their reviewed profiles pin from the registry named here, which
+        # holds none of them until a profile revision is published there; the
+        # Compose placement (deploy/compose) consumes only the owned images.
         run: >-
           .local/verification-venv/bin/python tools/release-artifacts.py --run "$GITHUB_REF_NAME"
           --registry-push "$ANVILKIT_RELEASE_REGISTRY" --registry "$ANVILKIT_RELEASE_REGISTRY" --network host
           --signing keyless --certificate-identity "$IDENTITY"
           --certificate-oidc-issuer https://token.actions.githubusercontent.com --provenance
+          --only anvilkit-agent-api --only anvilkit-agent-control --only anvilkit-agent-workflow
+          --only anvilkit-agent-model-proxy --only anvilkit-agent-knowledge --only anvilkit-knowledge-forwarder
+          --only anvilkit-agent-mcp --only anvilkit-agent-background-worker --only anvilkit-agent-inference
+          --only anvilkit-migration
       - name: The manifest is SIGNED
         run: |
           status=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["status"])' "outputs/qualification/$GITHUB_REF_NAME/release/release-manifest.json")
