@@ -136,8 +136,11 @@ def tool(image: str, args: list[str], out: pathlib.Path, env: dict | None = None
     the container still "running") is bounded: when the output file is complete
     JSON the result stands and the named container is removed; otherwise it fails."""
     name = f"anvilkit-release-{secrets.token_hex(6)}"
+    # The tool runs as the invoking user: on a CI runner that is not root and has
+    # no home in the container, so the writable places are named explicitly
+    # (Trivy's cache on the mounted volume, HOME for cosign's own cache).
     cmd = ["docker", "run", "--rm", "--name", name, "--network", NETWORK, "-u", f"{os.getuid()}:{os.getgid()}", "-v", f"{out}:/out", "-v", f"{KEYS}:/keys:ro",
-           "-v", f"{CACHE}:/root/.cache/trivy", "-e", "DOCKER_CONFIG=/tmp/docker"]
+           "-v", f"{CACHE}:/root/.cache/trivy", "-e", "DOCKER_CONFIG=/tmp/docker", "-e", "TRIVY_CACHE_DIR=/root/.cache/trivy", "-e", "HOME=/tmp"]
     # An authenticated registry: the host's Docker credentials, read-only (never on a command line).
     config = pathlib.Path(os.environ.get("DOCKER_CONFIG", pathlib.Path.home() / ".docker")) / "config.json"
     if not SETTINGS["insecure"] and config.is_file():
