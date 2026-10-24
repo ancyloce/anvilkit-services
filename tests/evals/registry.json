@@ -2086,13 +2086,13 @@
       {
         "case": "IT-LOCALCHECK",
         "name": "TestLocalCheckChain/duplicate_submission_returns_the_original_operation_and_starts_nothing_new",
-        "file": "tests/integration/localcheck_integration_test.go:583",
+        "file": "tests/integration/localcheck_integration_test.go:602",
         "checks": "The same commandId returns the original operationId, a different body is 409 IDEMPOTENCY_CONFLICT, one operations row and one accepted result."
       },
       {
         "case": "IT-LOCALCHECK",
         "name": "TestLocalCheckChain/cancel_while_the_Job_runs_fences_new_launches_and_ends_canceled_with_cleanup",
-        "file": "tests/integration/localcheck_integration_test.go:601",
+        "file": "tests/integration/localcheck_integration_test.go:620",
         "checks": "A cancel under expectedRevision on a running Job ends canceled/cancel_applied with cleanup complete and the Job gone."
       },
       {
@@ -2124,7 +2124,7 @@
       {
         "case": "U-TEAM",
         "name": "TeamRunner a budget or deadline bound ends the run before a send; missing limits refuse the configuration",
-        "file": "jobs/codegen/team/test/graph.test.ts:415",
+        "file": "jobs/codegen/team/test/graph.test.ts:459",
         "checks": "Budget/deadline bounds stop the team before the next send and missing limits refuse the configuration.",
         "title": "a budget or deadline bound ends the run before a send; missing limits refuse the configuration"
       }
@@ -2337,7 +2337,7 @@
       {
         "case": "U-TEAM",
         "name": "TeamRunner one remaining aggregate allowance funds one reviewer send, never two: reservations are taken before the fan-out",
-        "file": "jobs/codegen/team/test/graph.test.ts:524",
+        "file": "jobs/codegen/team/test/graph.test.ts:568",
         "checks": "Roles share one aggregate allowance reserved before the parallel fan-out.",
         "title": "one remaining aggregate allowance funds one reviewer send, never two: reservations are taken before the fan-out"
       },
@@ -2570,7 +2570,7 @@
       {
         "case": "U-TEAM",
         "name": "TeamRunner the fixed roles run in order and within bounds: plan, no invented retrieval, one coder, two parallel reviewers, validation, certified",
-        "file": "jobs/codegen/team/test/graph.test.ts:157",
+        "file": "jobs/codegen/team/test/graph.test.ts:165",
         "checks": "Fixed role order and bounded parallel reviewers.",
         "title": "the fixed roles run in order and within bounds: plan, no invented retrieval, one coder, two parallel reviewers, validation, certified"
       },
