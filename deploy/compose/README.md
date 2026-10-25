@@ -41,6 +41,7 @@ registry. The foundation images are the digests of `deploy/dev/compose.yaml`.
 ```sh
 export ANVILKIT_HOME=/srv/anvilkit
 sh deploy/compose/up.sh                  # secrets, PKI, pull, foundation, setup one-shots, migrations, services, status
+sh deploy/compose/up.sh budget           # current + next month budget pools of tenant_a/user_a (once a month)
 sh deploy/compose/up.sh status           # docker compose ps
 sh deploy/compose/pki.sh verify          # every leaf chains to the CA; SANs printed
 sh deploy/compose/down.sh                # stop and remove containers; volumes, secrets and certificates stay
@@ -59,6 +60,30 @@ Published ports, all on `127.0.0.1` of the server (reach them through
 the Compose network. The API authenticates `auth.mode: fixture` bearer tokens from
 `/srv/anvilkit/secrets/api-principals.json` (DEVELOPMENT_ONLY; ENV-07 supplies the
 production issuer).
+
+## Budget pools
+
+Control funds every Preparation (2 USD reserved) and Generation (3 USD reserved,
+`profiles.*.funding` in `config/anvilkit-agent-control.yaml`) from a current platform
+pool, a tenant pool and an actor pool; with any of them missing it refuses the
+operation with `BUDGET_EXHAUSTED` before a model is called. Unspent reservations
+return at settlement. `up.sh budget` (the `control-budget-setup` one-shot,
+`control-budget-pools.sql`) creates those pools for the fixture principal
+(`tenant_a`, `user_a`) for the current and the next calendar month (UTC), keeps
+existing pools unchanged, and must run once a month. Caps are scale-6 USD
+amounts (`1000000` = 1 USD) from the shell that runs it:
+
+| Variable | Default | Pool |
+|---|---|---|
+| `ANVILKIT_BUDGET_PLATFORM_CAP` | `20000000` (20 USD) | platform |
+| `ANVILKIT_BUDGET_TENANT_CAP` | `10000000` (10 USD) | tenant `tenant_a` |
+| `ANVILKIT_BUDGET_ACTOR_CAP` | `10000000` (10 USD) | actor `user_a` |
+
+**Open decision (owner):** the product has no pool administration path. Control's
+`BudgetPoolService.CreatePool` is allowed only for the API's identity, and the API
+exposes no route for it, so this placement writes the rows `CreatePool` would write,
+as Control's application role. An operator route (or a Control administration tool)
+replaces this step once it exists.
 
 ## Known blockers of this placement
 

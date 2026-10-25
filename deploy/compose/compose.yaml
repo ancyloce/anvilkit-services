@@ -235,6 +235,29 @@ services:
     secrets: [control-migrator-dsn]
     depends_on: { postgres: { condition: service_healthy } }
 
+  # DEVELOPMENT_ONLY funding of the fixture principal (tenant_a, user_a):
+  # current and next month platform/tenant/actor pools, idempotent
+  # (control-budget-pools.sql). Run by `up.sh budget` after the migrations.
+  # Caps are scale-6 USD amounts from the shell running up.sh.
+  control-budget-setup:
+    image: postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
+    profiles: [setup]
+    logging: *logging
+    environment:
+      PLATFORM_CAP: ${ANVILKIT_BUDGET_PLATFORM_CAP:-20000000}
+      TENANT_CAP: ${ANVILKIT_BUDGET_TENANT_CAP:-10000000}
+      ACTOR_CAP: ${ANVILKIT_BUDGET_ACTOR_CAP:-10000000}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        for v in "$$PLATFORM_CAP" "$$TENANT_CAP" "$$ACTOR_CAP"; do
+          case "$$v" in ''|*[!0-9]*) echo "budget caps must be scale-6 integer amounts" >&2; exit 2 ;; esac
+        done
+        exec psql "$$(cat /run/secrets/control-app-dsn)" -X -v platform_cap="$$PLATFORM_CAP" -v tenant_cap="$$TENANT_CAP" -v actor_cap="$$ACTOR_CAP" -f /setup/control-budget-pools.sql
+    secrets: [control-app-dsn]
+    volumes: ["./control-budget-pools.sql:/setup/control-budget-pools.sql:ro"]
+    depends_on: { postgres: { condition: service_healthy } }
+
   knowledge-migration:
     image: ${IMAGE_MIGRATION:?images.env}
     profiles: [setup]

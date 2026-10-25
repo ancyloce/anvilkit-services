@@ -56,6 +56,12 @@ done
 st=$($COMPOSE exec -T postgres psql -U postgres -d anvilkit_knowledge -tAc "SELECT count(*) FROM information_schema.tables WHERE table_schema='memory_store'" 2>/dev/null | tr -d ' ')
 if [ -n "$st" ] && [ "$st" -gt 0 ]; then pass "knowledge memory store schema present ($st tables)"; else fail "knowledge memory store schema missing"; fi
 
+pools=$($COMPOSE exec -T postgres psql -U postgres -d anvilkit_control -tAc "SELECT string_agg(level || ':' || cap_amount || '/' || allocated, ' ' ORDER BY level) FROM budget_pools WHERE now() >= period_start AND now() < period_end AND currency = 'USD' AND (level = 'platform' OR (level = 'tenant' AND tenant_id = 'tenant_a') OR (level = 'actor' AND tenant_id = 'tenant_a' AND actor_id = 'user_a'))" 2>/dev/null | tr -d ' ')
+case "$pools" in
+  actor:*platform:*tenant:*) pass "current USD budget pools for platform, tenant_a, user_a (level:cap/allocated, scale 6: $pools)" ;;
+  *) fail "current budget pools incomplete (have: ${pools:-none}); run up.sh budget" ;;
+esac
+
 echo "== foundation setup"
 # The server image carries no CLI; the admin-tools image of the temporal-namespace one-shot does.
 ns=$(docker run --rm --network anvilkit_default temporalio/admin-tools:1.31.2@sha256:dbc5fcd6ee8f0f4d808bf765af9a87dea9d8a283abfdcfbd2fc148496ba66107 temporal operator namespace describe --namespace anvilkit --address temporal:7233 2>/dev/null | grep -E '^ *(Name|NamespaceInfo.Name) +anvilkit' | head -1)

@@ -8,7 +8,7 @@
 # nothing (down.sh stops; volumes stay unless --volumes is asked for).
 #
 #   ANVILKIT_HOME=/srv/anvilkit sh deploy/compose/up.sh            # everything
-#   sh deploy/compose/up.sh foundation|setup|migrate|services|status
+#   sh deploy/compose/up.sh foundation|setup|migrate|budget|services|status
 set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)
 HOME_DIR=${ANVILKIT_HOME:-/srv/anvilkit}
@@ -125,6 +125,14 @@ migrate() {
   $COMPOSE run --rm --no-deps knowledge-store-migration
 }
 
+budget() {
+  # DEVELOPMENT_ONLY: the current and next month budget pools of the fixture
+  # principal (control-budget-pools.sql); without them Control refuses every
+  # Preparation and Generation with BUDGET_EXHAUSTED. Run once a month.
+  # Caps: ANVILKIT_BUDGET_{PLATFORM,TENANT,ACTOR}_CAP, scale-6 USD.
+  $COMPOSE run --rm --no-deps control-budget-setup
+}
+
 services() {
   $COMPOSE up -d --wait --wait-timeout 420 anvilkit-agent-control anvilkit-agent-api anvilkit-agent-workflow anvilkit-agent-model-proxy \
     anvilkit-agent-inference anvilkit-agent-knowledge knowledge-forwarder knowledge-relay anvilkit-agent-mcp mcp-relay anvilkit-agent-background-worker
@@ -133,12 +141,13 @@ services() {
 status() { $COMPOSE ps --format 'table {{.Name}}\t{{.Image}}\t{{.Status}}'; }
 
 case "$step" in
-  all) secrets; foundation; setup; migrate; services; status ;;
+  all) secrets; foundation; setup; migrate; budget; services; status ;;
   secrets) secrets ;;
   foundation) secrets; foundation ;;
   setup) setup ;;
   migrate) migrate ;;
+  budget) budget ;;
   services) services ;;
   status) status ;;
-  *) echo "usage: $0 [all|secrets|foundation|setup|migrate|services|status]" >&2; exit 2 ;;
+  *) echo "usage: $0 [all|secrets|foundation|setup|migrate|budget|services|status]" >&2; exit 2 ;;
 esac
