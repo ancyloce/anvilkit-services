@@ -330,6 +330,15 @@ services:
   # starts and runs the model-call Activities, and every Job launch
   # (LocalCheck, codegen, validator) fails at CreateJob. Recorded as a
   # blocker in README.md; nothing here pretends otherwise.
+  # Docker creates a named volume root-owned when the image has no directory at
+  # its mount point; the Workflow (65532) must own the Pagix double's directory.
+  pagix-double-init:
+    image: alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
+    logging: *logging
+    restart: "no"
+    command: ["sh", "-c", "chown 65532:65532 /data && chmod 700 /data"]
+    volumes: ["pagix-double:/data"]
+
   anvilkit-agent-workflow:
     <<: *service
     image: ${IMAGE_WORKFLOW:?images.env}
@@ -355,6 +364,7 @@ services:
     depends_on:
       anvilkit-agent-control: { condition: service_healthy }
       temporal: { condition: service_healthy }
+      pagix-double-init: { condition: service_completed_successfully }
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:9102/readyz"]
       interval: 10s

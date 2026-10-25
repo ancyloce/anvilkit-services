@@ -34,7 +34,7 @@ registry. The foundation images are the digests of `deploy/dev/compose.yaml`.
 | `~/anvilkit/deploy/dev/` | the setup scripts and reviewed files the stack mounts (`postgres-init.sh`, `minio-setup.sh`, `nats-setup.sh`, `nats/`, `temporal-setup.sh`, `temporal-dynamicconfig.yaml`, `oidc/config.json`) | configuration only |
 | `/srv/anvilkit/secrets/` | generated credentials and DSNs (`up.sh secrets`), the API's fixture principals, the Workflow's launcher kubeconfig, optionally `model-proxy-credentials.env` | directory 0700, files 0644 (read by the containers' own users through bind mounts) |
 | `/srv/anvilkit/certs/` | `ca/` and one directory per principal (`tls.crt`, `tls.key`, `ca.crt`) from `pki.sh` | directory 0700, principal directories 0755 |
-| Docker volumes `anvilkit_*` | `postgres-data`, `minio-data`, `nats-data`, `valkey-queue-data`, `qdrant-data`, `pagix-double` | persistent; `down.sh` keeps them |
+| Docker volumes `anvilkit_*` | `postgres-data`, `minio-data`, `nats-data`, `valkey-queue-data`, `qdrant-data`, `pagix-double` (owned by the Workflow's user 65532 through the `pagix-double-init` one-shot) | persistent; `down.sh` keeps them |
 
 ## Operations
 
