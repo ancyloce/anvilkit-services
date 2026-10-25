@@ -48,11 +48,17 @@ observation:
   retry_initial: 1s
   retry_max_interval: 30s
   sweep_interval: 30s
+# B-2: the route is enabled; it is served only where the operator delivered
+# ANVILKIT_MODEL_PROXY_CREDENTIAL_DEEPSEEK through the restricted credentials
+# file of ${ANVILKIT_HOME}/secrets (compose.yaml, optional env_file), and stays
+# "route not served" elsewhere. health_probe: models is the unpaid
+# GET https://api.deepseek.com/models with the credential every 60 s.
 routes:
 - api: openai-completions
   base_url: https://api.deepseek.com
   credential_env: ANVILKIT_MODEL_PROXY_CREDENTIAL_DEEPSEEK
-  enabled: false
+  enabled: true
+  health_probe: models
   id: controlled-openai-v1
   limits:
     max_deadline: 24h

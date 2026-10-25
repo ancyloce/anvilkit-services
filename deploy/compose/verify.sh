@@ -92,6 +92,22 @@ for path in knowledge/sources mcp/catalog mcp/grants; do
 done
 rm -f /tmp/verify-body
 unex "LocalCheck, generation, preview, parsing flows: the Workflow has no Job execution backend here (README blocker B-1)"
-unex "preparation (model call): the Model Proxy route is disabled until a provider credential is delivered (blocker B-2)"
+
+echo "== model route (from the proxy's own log lines: diagnostic, no paid call)"
+pid=$($COMPOSE ps -q anvilkit-agent-model-proxy 2>/dev/null | head -1)
+plog=$(docker logs "$pid" 2>&1)
+state=$(printf '%s\n' "$plog" | grep -E '"msg":"route (not )?served","routeId":"controlled-openai-v1"' | tail -1)
+case "$state" in
+  *'"msg":"route served"'*) pass "model-proxy serves controlled-openai-v1: $(printf '%s' "$state" | grep -oE '"(provider|model|origin)":"[^"]*"' | tr '\n' ' ')" ;;
+  *'"msg":"route not served"'*) unex "controlled-openai-v1 not served: $(printf '%s' "$state" | grep -oE '"reasons":"[^"]*"') (blocker B-2: no credential delivered on this server)" ;;
+  *) fail "model-proxy logged no state for controlled-openai-v1" ;;
+esac
+probe=$(printf '%s\n' "$plog" | grep '"msg":"route health probe","routeId":"controlled-openai-v1"' | tail -1)
+case "$probe" in
+  *'"healthy":true'*) pass "unpaid models probe healthy: $(printf '%s' "$probe" | grep -oE '"status":[0-9]+')" ;;
+  "") unex "no models probe result logged (route not served or probe not configured)" ;;
+  *) fail "unpaid models probe unhealthy: $(printf '%s' "$probe" | grep -oE '"status":[0-9]+|"reason":"[^"]*"' | tr '\n' ' ')" ;;
+esac
+unex "preparation (paid model call): runs only with the owner's explicit authorization (tools/smoke/api-generate.py, stopped at the frozen brief)"
 echo "== result: $([ $rc -eq 0 ] && echo PASS || echo FAIL)"
 exit $rc

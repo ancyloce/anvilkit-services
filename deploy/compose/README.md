@@ -47,6 +47,12 @@ sh deploy/compose/down.sh                # stop and remove containers; volumes, 
 docker compose --project-directory deploy/compose --env-file deploy/compose/images.env logs --since 10m anvilkit-agent-control
 ```
 
+Every service container carries `stop_grace_period` equal to its chart's
+`terminationGracePeriodSeconds` (Model Proxy 360 s, MCP 130 s, Knowledge and its
+forwarder 90 s, background worker and relays 60 s, Workflow 45 s, Inference 40 s,
+Control and API 30 s), so a stop or recreate lets the drain finish; Docker's default
+of 10 s would cut admitted model sends.
+
 Published ports, all on `127.0.0.1` of the server (reach them through
 `ssh -L 9100:127.0.0.1:9100 ubuntu@<server>`): API `9100`; operations: PostgreSQL
 `25432`, Temporal `27233`, MinIO `29000`, OIDC `25556`. Every other port is private to
@@ -63,11 +69,16 @@ production issuer).
   every Job launch (LocalCheck, codegen, validator) at `CreateJob`. Generation,
   LocalCheck, preview builds and parsing are therefore unavailable; the Knowledge parser
   profile is empty for the same reason.
-- **B-2 Provider credential.** The Model Proxy's route `controlled-openai-v1` is disabled
-  in `config/anvilkit-agent-model-proxy.yaml` until the operator delivers
-  `/srv/anvilkit/secrets/model-proxy-credentials.env` (`ANVILKIT_MODEL_PROXY_CREDENTIAL_DEEPSEEK=…`)
-  and enables the route; every model call is refused (`PROFILE_UNQUALIFIED`) until then,
-  and a paid call needs its own authorization.
+- **B-2 Provider credential.** The Model Proxy's route `controlled-openai-v1` (DeepSeek
+  `deepseek-flash`) is enabled in `config/anvilkit-agent-model-proxy.yaml` with the unpaid
+  `health_probe: models`, and is served only where the operator wrote
+  `/srv/anvilkit/secrets/model-proxy-credentials.env` (`ANVILKIT_MODEL_PROXY_CREDENTIAL_DEEPSEEK=…`,
+  mode 0600, written by hand, never by `up.sh`, never through Git or an agent session).
+  Without that file the proxy logs `route not served` and refuses every model call
+  (`PROFILE_UNQUALIFIED`). `verify.sh` reports the route state and the probe from the
+  proxy's log; a paid call (a Preparation) needs the owner's explicit authorization.
+  Changing the credential: replace the file, then
+  `docker compose … up -d --force-recreate anvilkit-agent-model-proxy`.
 - **B-3 ContextForge.** The MCP service runs without a ContextForge placement (none is
   deployed here): catalog discovery is unavailable; grants and the revocation barrier work.
 - **B-4 Studio.** The Studio is published by its own repository

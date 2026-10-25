@@ -13,6 +13,9 @@ x-logging: &logging
   driver: json-file
   options: { max-size: "20m", max-file: "5" }
 
+# Every service also sets stop_grace_period to its chart's
+# terminationGracePeriodSeconds, so a restart lets the drain finish (Docker's
+# default is 10 s; the Model Proxy drains admitted sends for up to 330 s).
 x-service: &service
   restart: unless-stopped
   logging: *logging
@@ -262,6 +265,7 @@ services:
   # ---- the eight services (release images by digest; see images.env) ------
   anvilkit-agent-control:
     <<: *service
+    stop_grace_period: 30s
     image: ${IMAGE_CONTROL:?images.env}
     user: "65532:65532"
     environment:
@@ -299,6 +303,7 @@ services:
 
   anvilkit-agent-api:
     <<: *service
+    stop_grace_period: 30s
     image: ${IMAGE_API:?images.env}
     user: "65532:65532"
     environment:
@@ -341,6 +346,7 @@ services:
 
   anvilkit-agent-workflow:
     <<: *service
+    stop_grace_period: 45s
     image: ${IMAGE_WORKFLOW:?images.env}
     user: "65532:65532"
     environment:
@@ -375,6 +381,7 @@ services:
 
   anvilkit-agent-model-proxy:
     <<: *service
+    stop_grace_period: 360s
     image: ${IMAGE_MODEL_PROXY:?images.env}
     user: "65532:65532"
     environment:
@@ -412,6 +419,7 @@ services:
 
   anvilkit-agent-inference:
     <<: *service
+    stop_grace_period: 40s
     image: ${IMAGE_INFERENCE:?images.env}
     user: "10001:10001"
     environment:
@@ -433,6 +441,7 @@ services:
 
   anvilkit-agent-knowledge:
     <<: *service
+    stop_grace_period: 90s
     image: ${IMAGE_KNOWLEDGE:?images.env}
     user: "65532:65532"
     environment:
@@ -474,6 +483,7 @@ services:
 
   knowledge-forwarder:
     <<: *service
+    stop_grace_period: 90s
     image: ${IMAGE_KNOWLEDGE_FORWARDER:?images.env}
     user: "65532:65532"
     environment:
@@ -497,6 +507,7 @@ services:
 
   knowledge-relay:
     <<: *service
+    stop_grace_period: 60s
     image: ${IMAGE_BACKGROUND_WORKER:?images.env}
     user: "65532:65532"
     command: ["relay"]
@@ -531,6 +542,7 @@ services:
 
   anvilkit-agent-mcp:
     <<: *service
+    stop_grace_period: 130s
     image: ${IMAGE_MCP:?images.env}
     user: "65532:65532"
     environment:
@@ -558,6 +570,7 @@ services:
 
   mcp-relay:
     <<: *service
+    stop_grace_period: 60s
     image: ${IMAGE_BACKGROUND_WORKER:?images.env}
     user: "65532:65532"
     command: ["relay"]
@@ -592,6 +605,7 @@ services:
 
   anvilkit-agent-background-worker:
     <<: *service
+    stop_grace_period: 60s
     image: ${IMAGE_BACKGROUND_WORKER:?images.env}
     user: "65532:65532"
     command: ["worker"]
