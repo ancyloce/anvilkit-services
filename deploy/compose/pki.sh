@@ -65,7 +65,9 @@ EXT
 }
 case "$mode" in
   issue|renew)
-    echo "$PRINCIPALS" | while IFS='|' read -r name ns; do [ -n "$name" ] && issue "$name" "$ns"; done
+    echo "$PRINCIPALS" | while IFS='|' read -r name ns; do
+      if [ -n "$name" ]; then issue "$name" "$ns"; fi
+    done
     ;;
   verify)
     rc=0
