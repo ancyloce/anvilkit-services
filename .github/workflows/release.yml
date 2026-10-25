@@ -25,7 +25,7 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 env:
-  GO_VERSION: "1.27.2"
+  GO_VERSION: "1.27.3"
   HELM_VERSION: "v3.19.0"
   ANVILKIT_RELEASE_REGISTRY: ${{ vars.ANVILKIT_RELEASE_REGISTRY }}
 jobs:
