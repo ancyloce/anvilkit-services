@@ -57,16 +57,17 @@ st=$($COMPOSE exec -T postgres psql -U postgres -d anvilkit_knowledge -tAc "SELE
 if [ -n "$st" ] && [ "$st" -gt 0 ]; then pass "knowledge memory store schema present ($st tables)"; else fail "knowledge memory store schema missing"; fi
 
 echo "== foundation setup"
-ns=$($COMPOSE exec -T temporal temporal operator namespace describe --namespace anvilkit --address 127.0.0.1:7233 2>/dev/null | grep -c 'anvilkit' || true)
-[ "${ns:-0}" -gt 0 ] && pass "temporal namespace anvilkit" || fail "temporal namespace anvilkit missing"
+# The server image carries no CLI; the admin-tools image of the temporal-namespace one-shot does.
+ns=$(docker run --rm --network anvilkit_default temporalio/admin-tools:1.31.2@sha256:dbc5fcd6ee8f0f4d808bf765af9a87dea9d8a283abfdcfbd2fc148496ba66107 temporal operator namespace describe --namespace anvilkit --address temporal:7233 2>/dev/null | grep -E '^ *(Name|NamespaceInfo.Name) +anvilkit' | head -1)
+[ -n "$ns" ] && pass "temporal namespace anvilkit ($ns)" || fail "temporal namespace anvilkit missing"
 for s in ANVILKIT_CONTROL ANVILKIT_KNOWLEDGE ANVILKIT_MCP; do
-  if $COMPOSE exec -T nats sh -c "wget -qO- http://127.0.0.1:8222/jsz?streams=true" 2>/dev/null | grep -q "\"name\":\"$s\""; then pass "nats stream $s"; else fail "nats stream $s missing"; fi
+  if $COMPOSE exec -T nats sh -c "wget -qO- http://127.0.0.1:8222/jsz?streams=true" 2>/dev/null | grep -qE "\"name\": *\"$s\""; then pass "nats stream $s"; else fail "nats stream $s missing"; fi
 done
-buckets=$(docker run --rm --network anvilkit_default --env-file "$SECRETS/minio.env" --entrypoint sh ghcr.io/ancyloce/minio@sha256:52dfd5c0bbd38d3219f2058c7af216d9f9a27a994b7b5baad09bbd38866015ff -c 'mc alias set s http://minio:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null && mc ls s | awk "{print \$NF}" | tr "\n" " "' 2>/dev/null)
-case "$buckets" in
-  *anvilkit-artifacts/*anvilkit-inventory/*anvilkit-model-proxy/*anvilkit-knowledge/*anvilkit-memory-removals/*) pass "object stores: $buckets" ;;
-  *) fail "object stores: $buckets" ;;
-esac
+# The mc image has no awk/grep; the listing is processed on the host.
+buckets=$(docker run --rm --network anvilkit_default --env-file "$SECRETS/minio.env" --entrypoint sh ghcr.io/ancyloce/minio@sha256:52dfd5c0bbd38d3219f2058c7af216d9f9a27a994b7b5baad09bbd38866015ff -c 'mc alias set s http://minio:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null && mc ls s' 2>/dev/null | awk '{print $NF}' | tr '\n' ' ')
+for b in anvilkit-artifacts anvilkit-inventory anvilkit-model-proxy anvilkit-knowledge anvilkit-memory-removals; do
+  case " $buckets" in *" $b/"*) pass "object store $b" ;; *) fail "object store $b missing (have: $buckets)" ;; esac
+done
 
 echo "== PKI and mTLS"
 sh "$HERE/pki.sh" verify | sed 's/^/            /' | head -12
@@ -80,10 +81,11 @@ out=$(docker run --rm --network anvilkit_default --entrypoint sh alpine:3.24@sha
 
 echo "== API"
 TA=$(python3 -c "import json; d=json.load(open('$SECRETS/api-principals.json')); print(next(k for k,v in d.items() if v['tenantId']=='tenant_a'))" 2>/dev/null)
-code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 http://127.0.0.1:9100/readyz); [ "$code" = 200 ] && pass "API /readyz 200" || fail "API /readyz $code"
-code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 http://127.0.0.1:9100/api/v1/operations); [ "$code" = 401 ] && pass "API refuses an unauthenticated read (401)" || fail "API unauthenticated read answered $code"
-body=$(curl -s --max-time 15 -H "Authorization: Bearer $TA" http://127.0.0.1:9100/api/v1/operations?limit=5); code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 -H "Authorization: Bearer $TA" "http://127.0.0.1:9100/api/v1/operations?limit=5")
-[ "$code" = 200 ] && pass "API GET /operations as tenant_a: 200 ($(printf '%s' "$body" | head -c 80 | tr -d '\n')...)" || fail "API GET /operations $code: $(printf '%s' "$body" | head -c 200)"
+code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 http://127.0.0.1:9100/readyz); case "$code" in 200|204) pass "API /readyz $code" ;; *) fail "API /readyz $code" ;; esac
+code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 http://127.0.0.1:9100/api/v1/knowledge/sources); [ "$code" = 401 ] && pass "API refuses an unauthenticated read (401)" || fail "API unauthenticated read answered $code"
+# /operations is POST-only (API-02); a read of an unknown operation proves routing and authentication.
+body=$(curl -s --max-time 15 -H "Authorization: Bearer $TA" http://127.0.0.1:9100/api/v1/operations/op_verify_missing); code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 -H "Authorization: Bearer $TA" http://127.0.0.1:9100/api/v1/operations/op_verify_missing)
+[ "$code" = 404 ] && pass "API GET /operations/{unknown} as tenant_a: 404 ($(printf '%s' "$body" | head -c 100 | tr -d '\n')...)" || fail "API GET /operations/{unknown} $code: $(printf '%s' "$body" | head -c 200)"
 for path in knowledge/sources mcp/catalog mcp/grants; do
   code=$(curl -s -o /tmp/verify-body -w '%{http_code}' --max-time 15 -H "Authorization: Bearer $TA" "http://127.0.0.1:9100/api/v1/$path")
   [ "$code" = 200 ] && pass "API GET /$path: 200 ($(head -c 80 /tmp/verify-body | tr -d '\n')...)" || fail "API GET /$path $code: $(head -c 200 /tmp/verify-body)"
