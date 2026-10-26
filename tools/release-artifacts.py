@@ -4,6 +4,7 @@
   .local/verification-venv/bin/python tools/release-artifacts.py [--run ID] [--only NAME ...] [--no-build] [--from-run RUN]
       [--registry-push HOST] [--registry REF] [--network NAME] [--signing key|keyless] [--key REF]
       [--certificate-identity ID --certificate-oidc-issuer URL] [--transparency-log] [--provenance]
+  .local/verification-venv/bin/python tools/release-artifacts.py --jobs [--only NAME ...] [same registry and signing options]
   .local/verification-venv/bin/python tools/release-artifacts.py --self-test
 
 Owned service images (the eight services, the Knowledge forwarder sidecar and the
@@ -16,6 +17,16 @@ attestation, both verified. The eight service charts are packaged, pushed as OCI
 and signed. Everything is bound in outputs/qualification/<run>/release/release-manifest.json
 together with each source's repository head, cleanliness and build-context digest, the
 parent's release tag and the pinned tool images.
+
+--jobs publishes the owned Job images instead (JOBS: validator, access sidecar, codegen
+supervisor, parser, codegen team), built from each Job repository at its recorded gitlink,
+pushed, scanned, given an SBOM and signed exactly like the service images, and bound in
+job-images-manifest.json (same status rules). A Job image is published once per change of
+its source: contracts/jobs/profiles.json is then re-pinned to the published digests (a new
+profile revision), and from then on the release takes the Job images at those pins. The
+team image is based on the validator at the digest its Dockerfile pins, so a run that
+rebuilds the validator cannot also build the team image: publish the validator, re-pin
+jobs/codegen/team/Dockerfile, then publish the team image in a run of its own.
 
 Status, derived from the inputs (P3.2, never hard-coded):
   BLOCKED                  any finding: a dirty or untracked input (a release builds only
@@ -82,6 +93,19 @@ OWNED = [
     ("anvilkit-agent-background-worker", "services/agent/background-worker", ["--build-context", "contracts=contracts"]),
     ("anvilkit-agent-inference", "services/agent/inference", ["--build-context", "contracts=contracts"]),
     ("anvilkit-migration", "jobs/migration", []),
+]
+# Owned Job images (--jobs), in build order. "{registry}" is the registry this host pushes
+# to. A base (name, Dockerfile, variable) is an image of this list the Dockerfile pins by
+# digest in `FROM ${variable}@sha256:...`: a run that builds that base with another digest
+# refuses to build the dependent image.
+JOBS = [
+    ("anvilkit-validator", "jobs/validator", ["--build-context", "contracts=contracts"], None),
+    ("anvilkit-job-access-sidecar", "jobs/shared/access-sidecar", [], None),
+    ("anvilkit-codegen", "jobs/codegen/supervisor", [], None),
+    ("anvilkit-parser", "jobs/parser", ["--build-context", "contracts=contracts"], None),
+    ("anvilkit-codegen-team", "jobs/codegen/team",
+     ["--build-context", "supervisor=jobs/codegen/supervisor", "--build-arg", "VALIDATOR_REPOSITORY={registry}/anvilkit-validator"],
+     ("anvilkit-validator", "jobs/codegen/team/Dockerfile", "VALIDATOR_REPOSITORY")),
 ]
 CHARTS = [f"services/agent/{s}/deploy/chart" for s in ("api", "control", "workflow", "model-proxy", "knowledge", "mcp", "background-worker", "inference")]
 # Third-party images the environment runs where only release-signed images are admitted
@@ -292,6 +316,27 @@ def job_images() -> list[tuple[str, str, list[str]]]:
     return [(repo, digest, users) for (repo, digest), users in sorted(seen.items())]
 
 
+def job_build_args(extra: list[str]) -> list[str]:
+    """A Job image's build arguments with {registry} replaced by the registry this host pushes to."""
+    return [arg.replace("{registry}", HOST_REGISTRY) for arg in extra]
+
+
+def pinned_base(dockerfile_text: str, variable: str) -> str | None:
+    """The digest a Dockerfile pins in `FROM ${variable}@sha256:...`."""
+    m = re.search(r"^FROM\s+\$\{" + re.escape(variable) + r"\}@(sha256:[0-9a-f]{64})", dockerfile_text, re.M)
+    return m[1] if m else None
+
+
+def check_base(name: str, base: tuple[str, str, str] | None, built: dict[str, str], dockerfile_text: str) -> None:
+    """Refuses a dependent Job image when this run rebuilt its base with another digest."""
+    if not base or base[0] not in built:
+        return
+    pin = pinned_base(dockerfile_text, base[2])
+    if pin != built[base[0]]:
+        raise RuntimeError(f"{base[1]} pins {base[0]} at {pin}, this run built {built[base[0]]}: publish {base[0]}, "
+                           f"re-pin {base[1]} to it, then build {name} in a run of its own")
+
+
 def registry_up() -> bool:
     if not SETTINGS["insecure"]:
         return True  # an authenticated TLS registry: the first push proves it
@@ -385,6 +430,26 @@ def self_test() -> int:
     cases.append(("a KMS-held key with the transparency log is SIGNED",
                   derive_status(findings_of(manifest(api=good)), {**production, "signing": "key", "kmsKey": True})[0] == "SIGNED"))
     cases.append(("an untagged parent is not SIGNED", derive_status(findings_of(manifest(api=good)), {**production, "tag": None})[0] == "SIGNED_DEVELOPMENT_ONLY"))
+    a_digest, b_digest = "sha256:" + "a" * 64, "sha256:" + "b" * 64
+    team_file = f"ARG VALIDATOR_REPOSITORY=x\nFROM node AS build\nFROM ${{VALIDATOR_REPOSITORY}}@{a_digest}\n"
+    cases.append(("a Job image's registry argument names the registry this host pushes to",
+                  job_build_args(["--build-arg", "R={registry}/anvilkit-validator"])[1] == f"R={HOST_REGISTRY}/anvilkit-validator"))
+    cases.append(("the team image's pinned validator base is read from its Dockerfile", pinned_base(team_file, "VALIDATOR_REPOSITORY") == a_digest))
+    try:
+        check_base("anvilkit-codegen-team", ("anvilkit-validator", "Dockerfile", "VALIDATOR_REPOSITORY"), {"anvilkit-validator": b_digest}, team_file)
+        refused = False
+    except RuntimeError:
+        refused = True
+    cases.append(("a run that rebuilt the validator with another digest refuses the team image", refused))
+    try:
+        check_base("anvilkit-codegen-team", ("anvilkit-validator", "Dockerfile", "VALIDATOR_REPOSITORY"), {"anvilkit-validator": a_digest}, team_file)
+        check_base("anvilkit-codegen-team", ("anvilkit-validator", "Dockerfile", "VALIDATOR_REPOSITORY"), {}, team_file)
+        accepted = True
+    except RuntimeError:
+        accepted = False
+    cases.append(("the team image builds on the validator its Dockerfile pins, or one not rebuilt in the run", accepted))
+    order = [n for n, _, _, _ in JOBS]
+    cases.append(("Job images build after the base they pin", all(order.index(b[0]) < order.index(n) for n, _, _, b in JOBS if b)))
     failures = [n for n, ok in cases if not ok]
     for n, ok in cases:
         print(f"{'PASS' if ok else 'FAIL':<5} self-test: {n}")
@@ -409,6 +474,8 @@ def main() -> int:
     ap.add_argument("--certificate-oidc-issuer", help="keyless: the OIDC issuer verification requires")
     ap.add_argument("--transparency-log", action="store_true", help="upload key signatures to the transparency log (always on for keyless)")
     ap.add_argument("--provenance", action="store_true", help="build with BuildKit SLSA provenance (docker buildx, pushed with the image)")
+    ap.add_argument("--jobs", action="store_true", help="build and publish the owned Job images (JOBS) into job-images-manifest.json "
+                                                       "instead of the release set")
     ap.add_argument("--self-test", action="store_true", help="prove the status rules on synthetic manifests and exit")
     a = ap.parse_args()
     if a.self_test:
@@ -420,16 +487,16 @@ def main() -> int:
                      "tlog": a.signing == "keyless" or a.transparency_log, "identity": a.certificate_identity, "issuer": a.certificate_oidc_issuer,
                      "provenance": a.provenance})
     helm_bin = helm()
-    if not shutil.which("docker") or not helm_bin or not registry_up():
+    if not shutil.which("docker") or (not helm_bin and not a.jobs) or not registry_up():
         print(f"UNEXECUTED: docker, helm and the registry ({HOST_REGISTRY}) are required")
         return 2
     out = ROOT / "outputs/qualification" / a.run / "release"
     out.mkdir(parents=True, exist_ok=True)
-    manifest_path = out / "release-manifest.json"
+    manifest_path = out / ("job-images-manifest.json" if a.jobs else "release-manifest.json")
     prior = json.loads(manifest_path.read_text()) if manifest_path.exists() else {}
     carried_from = None
     if a.from_run:
-        source_manifest = ROOT / "outputs/qualification" / a.from_run / "release/release-manifest.json"
+        source_manifest = ROOT / "outputs/qualification" / a.from_run / "release" / manifest_path.name
         prior, carried_from = json.loads(source_manifest.read_text()), a.from_run
         if not a.only:
             print("--from-run needs --only: the artifacts to rebuild")
@@ -452,10 +519,10 @@ def main() -> int:
         signing = {"mode": "key", "publicKey": "cosign.pub", "publicKeyDigest": sha256_file(pub),
                    "custody": "DEVELOPMENT_ONLY key under .local/release (ENV-10 custody NOT_VERIFIED)", "transparencyLog": "rekor" if SETTINGS["tlog"] else "not used"}
         shutil.copy(pub, out / "cosign.pub")
-    manifest = {"schemaVersion": 1, "run": a.run, "parentTag": placement["tag"],
+    manifest = {"schemaVersion": 1, "kind": "job-images" if a.jobs else "release", "run": a.run, "parentTag": placement["tag"],
                 "registry": {"push": HOST_REGISTRY, "reference": REGISTRY, "insecure": SETTINGS["insecure"]},
                 "signing": signing, "provenance": "BuildKit SLSA mode=max" if a.provenance else "none",
-                "tools": {"trivy": TRIVY, "cosign": COSIGN, "helm": must([helm_bin, "version", "--short"]).strip(), "docker": must(["docker", "version", "--format", "{{.Server.Version}}"]).strip()},
+                "tools": {"trivy": TRIVY, "cosign": COSIGN, "helm": must([helm_bin, "version", "--short"]).strip() if helm_bin else "not used", "docker": must(["docker", "version", "--format", "{{.Server.Version}}"]).strip()},
                 "policy": "block: fixable CRITICAL or HIGH vulnerability; forbidden license category; dirty input; unverified signature or attestation (P3.2 rule pending the security owner)",
                 "images": {}, "charts": {}}
     findings: list[str] = []
@@ -464,7 +531,31 @@ def main() -> int:
     def selected(n: str) -> bool:
         return not want or n in want
 
-    for name, context, extra in OWNED:
+    built: dict[str, str] = {}
+    pinned_by = {repo: users for repo, _, users in job_images()}
+    for name, context, extra, base in (JOBS if a.jobs else []):
+        if not selected(name):
+            if name in prior.get("images", {}):
+                manifest["images"][name] = carry(prior["images"][name])
+            continue
+        print(f"job image {name}: ", end="", flush=True)
+        try:
+            check_base(name, base, built, (ROOT / base[1]).read_text() if base else "")
+            args = job_build_args(extra)
+            entry = {"kind": "job", "source": source(context), "build": {"context": context, "arguments": args},
+                     "pinnedTodayBy": pinned_by.get(name, [])}
+            digest = prior["images"][name]["digest"] if a.no_build else build(name, context, args, a.run, out)
+            built[name] = digest
+            ref = f"{REGISTRY}/{name}@{digest}"
+            entry.update({"reference": ref, "digest": digest})
+            entry.update(scan(name, ref, out))
+            entry.update(sign_and_verify(ref, out, password, f"{name}.spdx.json"))
+            manifest["images"][name] = entry
+            print(f"{digest[:19]}… signed {entry['signature']}, attestation {entry['sbomAttestation']}, {entry['scan']['severities']}")
+        except (RuntimeError, OSError) as e:
+            findings.append(f"{name}: {e}")
+            print(f"FAILED {e}")
+    for name, context, extra in ([] if a.jobs else OWNED):
         if not selected(name):
             if name in prior.get("images", {}):
                 manifest["images"][name] = carry(prior["images"][name])
@@ -482,7 +573,7 @@ def main() -> int:
         except RuntimeError as e:
             findings.append(f"{name}: {e}")
             print(f"FAILED {e}")
-    for repo, digest, users in job_images():
+    for repo, digest, users in ([] if a.jobs else job_images()):
         if repo.startswith("docker.io/"):
             name = repo.rsplit("/", 1)[1]
             ref, owned = f"{repo}@{digest}", False
@@ -505,7 +596,7 @@ def main() -> int:
         except RuntimeError as e:
             findings.append(f"{key}: {e}")
             print(f"FAILED {e}")
-    for name, upstream, target in PLATFORM:
+    for name, upstream, target in ([] if a.jobs else PLATFORM):
         if not selected(name):
             if name in prior.get("images", {}):
                 manifest["images"][name] = carry(prior["images"][name])
@@ -525,7 +616,7 @@ def main() -> int:
             print(f"FAILED {e}")
     charts = out / "charts"
     charts.mkdir(exist_ok=True)
-    for chart in CHARTS:
+    for chart in ([] if a.jobs else CHARTS):
         name = chart.split("/")[2]
         name = f"anvilkit-agent-{name}"
         if not selected(name + "-chart") and want:
@@ -552,7 +643,7 @@ def main() -> int:
             print(f"FAILED {e}")
     findings += findings_of(manifest)
     if carried_from:
-        manifest["derivedFrom"] = {"run": carried_from, "manifestSha256": sha256_file(ROOT / "outputs/qualification" / carried_from / "release/release-manifest.json"),
+        manifest["derivedFrom"] = {"run": carried_from, "manifestSha256": sha256_file(ROOT / "outputs/qualification" / carried_from / "release" / manifest_path.name),
                                    "rebuilt": sorted(want)}
     manifest["findings"] = findings
     manifest["placement"] = placement
