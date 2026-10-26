@@ -1,0 +1,104 @@
+# Job image publication (plan 0006, option B): builds the owned Job images (the
+# validator, the access sidecar, the codegen supervisor, the parser and the codegen
+# team) from this commit with every submodule at its recorded gitlink, with BuildKit
+# SLSA provenance, scans them (Trivy: a fixable CRITICAL or HIGH finding blocks),
+# attaches an SPDX SBOM attestation, signs them keylessly with this workflow's OIDC
+# identity and pushes them to the release registry by digest
+# (tools/release-artifacts.py --jobs). The job-images manifest is attached to the
+# tag's GitHub release. contracts/jobs/profiles.json is then re-pinned to the
+# published digests (a new profile revision); from then on the release workflow takes
+# the Job images at those pins.
+#
+# Manual only, with an explicit image list: a Job image is published once per change
+# of its source, and rebuilding the validator gives it a new digest. The team image is
+# based on the validator at the digest jobs/codegen/team/Dockerfile pins, so publish
+# the validator first, re-pin that Dockerfile to the published digest, then run this
+# workflow again with only anvilkit-codegen-team. Run it from a jobs-v* tag: a manifest
+# is SIGNED only for a tagged commit.
+#
+# Inputs (repository settings, as for release.yml): the variable
+# ANVILKIT_RELEASE_REGISTRY and, for a registry other than ghcr.io, the secrets
+# ANVILKIT_RELEASE_REGISTRY_USER and ANVILKIT_RELEASE_REGISTRY_PASSWORD.
+name: job-images
+on:
+  workflow_dispatch:
+    inputs:
+      images:
+        description: "Space-separated Job images to publish (never the validator and anvilkit-codegen-team together unless the team Dockerfile already pins the new validator)"
+        required: true
+        default: "anvilkit-validator anvilkit-job-access-sidecar anvilkit-codegen anvilkit-parser"
+permissions:
+  contents: read
+concurrency:
+  group: job-images
+  cancel-in-progress: false
+env:
+  ANVILKIT_RELEASE_REGISTRY: ${{ vars.ANVILKIT_RELEASE_REGISTRY }}
+  IMAGES: ${{ inputs.images }}
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    permissions:
+      contents: write   # attach the manifest to the tag's release
+      packages: write   # push to ghcr.io when it is the release registry
+      id-token: write   # keyless signing (Sigstore OIDC)
+    steps:
+      - name: The release registry is configured and the run is on a jobs-v* tag
+        run: |
+          test -n "$ANVILKIT_RELEASE_REGISTRY" || { echo "::error::set the repository variable ANVILKIT_RELEASE_REGISTRY"; exit 1; }
+          case "$GITHUB_REF" in refs/tags/jobs-v*) ;; *) echo "::error::run this workflow from a jobs-v* tag (got $GITHUB_REF)"; exit 1 ;; esac
+          for image in $IMAGES; do
+            case "$image" in
+              anvilkit-validator|anvilkit-job-access-sidecar|anvilkit-codegen|anvilkit-parser|anvilkit-codegen-team) ;;
+              *) echo "::error::unknown Job image $image"; exit 1 ;;
+            esac
+          done
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          submodules: recursive
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+      - name: Registry host
+        id: registry
+        run: echo "host=${ANVILKIT_RELEASE_REGISTRY%%/*}" >> "$GITHUB_OUTPUT"
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ${{ steps.registry.outputs.host }}
+          username: ${{ secrets.ANVILKIT_RELEASE_REGISTRY_USER || github.actor }}
+          password: ${{ secrets.ANVILKIT_RELEASE_REGISTRY_PASSWORD || secrets.GITHUB_TOKEN }}
+      - name: Pinned Python environment
+        run: python3.12 -m venv .local/verification-venv && .local/verification-venv/bin/python -m pip install --quiet --require-hashes -r tools/requirements.txt
+      - name: Build, scan, SBOM, sign and attest the Job images (refuses dirty inputs; BLOCKED on any finding)
+        env:
+          IDENTITY: https://github.com/${{ github.workflow_ref }}
+        run: |
+          only=""
+          for image in $IMAGES; do only="$only --only $image"; done
+          # Word splitting of $only is intended: one --only per image.
+          .local/verification-venv/bin/python tools/release-artifacts.py --jobs --run "$GITHUB_REF_NAME" \
+            --registry-push "$ANVILKIT_RELEASE_REGISTRY" --registry "$ANVILKIT_RELEASE_REGISTRY" --network host \
+            --signing keyless --certificate-identity "$IDENTITY" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com --provenance $only
+      - name: The manifest is SIGNED
+        run: |
+          status=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["status"])' "outputs/qualification/$GITHUB_REF_NAME/release/job-images-manifest.json")
+          test "$status" = SIGNED || { echo "::error::job-images manifest status $status"; exit 1; }
+      - name: Evidence of the run (also when it is BLOCKED)
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: job-images-${{ github.ref_name }}
+          path: outputs/qualification/${{ github.ref_name }}/release
+          if-no-files-found: warn
+      - name: Attach the SIGNED manifest to the tag's release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          dir="outputs/qualification/$GITHUB_REF_NAME/release"
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" --verify-tag --title "$GITHUB_REF_NAME" --notes "Job images published by $GITHUB_REF_NAME (status SIGNED): $IMAGES."
+          gh release upload "$GITHUB_REF_NAME" "$dir/job-images-manifest.json" "$dir"/*.spdx.json "$dir"/*.trivy.json --clobber
