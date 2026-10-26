@@ -24,9 +24,9 @@ on:
   workflow_dispatch:
     inputs:
       images:
-        description: "Space-separated Job images to publish (never the validator and anvilkit-codegen-team together unless the team Dockerfile already pins the new validator)"
+        description: "Space-separated Job images to publish (never anvilkit-job-validator and anvilkit-codegen-team together unless the team Dockerfile already pins the new validator)"
         required: true
-        default: "anvilkit-validator anvilkit-job-access-sidecar anvilkit-codegen anvilkit-parser"
+        default: "anvilkit-job-validator anvilkit-job-access-sidecar anvilkit-codegen anvilkit-parser"
 permissions:
   contents: read
 concurrency:
@@ -50,7 +50,7 @@ jobs:
           case "$GITHUB_REF" in refs/tags/jobs-v*) ;; *) echo "::error::run this workflow from a jobs-v* tag (got $GITHUB_REF)"; exit 1 ;; esac
           for image in $IMAGES; do
             case "$image" in
-              anvilkit-validator|anvilkit-job-access-sidecar|anvilkit-codegen|anvilkit-parser|anvilkit-codegen-team) ;;
+              anvilkit-job-validator|anvilkit-job-access-sidecar|anvilkit-codegen|anvilkit-parser|anvilkit-codegen-team) ;;
               *) echo "::error::unknown Job image $image"; exit 1 ;;
             esac
           done

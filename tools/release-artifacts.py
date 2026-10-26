@@ -99,13 +99,16 @@ OWNED = [
 # digest in `FROM ${variable}@sha256:...`: a run that builds that base with another digest
 # refuses to build the dependent image.
 JOBS = [
-    ("anvilkit-validator", "jobs/validator", ["--build-context", "contracts=contracts"], None),
+    # The validator publishes as anvilkit-job-validator (its repository's name): the GHCR
+    # name anvilkit-validator is held by a hand-made package workflows cannot write
+    # (deleted 2026-10-26, still reserved). The profiles take the new name when they are re-pinned.
+    ("anvilkit-job-validator", "jobs/validator", ["--build-context", "contracts=contracts"], None),
     ("anvilkit-job-access-sidecar", "jobs/shared/access-sidecar", [], None),
     ("anvilkit-codegen", "jobs/codegen/supervisor", [], None),
     ("anvilkit-parser", "jobs/parser", ["--build-context", "contracts=contracts"], None),
     ("anvilkit-codegen-team", "jobs/codegen/team",
-     ["--build-context", "supervisor=jobs/codegen/supervisor", "--build-arg", "VALIDATOR_REPOSITORY={registry}/anvilkit-validator"],
-     ("anvilkit-validator", "jobs/codegen/team/Dockerfile", "VALIDATOR_REPOSITORY")),
+     ["--build-context", "supervisor=jobs/codegen/supervisor", "--build-arg", "VALIDATOR_REPOSITORY={registry}/anvilkit-job-validator"],
+     ("anvilkit-job-validator", "jobs/codegen/team/Dockerfile", "VALIDATOR_REPOSITORY")),
 ]
 CHARTS = [f"services/agent/{s}/deploy/chart" for s in ("api", "control", "workflow", "model-proxy", "knowledge", "mcp", "background-worker", "inference")]
 # Third-party images the environment runs where only release-signed images are admitted
