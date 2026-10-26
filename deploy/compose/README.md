@@ -61,6 +61,26 @@ the Compose network. The API authenticates `auth.mode: fixture` bearer tokens fr
 `/srv/anvilkit/secrets/api-principals.json` (DEVELOPMENT_ONLY; ENV-07 supplies the
 production issuer).
 
+## Local Studio
+
+The Studio is tested from a local checkout (default `../anvilkit-studio` next to this
+repository, dependencies already installed), never from this server:
+
+```sh
+sh deploy/compose/studio-local.sh up       # tunnel, minio alias, token copy, Studio dev server
+sh deploy/compose/studio-local.sh status
+sh deploy/compose/studio-local.sh down     # stops all of it, removes the alias line and the token copy
+```
+
+`up` opens an SSH tunnel (local `9100` to the API, local `9000` to MinIO, because the
+signed upload URLs Control hands out name `minio:9000`), adds `127.0.0.1 minio` to
+`/etc/hosts` when it can, copies the `tenant_a` fixture token to a `0600` file under
+`~/.local/state/anvilkit-studio-local/`, and starts `pnpm dev` with
+`ANVILKIT_AGENT_API_URL` and `ANVILKIT_AGENT_API_TOKEN` only. The browser calls the Studio's
+own relay; it never sees the token or the API address. Open `http://localhost:3000/agent/…`
+(`localhost`: Next.js blocks its development resources for other hosts). The Studio
+relay has no user authentication of its own, so keep it on the local machine.
+
 ## Budget pools
 
 Control funds every Preparation (2 USD reserved) and Generation (3 USD reserved,
@@ -106,6 +126,7 @@ replaces this step once it exists.
   `docker compose … up -d --force-recreate anvilkit-agent-model-proxy`.
 - **B-3 ContextForge.** The MCP service runs without a ContextForge placement (none is
   deployed here): catalog discovery is unavailable; grants and the revocation barrier work.
-- **B-4 Studio.** The Studio is published by its own repository
-  (`anvilkit-studio`, `.github/workflows/docker-images.yml`, `ghcr.io/<owner>/studio`) and is
-  not part of this stack until that image exists for the wanted commit.
+- **B-4 Studio.** Deferred by owner decision (2026-10-25): the Studio is not deployed as
+  a Compose service; it runs from a local checkout against this placement
+  (`studio-local.sh`, below). Its image is published by its own repository
+  (`anvilkit-studio`, `.github/workflows/docker-images.yml`, `ghcr.io/<owner>/studio`).
