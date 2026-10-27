@@ -49,10 +49,12 @@ parser:
   deadline_grace: 30s
   kube_timeout: 10s
   namespace: anvilkit-parsing
-  node_pool: parsing
+  # The single Jobs node carries one pool label (deploy/compose/jobs/rke2-config.yaml).
+  node_pool: components
   poll_interval: 1s
   presign_ttl: 15m
-  profile: ''
+  # Plan 0006 D-4: the development parser profile (no gVisor on the Jobs node yet).
+  profile: parser-docling-dev-v1
   seccomp_profile: anvilkit/candidate.json
 reload:
   drain_limit: 30s

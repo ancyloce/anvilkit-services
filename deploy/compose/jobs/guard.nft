@@ -1,0 +1,19 @@
+#!/usr/sbin/nft -f
+# Inbound guard of the Compose host's public interface (plan 0006 step 5): the
+# RKE2 node listens on every address (API server 6443, supervisor 9345, kubelet
+# 10250, etcd), so new connections on eth0 are refused except SSH, ICMP and
+# DHCP replies. Loopback, the Docker bridges, the host-only anvilkit-jobs0 and
+# the pod network are untouched. Loaded by anvilkit-guard.service.
+table inet anvilkit_guard
+delete table inet anvilkit_guard
+table inet anvilkit_guard {
+  chain input {
+    type filter hook input priority filter - 10; policy accept;
+    iifname != "eth0" accept
+    ct state established,related accept
+    tcp dport 22 accept
+    meta l4proto { icmp, ipv6-icmp } accept
+    udp dport 68 accept
+    counter drop
+  }
+}

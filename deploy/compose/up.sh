@@ -79,8 +79,9 @@ ANVILKIT_KNOWLEDGE_REMOVALS_SECRET_ACCESS_KEY=$(random 32)
 }
 "
   fi
-  # The Workflow's launcher identity: no cluster exists here (see README.md,
-  # blocker B-1), so the kubeconfig names an unreachable loopback API server.
+  # The launchers' identities: placeholders naming an unreachable loopback API
+  # server until deploy/compose/jobs/jobs-node.sh identities writes the real
+  # kubeconfigs of the Jobs node (never overwritten here).
   write_secret launcher.kubeconfig "apiVersion: v1
 kind: Config
 clusters:
@@ -96,10 +97,33 @@ contexts:
     context: {cluster: none, user: none, namespace: anvilkit-components}
 current-context: none
 "
+  write_secret knowledge-launcher.kubeconfig "apiVersion: v1
+kind: Config
+clusters:
+  - name: none
+    cluster:
+      server: https://127.0.0.1:1
+users:
+  - name: none
+    user:
+      token: no-cluster
+contexts:
+  - name: none
+    context: {cluster: none, user: none, namespace: anvilkit-parsing}
+current-context: none
+"
   echo "secrets present under $SECRETS ($(ls "$SECRETS" | wc -l) files)"
 }
 
+# MinIO, Control and the Model Proxy publish their Job-facing ports on the
+# host-only address of the Jobs node (deploy/compose/jobs/jobs-node.sh host).
+need_jobs_address() {
+  ip -4 addr show dev anvilkit-jobs0 2>/dev/null | grep -q "inet 10.255.255.1/32" \
+    || { echo "anvilkit-jobs0 has no 10.255.255.1: run deploy/compose/jobs/jobs-node.sh host first" >&2; exit 1; }
+}
+
 foundation() {
+  need_jobs_address
   sh "$HERE/pki.sh" issue
   $COMPOSE pull --quiet
   $COMPOSE up -d --wait --wait-timeout 300 postgres temporal minio nats valkey-queue valkey-cache qdrant oidc
@@ -134,6 +158,7 @@ budget() {
 }
 
 services() {
+  need_jobs_address
   $COMPOSE up -d --wait --wait-timeout 420 anvilkit-agent-control anvilkit-agent-api anvilkit-agent-workflow anvilkit-agent-model-proxy \
     anvilkit-agent-inference anvilkit-agent-knowledge knowledge-forwarder knowledge-relay anvilkit-agent-mcp mcp-relay anvilkit-agent-background-worker
 }

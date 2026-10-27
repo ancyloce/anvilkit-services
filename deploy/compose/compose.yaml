@@ -40,6 +40,7 @@ secrets:
   qdrant-api-key: { file: "${ANVILKIT_HOME:-/srv/anvilkit}/secrets/qdrant-api-key" }
   api-principals: { file: "${ANVILKIT_HOME:-/srv/anvilkit}/secrets/api-principals.json" }
   launcher-kubeconfig: { file: "${ANVILKIT_HOME:-/srv/anvilkit}/secrets/launcher.kubeconfig" }
+  knowledge-launcher-kubeconfig: { file: "${ANVILKIT_HOME:-/srv/anvilkit}/secrets/knowledge-launcher.kubeconfig" }
   artifacts-access-key-id: { file: "${ANVILKIT_HOME:-/srv/anvilkit}/secrets/artifacts-access-key-id" }
   artifacts-secret-access-key: { file: "${ANVILKIT_HOME:-/srv/anvilkit}/secrets/artifacts-secret-access-key" }
   inventory-access-key-id: { file: "${ANVILKIT_HOME:-/srv/anvilkit}/secrets/inventory-access-key-id" }
@@ -127,7 +128,8 @@ services:
     logging: *logging
     command: ["server", "/data"]
     env_file: ${ANVILKIT_HOME:-/srv/anvilkit}/secrets/minio.env
-    ports: ["127.0.0.1:29000:9000"]
+    # Loopback for operations; the host-only address for the Jobs node (deploy/compose/jobs).
+    ports: ["127.0.0.1:29000:9000", "10.255.255.1:9000:9000"]
     volumes: ["minio-data:/data"]
     healthcheck:
       test: ["CMD", "mc", "ready", "local"]
@@ -289,6 +291,8 @@ services:
   anvilkit-agent-control:
     <<: *service
     stop_grace_period: 30s
+    # The Job-facing port on the host-only address of the Jobs node (deploy/compose/jobs).
+    ports: ["10.255.255.1:9101:9101"]
     image: ${IMAGE_CONTROL:?images.env}
     user: "65532:65532"
     environment:
@@ -370,13 +374,15 @@ services:
   anvilkit-agent-workflow:
     <<: *service
     stop_grace_period: 45s
+    # The RKE2 API server of the Jobs node on the host-only address (deploy/compose/jobs).
+    extra_hosts: ["anvilkit-jobs-api:10.255.255.1"]
     image: ${IMAGE_WORKFLOW:?images.env}
     user: "65532:65532"
     environment:
       ANVILKIT_WORKFLOW_CONFIG: /etc/anvilkit/anvilkit-agent-workflow/config.yaml
       ANVILKIT_WORKFLOW_TEMPORAL_ADDRESS: temporal:7233
       ANVILKIT_WORKFLOW_CONTROL_ADDRESS: anvilkit-agent-control:9101
-      ANVILKIT_WORKFLOW_LAUNCH_BACKEND: compose-no-cluster
+      ANVILKIT_WORKFLOW_LAUNCH_BACKEND: rke2-anvilkit-jobs
       ANVILKIT_WORKFLOW_IMAGE_REGISTRY: ${ANVILKIT_IMAGE_REGISTRY:?images.env}
       ANVILKIT_WORKFLOW_SIDECAR_CONTROL_ADDRESS: anvilkit-agent-control:9101
       ANVILKIT_WORKFLOW_KUBECONFIG: /run/secrets/launcher-kubeconfig
@@ -405,6 +411,8 @@ services:
   anvilkit-agent-model-proxy:
     <<: *service
     stop_grace_period: 360s
+    # The Job-facing port on the host-only address of the Jobs node (deploy/compose/jobs).
+    ports: ["10.255.255.1:9103:9103"]
     image: ${IMAGE_MODEL_PROXY:?images.env}
     user: "65532:65532"
     environment:
@@ -465,6 +473,8 @@ services:
   anvilkit-agent-knowledge:
     <<: *service
     stop_grace_period: 90s
+    # The RKE2 API server of the Jobs node on the host-only address (deploy/compose/jobs).
+    extra_hosts: ["anvilkit-jobs-api:10.255.255.1"]
     image: ${IMAGE_KNOWLEDGE:?images.env}
     user: "65532:65532"
     environment:
@@ -476,6 +486,7 @@ services:
       ANVILKIT_KNOWLEDGE_IDENTITY_KEY_FILE: /etc/anvilkit/identity/tls.key
       ANVILKIT_KNOWLEDGE_IDENTITY_CA_FILE: /etc/anvilkit/identity/ca.crt
       ANVILKIT_KNOWLEDGE_CONTROL_ADDRESS: anvilkit-agent-control:9101
+      ANVILKIT_KNOWLEDGE_KUBECONFIG: /run/secrets/knowledge-launcher-kubeconfig
       ANVILKIT_KNOWLEDGE_OBJECTS_ENDPOINT: http://minio:9000
       ANVILKIT_KNOWLEDGE_OBJECTS_STAGE_ENDPOINT: http://minio:9000
       ANVILKIT_KNOWLEDGE_OBJECTS_CREDENTIALS_FILE: /run/secrets/knowledge-objects-credentials
@@ -486,7 +497,7 @@ services:
       ANVILKIT_KNOWLEDGE_QDRANT_API_KEY_FILE: /run/secrets/qdrant-api-key
       ANVILKIT_KNOWLEDGE_STORE_DATABASE_URL_FILE: /run/secrets/knowledge-store-dsn
       ANVILKIT_KNOWLEDGE_CLEANUP_DATABASE_URL_FILE: /run/secrets/knowledge-cleanup-dsn
-    secrets: [knowledge-app-dsn, knowledge-objects-credentials, knowledge-removals-credentials, qdrant-api-key, knowledge-store-dsn, knowledge-cleanup-dsn]
+    secrets: [knowledge-app-dsn, knowledge-objects-credentials, knowledge-removals-credentials, qdrant-api-key, knowledge-store-dsn, knowledge-cleanup-dsn, knowledge-launcher-kubeconfig]
     volumes:
       - ./config/anvilkit-agent-knowledge.yaml:/etc/anvilkit/anvilkit-agent-knowledge/config.yaml:ro
       - ${ANVILKIT_HOME:-/srv/anvilkit}/certs/anvilkit-agent-knowledge:/etc/anvilkit/identity:ro

@@ -1,0 +1,16 @@
+# Loads the inbound guard (guard.nft) before the RKE2 node starts listening.
+# jobs-node.sh installs it; it is enabled only after `jobs-node.sh guard-confirm`
+# proves a new SSH connection still works.
+[Unit]
+Description=AnvilKit inbound guard of the public interface
+Wants=network-pre.target
+Before=network-pre.target rke2-server.service docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/nft -f /etc/anvilkit/guard.nft
+ExecStop=/usr/sbin/nft delete table inet anvilkit_guard
+
+[Install]
+WantedBy=multi-user.target

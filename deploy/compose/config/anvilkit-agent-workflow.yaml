@@ -36,8 +36,12 @@ identity:
   key_file: /etc/anvilkit/identity/tls.key
 kubernetes:
   candidate_seccomp_profile: anvilkit/candidate.json
+  # Plan 0006 D-4: the development profiles first (no gVisor on the Jobs
+  # node yet); the admission chart's developmentProfiles admits the same two.
   enabled_profiles:
   - local-check-v1
+  - validator-source-dev-v1
+  - codegen-team-dev-v1
   namespace: anvilkit-components
   sidecar:
     identity_mode: mtls

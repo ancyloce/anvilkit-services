@@ -44,7 +44,7 @@ for svc in postgres temporal minio nats valkey-queue valkey-cache qdrant anvilki
   if [ "$health" = healthy ] || [ "$health" = running ]; then pass "$svc: $health, restart=$restart, memory=${mem}B, nanocpus=$cpus, readonly_rootfs=$ro"; else fail "$svc: $health (restart=$restart)"; fi
 done
 
-echo "== published ports (loopback only)"
+echo "== published ports (loopback, or the host-only address of the Jobs node)"
 bad=$(docker ps --format '{{.Names}} {{.Ports}}' | grep -E '0\.0\.0\.0:|\[::\]:' || true)
 if [ -z "$bad" ]; then pass "no container publishes a port on a non-loopback address"; else fail "non-loopback publication: $bad"; fi
 
@@ -97,7 +97,39 @@ for path in knowledge/sources mcp/catalog mcp/grants; do
   [ "$code" = 200 ] && pass "API GET /$path: 200 ($(head -c 80 /tmp/verify-body | tr -d '\n')...)" || fail "API GET /$path $code: $(head -c 200 /tmp/verify-body)"
 done
 rm -f /tmp/verify-body
-unex "LocalCheck, generation, preview, parsing flows: the Workflow has no Job execution backend here (README blocker B-1)"
+echo "== Jobs node (deploy/compose/jobs; plan 0006 option B)"
+KJ="sudo -n /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml"
+if ! sudo -n test -f /etc/rancher/rke2/rke2.yaml 2>/dev/null; then
+  unex "Jobs node: not installed (deploy/compose/jobs/jobs-node.sh); no Job can run"
+else
+  ready=$($KJ get node anvilkit-jobs -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null)
+  [ "$ready" = True ] && pass "Jobs node anvilkit-jobs Ready ($(/usr/local/bin/rke2 --version | awk 'NR==1 {print $3}'))" || fail "Jobs node anvilkit-jobs not Ready (${ready:-absent})"
+  if sudo -n nft list table inet anvilkit_guard >/dev/null 2>&1 && systemctl is-enabled --quiet anvilkit-guard.service; then pass "inbound guard on eth0 loaded and enabled at boot"; else fail "inbound guard not loaded or not enabled (jobs-node.sh host, guard-confirm)"; fi
+  n=$($KJ -n kyverno get deploy kyverno-admission-controller -o jsonpath='{.status.readyReplicas}' 2>/dev/null)
+  [ "${n:-0}" -ge 2 ] && pass "Kyverno admission controller: ${n} replicas ready" || fail "Kyverno admission controller: ${n:-0} replicas ready"
+  pol=$($KJ get validatingpolicies -o name 2>/dev/null | grep -c 'anvilkit-' || true)
+  [ "$pol" -ge 8 ] && pass "$pol anvilkit Job admission policies" || fail "$pol anvilkit Job admission policies (8 expected: Jobs, Pods, ephemeral containers and registries of both Job namespaces)"
+  sc=$($KJ -n kube-system get ds anvilkit-seccomp-installer -o jsonpath='{.status.numberReady}' 2>/dev/null)
+  [ "${sc:-0}" -ge 1 ] && pass "candidate seccomp profile installed on the node" || fail "seccomp installer not ready"
+  for ns in anvilkit-components anvilkit-parsing; do
+    q=$($KJ -n "$ns" get resourcequota one-job-pod -o jsonpath='{.spec.hard.pods}' 2>/dev/null)
+    np=$($KJ -n "$ns" get networkpolicy -o name 2>/dev/null | wc -l)
+    [ "$q" = 1 ] && [ "$np" -ge 2 ] && pass "$ns: one Job pod at a time, $np network policies" || fail "$ns: pod quota '${q}', $np network policies"
+  done
+  gw=$($KJ -n anvilkit-gateway get deploy anvilkit-compose-gateway -o jsonpath='{.status.readyReplicas}' 2>/dev/null)
+  [ "${gw:-0}" -ge 1 ] && pass "Compose relay ready (Control 9101, Model Proxy 9103, objects 9000)" || fail "Compose relay not ready"
+  want=$(sudo -n sha256sum "$CERTS/anvilkit-job-access-sidecar/tls.crt" 2>/dev/null | cut -c1-64)
+  have=$($KJ -n anvilkit-components get secret anvilkit-job-access-sidecar-identity -o jsonpath='{.data.tls\.crt}' 2>/dev/null | base64 -d 2>/dev/null | sha256sum | cut -c1-64)
+  [ -n "$want" ] && [ "$want" = "$have" ] && pass "sidecar identity Secret holds the current pki.sh leaf" || fail "sidecar identity Secret differs from the pki.sh leaf (jobs-node.sh identities)"
+  for spec in "launcher.kubeconfig anvilkit-components" "knowledge-launcher.kubeconfig anvilkit-parsing"; do
+    set -- $spec
+    KL="sudo -n /var/lib/rancher/rke2/bin/kubectl --kubeconfig $SECRETS/$1 --server https://10.255.255.1:6443 -n $2"
+    c=$($KL auth can-i create jobs.batch 2>/dev/null); s=$($KL auth can-i list secrets 2>/dev/null)
+    pd=$($KL auth can-i create pods 2>/dev/null); x=$($KL auth can-i create pods/exec 2>/dev/null)
+    [ "$c" = yes ] && [ "$s" = no ] && [ "$pd" = no ] && [ "$x" = no ] && pass "$1: creates Jobs in $2; lists no Secret, creates no Pod, no exec" || fail "$1: create jobs '${c}', list secrets '${s}', create pods '${pd}', exec '${x}'"
+  done
+fi
+unex "LocalCheck, generation, preview, parsing flows: not run by this read-only verifier (LocalCheck is driven over the API; a generation needs the owner's authorization)"
 
 echo "== model route (from the proxy's own log lines: diagnostic, no paid call)"
 pid=$($COMPOSE ps -q anvilkit-agent-model-proxy 2>/dev/null | head -1)

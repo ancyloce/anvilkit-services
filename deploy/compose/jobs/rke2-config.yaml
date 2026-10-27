@@ -1,0 +1,25 @@
+# RKE2 configuration of the Jobs-only node of the Compose placement (plan 0006
+# option B, owner decision D-2: one RKE2 node on the Compose host, Job
+# namespaces only, never the services). jobs-node.sh installs it as
+# /etc/rancher/rke2/config.yaml. DEVELOPMENT_ONLY: no gVisor yet (D-4), so only
+# local-check-v1 and the development profiles run here.
+node-name: anvilkit-jobs
+# The CNI of the qualified RKE2 combination (deploy/verification).
+cni: cilium
+write-kubeconfig-mode: "0600"
+# The launchers in the Compose containers reach the API server on the
+# host-only address of anvilkit-jobs0 under this name (compose.yaml extra_hosts).
+tls-san:
+  - anvilkit-jobs-api
+  - 10.255.255.1
+# One node carries the pool both launchers select (the Workflow's components
+# pool; Knowledge's parser.node_pool is set to the same value here).
+node-label:
+  - anvilkit.io/pool=components
+disable:
+  - rke2-ingress-nginx
+  - rke2-traefik
+# The host keeps its swap for the Compose services; pods never use it (the
+# kubelet's default NoSwap behaviour).
+kubelet-arg:
+  - fail-swap-on=false

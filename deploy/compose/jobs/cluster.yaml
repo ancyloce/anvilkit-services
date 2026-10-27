@@ -1,0 +1,210 @@
+# The Job namespaces of the Compose placement's Jobs node (plan 0006 step 5),
+# applied by `jobs-node.sh cluster` after the admission chart and the
+# default-deny policies of deploy/policies/network.
+#
+# The Job pods reach the Compose services the way the qualified topology lets
+# them (deploy/qualification/platform/network: jobs -> control 9101, model proxy
+# 9103, objects 9000; parser jobs -> objects 9000; DNS to CoreDNS): through
+# standard pod-to-pod NetworkPolicies to a TCP relay in anvilkit-gateway, which
+# forwards the unchanged mTLS streams to the ports Compose publishes on the
+# host-only address 10.255.255.1. ExternalName Services give the relay the
+# Compose names the sidecar and the presigned URLs use (anvilkit-agent-control,
+# anvilkit-agent-model-proxy, minio), so server names and URL hosts match.
+#
+# D-5 (one generation at a time): each Job namespace admits one non-terminal pod.
+apiVersion: v1
+kind: Namespace
+metadata: {name: anvilkit-components}
+---
+apiVersion: v1
+kind: Namespace
+metadata: {name: anvilkit-parsing}
+---
+apiVersion: v1
+kind: Namespace
+metadata: {name: anvilkit-gateway}
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata: {name: one-job-pod, namespace: anvilkit-components}
+spec:
+  hard: {pods: "1"}
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata: {name: one-job-pod, namespace: anvilkit-parsing}
+spec:
+  hard: {pods: "1"}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: anvilkit-compose-gateway, namespace: anvilkit-gateway}
+data:
+  haproxy.cfg: |
+    global
+      log stdout format raw local0 notice
+      maxconn 256
+    defaults
+      mode tcp
+      log global
+      timeout connect 5s
+      # Model streams stay open for a whole call (keepalives every 15 s).
+      timeout client 1h
+      timeout server 1h
+    frontend control
+      bind :9101
+      default_backend control
+    backend control
+      server compose 10.255.255.1:9101
+    frontend model-proxy
+      bind :9103
+      default_backend model-proxy
+    backend model-proxy
+      server compose 10.255.255.1:9103
+    frontend objects
+      bind :9000
+      default_backend objects
+    backend objects
+      server compose 10.255.255.1:9000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: anvilkit-compose-gateway
+  namespace: anvilkit-gateway
+  labels: {app.kubernetes.io/name: anvilkit-compose-gateway}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app.kubernetes.io/name: anvilkit-compose-gateway}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: anvilkit-compose-gateway}
+      annotations:
+        anvilkit.io/config-revision: "1"
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: haproxy
+          # HAProxy 3.2.26 (docker.io/library/haproxy:3.2-alpine, index digest).
+          image: docker.io/library/haproxy:3.2-alpine@sha256:5893840576071e6217cd52ebdcc14f454c6f7a631056fa6f4e0f40d3cac4215b
+          args: ["haproxy", "-db", "-f", "/usr/local/etc/haproxy/haproxy.cfg"]
+          ports:
+            - {name: control, containerPort: 9101}
+            - {name: model-proxy, containerPort: 9103}
+            - {name: objects, containerPort: 9000}
+          readinessProbe:
+            tcpSocket: {port: 9101}
+            periodSeconds: 10
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          resources:
+            requests: {cpu: 50m, memory: 32Mi}
+            limits: {cpu: 500m, memory: 128Mi}
+          volumeMounts:
+            - {name: config, mountPath: /usr/local/etc/haproxy, readOnly: true}
+      volumes:
+        - name: config
+          configMap: {name: anvilkit-compose-gateway}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: anvilkit-compose-gateway, namespace: anvilkit-gateway}
+spec:
+  selector: {app.kubernetes.io/name: anvilkit-compose-gateway}
+  ports:
+    - {name: control, port: 9101, targetPort: 9101}
+    - {name: model-proxy, port: 9103, targetPort: 9103}
+    - {name: objects, port: 9000, targetPort: 9000}
+---
+# The relay accepts only the Job namespaces (and the path probe), each on the
+# ports its qualified flows name; its own egress to the host-only address is
+# not restricted (Cilium classifies host addresses as the host entity, which a
+# NetworkPolicy ipBlock does not select).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: anvilkit-compose-gateway-ingress, namespace: anvilkit-gateway}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: anvilkit-components}}
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: anvilkit-probe}}
+      ports:
+        - {protocol: TCP, port: 9101}
+        - {protocol: TCP, port: 9103}
+        - {protocol: TCP, port: 9000}
+    - from:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: anvilkit-parsing}}
+      ports:
+        - {protocol: TCP, port: 9000}
+---
+# anvilkit-components: DNS and the relay (Control, Model Proxy, objects); the
+# default deny is deploy/policies/network/anvilkit-components-egress.yaml.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: anvilkit-components-allowed-egress, namespace: anvilkit-components}
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}
+          podSelector: {matchLabels: {k8s-app: kube-dns}}
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+    - to:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: anvilkit-gateway}}
+          podSelector: {matchLabels: {app.kubernetes.io/name: anvilkit-compose-gateway}}
+      ports:
+        - {protocol: TCP, port: 9101}
+        - {protocol: TCP, port: 9103}
+        - {protocol: TCP, port: 9000}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: anvilkit-parsing-allowed-egress, namespace: anvilkit-parsing}
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}
+          podSelector: {matchLabels: {k8s-app: kube-dns}}
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+    - to:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: anvilkit-gateway}}
+          podSelector: {matchLabels: {app.kubernetes.io/name: anvilkit-compose-gateway}}
+      ports:
+        - {protocol: TCP, port: 9000}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: anvilkit-agent-control, namespace: anvilkit-components}
+spec: {type: ExternalName, externalName: anvilkit-compose-gateway.anvilkit-gateway.svc.cluster.local}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: anvilkit-agent-model-proxy, namespace: anvilkit-components}
+spec: {type: ExternalName, externalName: anvilkit-compose-gateway.anvilkit-gateway.svc.cluster.local}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: minio, namespace: anvilkit-components}
+spec: {type: ExternalName, externalName: anvilkit-compose-gateway.anvilkit-gateway.svc.cluster.local}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: minio, namespace: anvilkit-parsing}
+spec: {type: ExternalName, externalName: anvilkit-compose-gateway.anvilkit-gateway.svc.cluster.local}

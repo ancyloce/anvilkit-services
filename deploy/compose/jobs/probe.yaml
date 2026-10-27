@@ -1,0 +1,93 @@
+# The path probe of `jobs-node.sh probe`: a namespace with the same egress
+# rules as anvilkit-components (whose admission accepts only launcher-rendered
+# Jobs) and one Job that proves, from a pod on the Jobs node, that DNS, the
+# relay and the Compose ports answer, and that every other destination (the
+# internet, the Kubernetes API, the host-only address directly) is refused.
+apiVersion: v1
+kind: Namespace
+metadata: {name: anvilkit-probe}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: anvilkit-probe-default-deny, namespace: anvilkit-probe}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: anvilkit-probe-allowed-egress, namespace: anvilkit-probe}
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}
+          podSelector: {matchLabels: {k8s-app: kube-dns}}
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+    - to:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: anvilkit-gateway}}
+          podSelector: {matchLabels: {app.kubernetes.io/name: anvilkit-compose-gateway}}
+      ports:
+        - {protocol: TCP, port: 9101}
+        - {protocol: TCP, port: 9103}
+        - {protocol: TCP, port: 9000}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: anvilkit-agent-control, namespace: anvilkit-probe}
+spec: {type: ExternalName, externalName: anvilkit-compose-gateway.anvilkit-gateway.svc.cluster.local}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: anvilkit-agent-model-proxy, namespace: anvilkit-probe}
+spec: {type: ExternalName, externalName: anvilkit-compose-gateway.anvilkit-gateway.svc.cluster.local}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: minio, namespace: anvilkit-probe}
+spec: {type: ExternalName, externalName: anvilkit-compose-gateway.anvilkit-gateway.svc.cluster.local}
+---
+apiVersion: batch/v1
+kind: Job
+metadata: {name: anvilkit-jobs-path-probe, namespace: anvilkit-probe}
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 120
+  template:
+    spec:
+      automountServiceAccountToken: false
+      restartPolicy: Never
+      nodeSelector: {anvilkit.io/pool: components}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: probe
+          image: docker.io/library/busybox@sha256:9db7b59979c38555a39def84a31fb98b5296952f9e3afd4f6f11f05b07adfab0
+          command: [sh, -c]
+          args:
+            - |
+              ok=1
+              want() { if "$@" </dev/null >/dev/null 2>&1; then echo "PASS reached: $*"; else echo "FAIL not reached: $*"; ok=0; fi; }
+              deny() { if "$@" </dev/null >/dev/null 2>&1; then echo "FAIL reached: $*"; ok=0; else echo "PASS refused: $*"; fi; }
+              want nslookup anvilkit-agent-control
+              want nc -w 5 anvilkit-agent-control 9101
+              want nc -w 5 anvilkit-agent-model-proxy 9103
+              want wget -q -T 5 -O /dev/null http://minio:9000/minio/health/live
+              deny nc -w 5 1.1.1.1 443
+              deny nc -w 5 kubernetes.default.svc.cluster.local 443
+              deny nc -w 5 10.255.255.1 9101
+              deny nc -w 5 10.255.255.1 6443
+              [ "$ok" = 1 ] && echo ANVILKIT_JOBS_PATH_PROBE_PASS || { echo ANVILKIT_JOBS_PATH_PROBE_FAIL; exit 1; }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          resources:
+            requests: {cpu: 50m, memory: 32Mi}
+            limits: {cpu: 200m, memory: 64Mi}

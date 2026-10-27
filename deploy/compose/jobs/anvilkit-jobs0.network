@@ -1,0 +1,8 @@
+# Control, the Model Proxy and MinIO publish their Job-facing ports on this
+# address (compose.yaml), and the launchers reach the RKE2 API server on it.
+[Match]
+Name=anvilkit-jobs0
+
+[Network]
+Address=10.255.255.1/32
+ConfigureWithoutCarrier=yes

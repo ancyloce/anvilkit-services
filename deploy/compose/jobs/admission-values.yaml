@@ -1,0 +1,15 @@
+# DEVELOPMENT_ONLY environment values of the Job-boundary admission chart
+# (deploy/policies/chart) for the Jobs node of the Compose placement: the
+# CI-published Job images and the pinned busybox of the LocalCheck fixture,
+# the development profiles the owner admitted first (plan 0006 D-4; no gVisor
+# here yet), and the sidecar placement the Compose Workflow renders
+# (ANVILKIT_WORKFLOW_SIDECAR_MODEL_PROXY_URL; the MCP and Knowledge relays stay
+# off, so no placement of those kinds is admitted).
+registries:
+  components: ["ghcr.io/ancyloce/", "docker.io/library/busybox@"]
+  parsing: ["ghcr.io/ancyloce/"]
+developmentProfiles: [validator-source-dev-v1, codegen-team-dev-v1]
+sidecarPlacements:
+  modelProxyUrl: https://anvilkit-agent-model-proxy:9103
+  mcpAddress: ""
+  knowledgeAddress: ""

@@ -1,0 +1,6 @@
+# The host-only address the Job runtime reaches the Compose placement on
+# (jobs-node.sh installs it under /etc/systemd/network). A dummy interface:
+# nothing outside this host routes to 10.255.255.1.
+[NetDev]
+Name=anvilkit-jobs0
+Kind=dummy
