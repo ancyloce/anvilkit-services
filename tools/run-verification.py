@@ -163,10 +163,11 @@ class Units:
 def go_test(mod: pathlib.Path, env: dict, units: Units) -> tuple[bool, str]:
     """`go test -json -count=1 ./...` in one module: every skipped test or subtest
     becomes an UNEXECUTED unit with its printed reason; a failure keeps the
-    failing tests' output."""
+    failing tests' output and, for a test that never finished, where it hung."""
     p = run(["go", "test", "-json", "-count=1", "./..."], mod, env)
     notes: dict[str, list[str]] = {}
     failed: list[str] = []
+    running: set[str] = set()
     for line in p.stdout.splitlines():
         try:
             ev = json.loads(line)
@@ -176,15 +177,31 @@ def go_test(mod: pathlib.Path, env: dict, units: Units) -> tuple[bool, str]:
         key = f"{pkg} {test or ''}".strip()
         if action == "output":
             notes.setdefault(key, []).append(ev.get("Output") or "")
+        elif action == "run" and test:
+            running.add(key)
         elif action == "skip" and test:
+            running.discard(key)
             said = [n.strip() for n in notes.get(key, []) if "_test.go:" in n]
             units.add(f"{mod.relative_to(ROOT)} {pkg.rsplit('/', 1)[-1]}.{test}", (said[-1] if said else "no reason printed")[:200])
-        elif action == "fail":
-            failed.append(key)
+        elif action in ("pass", "fail"):
+            running.discard(key)
+            if action == "fail":
+                failed.append(key)
     if p.returncode == 0 and not failed:
         return True, ""
     tail = "".join(n for k in failed for n in notes.get(k, []))[-3000:]
-    return False, tail or (p.stdout[-2000:] + p.stderr[-2000:])
+    stuck = "".join(unfinished(k, "".join(notes.get(k, []))) for k in sorted(running))
+    return False, (stuck + tail) or (p.stdout[-2000:] + p.stderr[-2000:])
+
+
+def unfinished(key: str, out: str) -> str:
+    """A test still running when its package failed (a `go test` timeout: Go
+    attributes the panic naming the running tests, and the goroutine dump, to
+    it and never reports it failed): the panic and the goroutines inside test
+    code, which show where it hung."""
+    head, *blocks = out.split("\n\ngoroutine ")
+    held = ["goroutine " + b[:1500] for b in blocks if "_test.go:" in b]
+    return (f"{key}: did not finish\n{head[:800]}\n" + "\n".join(held))[:12000] + "\n"
 
 
 def vitest(pkg: pathlib.Path, env: dict, units: Units) -> tuple[bool, str]:
