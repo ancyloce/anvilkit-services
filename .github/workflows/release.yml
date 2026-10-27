@@ -70,10 +70,11 @@ jobs:
         env:
           IDENTITY: https://github.com/${{ github.workflow_ref }}
         # --only names the ten owned images (and the eight charts of the same
-        # names): the fixed Job images and the platform mirror are taken at the
-        # digests their reviewed profiles pin from the registry named here, which
-        # holds none of them until a profile revision is published there; the
-        # Compose placement (deploy/compose) consumes only the owned images.
+        # names) and the fixed Job images, which are taken at the digests their
+        # reviewed profiles pin (contracts/jobs/profiles.json, re-pinned on
+        # 2026-10-27 to the job-images releases jobs-v0.1.6 and jobs-v0.1.9) from
+        # the registry named here, then scanned and signed again; the platform
+        # mirror (pause) is still left out.
         run: >-
           .local/verification-venv/bin/python tools/release-artifacts.py --run "$GITHUB_REF_NAME"
           --registry-push "$ANVILKIT_RELEASE_REGISTRY" --registry "$ANVILKIT_RELEASE_REGISTRY" --network host
@@ -83,6 +84,8 @@ jobs:
           --only anvilkit-agent-model-proxy --only anvilkit-agent-knowledge --only anvilkit-knowledge-forwarder
           --only anvilkit-agent-mcp --only anvilkit-agent-background-worker --only anvilkit-agent-inference
           --only anvilkit-migration
+          --only anvilkit-job-validator --only anvilkit-job-access-sidecar --only anvilkit-codegen
+          --only anvilkit-parser --only anvilkit-codegen-team --only busybox
       - name: The manifest is SIGNED
         run: |
           status=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["status"])' "outputs/qualification/$GITHUB_REF_NAME/release/release-manifest.json")
