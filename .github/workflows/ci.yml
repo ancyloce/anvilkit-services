@@ -1,6 +1,7 @@
 # Verification of anvilkit-services from a clean recursive clone (P3.1, plan
 # 0004): the checkout below is the parent at the pushed commit with every
-# submodule at the gitlink it records, nothing else. Its jobs:
+# submodule at the gitlink it records, nothing else (the static job adds only
+# the contracts' go/v* tag refs). Its jobs:
 #   static     sh tools/verification-env.sh --static (the chain's docs,
 #              generate, contracts, evals, deployment, handover, export, ts,
 #              validator, model-proxy, team, python, knowledge, background,
@@ -36,6 +37,12 @@ jobs:
         with:
           submodules: recursive
           persist-credentials: false
+      # The submodule clone is shallow and holds only the tag of contracts' main
+      # tip, while tools/docs-status.py (the docs and export steps) names the
+      # go/v* tag of each TypeScript consumer's pinned contracts commit, which
+      # may be an older one. Tag refs only: every checkout stays at its gitlink.
+      - name: The contracts' go/v* tags
+        run: git -C contracts fetch --quiet --no-tags --depth=1 origin '+refs/tags/go/*:refs/tags/go/*'
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version: ${{ env.GO_VERSION }}
