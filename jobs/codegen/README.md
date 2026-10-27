@@ -17,7 +17,7 @@ The team repository's `Dockerfile` builds the final image from both repositories
 
 ```sh
 docker build --build-context supervisor=jobs/codegen/supervisor \
-  --build-arg VALIDATOR_REPOSITORY=localhost:5001/anvilkit-validator -t anvilkit-codegen-team jobs/codegen/team
+  --build-arg VALIDATOR_REPOSITORY=localhost:5001/anvilkit-job-validator -t anvilkit-codegen-team jobs/codegen/team
 sh jobs/codegen/team/tools/image-smoke.sh anvilkit-codegen-team
 ```
 
