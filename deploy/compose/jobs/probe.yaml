@@ -75,7 +75,9 @@ spec:
               ok=1
               want() { if "$@" </dev/null >/dev/null 2>&1; then echo "PASS reached: $*"; else echo "FAIL not reached: $*"; ok=0; fi; }
               deny() { if "$@" </dev/null >/dev/null 2>&1; then echo "FAIL reached: $*"; ok=0; else echo "PASS refused: $*"; fi; }
-              want nslookup anvilkit-agent-control
+              # The A record by its full name: busybox nslookup of a short name walks the
+              # search domains and reports the last NXDOMAIN although the first one answered.
+              want nslookup -type=a anvilkit-agent-control.anvilkit-probe.svc.cluster.local
               want nc -w 5 anvilkit-agent-control 9101
               want nc -w 5 anvilkit-agent-model-proxy 9103
               want wget -q -T 5 -O /dev/null http://minio:9000/minio/health/live
