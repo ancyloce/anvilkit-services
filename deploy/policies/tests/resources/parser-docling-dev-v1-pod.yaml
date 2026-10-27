@@ -61,7 +61,7 @@
     "initContainers": [
       {
         "name": "stage-in",
-        "image": "localhost:5001/anvilkit-parser@sha256:2ec4b4bee7c4aa5ab3571e6078f1790aaffb5d3c7f249b7f5829a6c0d01297ce",
+        "image": "localhost:5001/anvilkit-parser@sha256:4735c952daf4d2608f6c76659e07cbd73656db3a8a3a0968b055ef398b3e0599",
         "command": [
           "/usr/local/bin/anvilkit-stage",
           "in"
@@ -116,7 +116,7 @@
       },
       {
         "name": "parse",
-        "image": "localhost:5001/anvilkit-parser@sha256:2ec4b4bee7c4aa5ab3571e6078f1790aaffb5d3c7f249b7f5829a6c0d01297ce",
+        "image": "localhost:5001/anvilkit-parser@sha256:4735c952daf4d2608f6c76659e07cbd73656db3a8a3a0968b055ef398b3e0599",
         "command": [
           "/usr/local/bin/anvilkit-parse"
         ],
@@ -176,7 +176,7 @@
     "containers": [
       {
         "name": "stage-out",
-        "image": "localhost:5001/anvilkit-parser@sha256:2ec4b4bee7c4aa5ab3571e6078f1790aaffb5d3c7f249b7f5829a6c0d01297ce",
+        "image": "localhost:5001/anvilkit-parser@sha256:4735c952daf4d2608f6c76659e07cbd73656db3a8a3a0968b055ef398b3e0599",
         "command": [
           "/usr/local/bin/anvilkit-stage",
           "out"

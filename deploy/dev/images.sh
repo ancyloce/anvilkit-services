@@ -22,7 +22,7 @@
 # anvilkit-codegen builds from jobs/codegen/supervisor alone
 # (anvilkit-job-codegen-supervisor, its own Dockerfile);
 # anvilkit-job-access-sidecar builds from its own Dockerfile against its
-# published, versioned contracts dependency; anvilkit-validator builds from
+# published, versioned contracts dependency; anvilkit-job-validator builds from
 # jobs/validator with this checkout's contracts sources as the named build
 # context "contracts" (the schemas the Job validates its outputs against;
 # DEVELOPMENT_ONLY until a contracts release is consumed). The digests
@@ -48,11 +48,11 @@ IMAGES="anvilkit-codegen anvilkit-job-access-sidecar"
 docker build --network=host ${ANVILKIT_DEV_GOPROXY:+--build-arg GOPROXY="$ANVILKIT_DEV_GOPROXY"} -t "$REGISTRY/anvilkit-codegen:dev" "$ROOT/jobs/codegen/supervisor"
 docker build --network=host ${ANVILKIT_DEV_GOPROXY:+--build-arg GOPROXY="$ANVILKIT_DEV_GOPROXY"} -t "$REGISTRY/anvilkit-job-access-sidecar:dev" "$ROOT/jobs/shared/access-sidecar"
 if [ "${1:-}" != --harness ]; then
-  docker build --network=host --build-context contracts="$ROOT/contracts" -t "$REGISTRY/anvilkit-validator:dev" "$ROOT/jobs/validator"
-  docker build --network=host ${ANVILKIT_DEV_GOPROXY:+--build-arg GOPROXY="$ANVILKIT_DEV_GOPROXY"} --build-arg VALIDATOR_REPOSITORY="$REGISTRY/anvilkit-validator" \
+  docker build --network=host --build-context contracts="$ROOT/contracts" -t "$REGISTRY/anvilkit-job-validator:dev" "$ROOT/jobs/validator"
+  docker build --network=host ${ANVILKIT_DEV_GOPROXY:+--build-arg GOPROXY="$ANVILKIT_DEV_GOPROXY"} --build-arg VALIDATOR_REPOSITORY="$REGISTRY/anvilkit-job-validator" \
     --build-context supervisor="$ROOT/jobs/codegen/supervisor" -t "$REGISTRY/anvilkit-codegen-team:dev" "$ROOT/jobs/codegen/team"
   docker build --network=host --build-context contracts="$ROOT/contracts" -t "$REGISTRY/anvilkit-parser:dev" "$ROOT/jobs/parser"
-  IMAGES="$IMAGES anvilkit-validator anvilkit-codegen-team anvilkit-parser"
+  IMAGES="$IMAGES anvilkit-job-validator anvilkit-codegen-team anvilkit-parser"
 fi
 for image in $IMAGES; do
   docker push "$REGISTRY/$image:dev" >/dev/null

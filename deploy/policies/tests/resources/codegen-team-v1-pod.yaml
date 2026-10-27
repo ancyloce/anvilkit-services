@@ -24,7 +24,7 @@ spec:
       value: att_policy
     - name: ANVILKIT_LAUNCH_ENVELOPE
       value: '{"attemptId":"att_policy","component":{"componentId":"cmp_policy","packageName":"@anvilkit/hero-policy","puckType":"Hero","sourceRevision":"3"},"deadline":"2026-09-16T12:10:00Z","executionEpoch":"1","inputs":[{"digest":"sha256:5555555555555555555555555555555555555555555555555555555555555555","handle":"h_policy_source","name":"source"}],"jobKind":"codegen","launchEpoch":"1","launchId":"lch_policy","launchKey":"policy-codegen-team-v1","operationId":"op_policy","profileId":"codegen-team-v1","profileRevision":"3","schemaVersion":1}'
-    image: localhost:5001/anvilkit-codegen-team@sha256:53cb19d66072dcb677d4e0878cefe074733f7f4167a5b33119a01cb153eab968
+    image: localhost:5001/anvilkit-codegen-team@sha256:c2d80ef74160207be0ea1ceeab9db69a8e1eada42bc1cd262681ecd8bf399346
     name: supervisor
     resources:
       limits:
@@ -83,7 +83,7 @@ spec:
       value: anvilkit-agent-mcp.anvilkit-apps.svc.cluster.local:9106
     - name: ANVILKIT_SIDECAR_KNOWLEDGE_ADDRESS
       value: anvilkit-agent-knowledge.anvilkit-apps.svc.cluster.local:9105
-    image: localhost:5001/anvilkit-job-access-sidecar@sha256:d96be167bf0a09e6f9922205e138a465baaeb3d7a6fb028d063cd294b2401e24
+    image: localhost:5001/anvilkit-job-access-sidecar@sha256:90976a8cf4935e72d0da3031c3f3bc61e75af435759488a6a7c615ff74203374
     name: access-sidecar
     resources:
       limits:

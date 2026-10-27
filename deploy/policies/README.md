@@ -23,7 +23,7 @@ identity. The current reviewed harness values are supervisor `500m/256Mi` (valid
 `256Mi` use disk, sockets `1Mi` uses `Memory`. Kubernetes can restore an omitted request
 from its corresponding limit; the admitted values must still equal the reviewed values.
 
-The validator profiles (P0.8) use the harness layout with the `anvilkit-validator` image as
+The validator profiles (P0.8) use the harness layout with the `anvilkit-job-validator` image as
 the supervisor container, bound to the image's pinned digest and to its reviewed entrypoint
 (`node /anvilkit/validator/dist/job.js`). `validator-fixture-v1` validates only the fixed
 Hero source without candidate code or RuntimeClass; `validator-source-v1` binds a candidate
