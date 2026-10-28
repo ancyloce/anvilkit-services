@@ -1,43 +1,701 @@
-# CLAUDE.md
+# Project Operating System
 
-Claude-specific entry point for `anvilkit-services`. The shared working rules for every development agent live in [`AGENTS.md`](AGENTS.md); this file does not repeat them.
+This repository uses a document-driven project memory system.
 
-## Before starting any task
+Conversation history is temporary.
 
-1. Read `AGENTS.md` in full with the Read tool. A Markdown link does not load its target into context, and this file is not a substitute for it.
-2. Then read [`docs/README.md`](docs/README.md), the relevant parts of [`docs/architecture/architecture.md`](docs/architecture/architecture.md), and the sections that the navigation table in `AGENTS.md` names for the task. Read `docs/architecture/security.md` when the task touches credentials, candidate code, retrieved content, model or tool sends, or external effects.
+Project documentation is the source of truth.
 
-## Claude Code specifics
+Project state must remain recoverable without historical chat context.
 
-- Only `docs/archive/`, `outputs/`, `logs/`, `.local/` and build caches are gitignored. Inputs added by a task are untracked until the user stages them, and `.local/` (dev foundation credentials, snapshots, the preserved legacy worktree) exists only in the primary checkout; a Git worktree therefore lacks them. Run tasks in the primary checkout and edit files there. `contracts/` and `services/agent/{api,control,workflow}` are their own repositories (see [architecture](docs/architecture/architecture.md#repositories)): changes inside them are changes of those repositories.
-- Git is read-only for Claude (`AGENTS.md`, section 4): no commit, push, staging, tagging, submodule registration, branch switching or history rewriting in any of the repositories unless the user asks for that exact action in the current message. Commit and push may also be hook-blocked; a block is the policy working.
-- Read-only checks: `sh tools/verification-env.sh --static` (pinned CPython 3.12 venv under `.local/`, then the chain), or with `.local/verification-venv/bin/python`: `tools/check-docs.py`, `tools/check-contracts.py`, `tools/check-source-export.py`, `tools/generate-contracts.py --check`, `tools/run-verification.py --static`; the contracts repository alone with `sh tools/verification-env.sh` inside `contracts/`; each service alone with `GOWORK=off` in `services/agent/{api,control,workflow}` (Control's sqlc drift check is `sh tools/sqlc.sh --check` there). `generate-contracts.py` without `--check` rewrites the checked-in contract consumers and Control's sqlc output; `deploy/dev/up.sh` starts containers and a kind cluster and migrates the dev database forward; `deploy/dev/{api,control,workflow}-chart.sh install` deploy the services into that cluster.
-- Recalled memories and older session notes may describe the previous architecture (v3.12, CD-01 to CD-05, W1–W3, P0/P1 stages, `docs/design/`, `docs/architecture/plans/`). The current baseline is architecture V4.0 revision 2 under `docs/architecture/`; verify any remembered path, command or gate against the checkout before using it.
-- Report as `AGENTS.md`, section 8 requires: which checks ran, their PASS/FAIL/UNEXECUTED results, and what remains unverified. Never present `NOT_RUN` or `NOT_VERIFIED` items as passing.
+---
 
-## Git is read-only
+# Repository Safety Rules
 
-- Never `git commit`, `git push`, or open a PR unless the user explicitly asks in that message (commit/push may also be hook-blocked — a block is the policy working, not an obstacle to route around). Default: leave changes uncommitted and report modified files, flagging those inside submodules and nested repositories (`contracts/`, `services/agent/{api,control,workflow}`).
-- Never stage, amend, rebase, merge, cherry-pick, reset, clean, tag, switch branches, register or change submodules (`git submodule add/update/sync`, `.gitmodules`) or publish a package unless asked for that exact action. Never force-push, never push `main`. Read-only git is always fine. Prepare such operations locally and present their concrete targets for authorization.
-- Never publish, deploy, or send anything to an external service without task authorization.
-- Never create branches or worktrees; edit the current local checkout directly. If a commit seems necessary, stop and ask first.
+Repository contents may be modified.
 
-## Shell
+Repository history may not be modified.
 
-- The shell is zsh. Unquoted variables do NOT word-split. Use arrays (`args=(a b c); cmd "${args[@]}"`) or `${=VAR}`. Don't rely on bash splitting semantics.
-- Never use `pkill -f` patterns that can match your own command line. Prefer PIDs or `pgrep -x`.
-- For long installs or builds (pnpm, model downloads, image builds), run them in the background with a log file and poll it, rather than blocking until a timeout.
+## Commit Restrictions
 
-## Workflows
+Never run:
 
-### Delivery plan execution (Pxx tasks)
+- git commit
+- git commit --amend
+- git push
+- git push --force
+- git push --force-with-lease
+- create pull requests
+- merge pull requests
 
-- When asked to implement a plan phase (e.g. P16), read its subtasks and definition of done from the delivery doc first. Then create one Task per subtask.
-- After the code changes, run the full static chain and the per-repo test suites. Report the pass count (e.g. 18/18).
-- Update `delivery.md` with an evidence record per subtask. Mark items blocked on env, soak, image rebuild or contracts release as OPEN with the reason. Never mark them as done.
-- When bumping the contracts version, update ALL consumers and re-verify.
-- Other Claude sessions may be editing the same repos concurrently. Re-read files before writing, and don't revert changes you didn't make.
+unless explicitly requested by the user in the current message.
 
-## Conversation
+Previous authorization does not carry forward.
 
-- Never reply "No response requested". Every user message, including a decision or a short answer like "all recommended", is an instruction to act on. Apply it and continue.
+Every commit, push, or pull request requires new authorization.
+
+---
+
+## Branch Restrictions
+
+Never run:
+
+- git checkout
+- git switch
+- git branch
+- git worktree
+- git checkout -b
+- git switch -c
+
+Do not create branches.
+
+Do not create worktrees.
+
+Work only in the current checkout.
+
+---
+
+## History Rewrite Restrictions
+
+Never run:
+
+- git rebase
+- git cherry-pick
+- git revert
+- git reset
+- git filter-branch
+
+History rewriting is prohibited.
+
+---
+
+## Staging Restrictions
+
+Never run:
+
+- git add
+- git restore --staged
+- git rm
+- git mv
+
+unless explicitly requested by the user.
+
+---
+
+## Repository State Restrictions
+
+Never run:
+
+- git clean
+- git clean -fd
+- git clean -xfd
+- git reset --hard
+- git checkout -- .
+- git restore .
+
+Do not delete user work.
+
+Do not overwrite local modifications.
+
+---
+
+## Tag Restrictions
+
+Never:
+
+- create tags
+- move tags
+- delete tags
+
+unless explicitly requested.
+
+---
+
+## Submodule Restrictions
+
+Never:
+
+- add submodules
+- remove submodules
+- modify submodule URLs
+- register submodules
+- modify .gitmodules
+
+unless explicitly requested.
+
+---
+
+## Remote Restrictions
+
+Never:
+
+- push code
+- publish packages
+- publish images
+- create releases
+- publish artifacts
+
+without explicit authorization.
+
+---
+
+## Deployment Restrictions
+
+Never:
+
+- deploy
+- publish
+- release
+- trigger external delivery pipelines
+- trigger production workflows
+
+without explicit authorization.
+
+---
+
+## Production Safety Restrictions
+
+Never:
+
+- modify production infrastructure
+- restart production services
+- rotate production credentials
+- delete production resources
+- modify DNS
+- modify certificates
+
+without explicit authorization.
+
+Assume every remote environment is production until verified otherwise.
+
+---
+
+## Protection Compliance
+
+If:
+
+- git hooks
+- repository policies
+- branch protections
+- CI safeguards
+
+block an action,
+
+the block is considered correct behavior.
+
+Do not bypass protections.
+
+Do not disable protections.
+
+Do not search for workarounds.
+
+---
+
+## Escalation Rule
+
+If successful completion requires:
+
+- commit
+- push
+- pull request
+- deployment
+- publication
+- release
+- branch creation
+
+Stop.
+
+Explain why the action is required.
+
+Wait for explicit authorization.
+
+---
+
+## Safe Operations
+
+Allowed by default:
+
+- read files
+- edit files
+- create files
+- run tests
+- run builds
+- run validation
+- run linters
+- inspect git status
+- inspect git diff
+- inspect logs
+
+provided no rule above is violated.
+
+---
+
+# Project Memory System
+
+The following documents define project state:
+
+- docs/ROADMAP.md
+- docs/SESSION_SUMMARY.md
+- docs/DECISIONS.md
+- docs/BLOCKERS.md
+- docs/HANDOFF.md
+
+Chat history is not project memory.
+
+Project documents are.
+
+---
+
+# Session Startup Procedure
+
+Before performing work:
+
+Read:
+
+1. docs/ROADMAP.md
+2. docs/SESSION_SUMMARY.md
+3. docs/DECISIONS.md
+4. docs/BLOCKERS.md
+5. docs/HANDOFF.md
+
+If required files do not exist:
+
+Initialize the project memory system first.
+
+Execution is not allowed until review is complete.
+
+---
+
+# Startup Validation
+
+Before taking action verify:
+
+- current goal is known
+- current stage is known
+- active blockers are known
+- active decisions are known
+- next action is known
+
+If any item is unknown:
+
+Stop.
+
+Update documentation first.
+
+---
+
+# Task Lifecycle
+
+Every task follows:
+
+PLAN
+→ EXECUTE
+→ VERIFY
+→ RECORD
+
+No phase may be skipped.
+
+---
+
+# Planning Requirements
+
+Before implementation define:
+
+- objective
+- scope
+- success criteria
+
+Work without success criteria must not begin.
+
+---
+
+# Verification Requirements
+
+No task is complete until verified.
+
+Accepted validation includes:
+
+- unit tests
+- integration tests
+- CI results
+- deployment validation
+- health checks
+- artifact inspection
+- command output
+- log validation
+
+The following are never sufficient:
+
+- should work
+- looks correct
+- probably fixed
+- likely solved
+
+---
+
+# Evidence Requirements
+
+Every completed task must contain evidence.
+
+Accepted evidence:
+
+- build output
+- test output
+- deployment output
+- health check output
+- logs
+- screenshots
+- generated artifacts
+
+Without evidence:
+
+The task remains incomplete.
+
+---
+
+# Session Summary Rules
+
+SESSION_SUMMARY.md represents current project state.
+
+Maintain:
+
+- current goal
+- current stage
+- current status
+- completed work
+- work in progress
+- open tasks
+- active risks
+- active decisions
+- active blockers
+- next action
+
+Do not store:
+
+- chat transcripts
+- command history
+- raw logs
+- reasoning chains
+
+Update after:
+
+- task completion
+- blocker creation
+- milestone completion
+- major decision
+
+---
+
+# Decision Rules
+
+DECISIONS.md stores project-level decisions.
+
+Create a decision record when changing:
+
+- architecture
+- infrastructure
+- deployment strategy
+- providers
+- security controls
+- workflows
+- operational policies
+
+Every decision must contain:
+
+- identifier
+- owner
+- status
+- rationale
+- alternatives
+- impact
+- reversal conditions
+
+Allowed statuses:
+
+- ACTIVE
+- SUPERSEDED
+- REVERTED
+
+Historical decisions must never be deleted.
+
+---
+
+# Architecture Consistency
+
+Before architectural changes:
+
+Review DECISIONS.md.
+
+If a planned change conflicts with an active decision:
+
+Stop.
+
+Document the conflict.
+
+Resolve the conflict before proceeding.
+
+---
+
+# Blocker Detection
+
+A blocker exists when:
+
+- approval is required
+- credentials are unavailable
+- permissions are unavailable
+- infrastructure is unavailable
+- dependencies are unavailable
+- required information is unavailable
+- external action is required
+- progress is stalled for more than 30 minutes
+
+Create blockers immediately.
+
+---
+
+# Blocker Rules
+
+Every blocker must contain:
+
+- identifier
+- status
+- priority
+- owner
+- issue
+- impact
+- required action
+- resolution criteria
+
+Allowed statuses:
+
+- OPEN
+- IN_PROGRESS
+- RESOLVED
+- CLOSED
+
+---
+
+# Blocker Stop Rule
+
+After creating a blocker:
+
+Allowed:
+
+- collect evidence
+- document impact
+- document options
+- prepare recovery steps
+
+Forbidden:
+
+- repeated investigation
+- speculative implementation
+- unrelated work
+- scope expansion
+- infinite retries
+
+If progress depends on blocker resolution:
+
+Stop execution.
+
+---
+
+# Scope Control
+
+Do not:
+
+- redefine project goals
+- create milestones
+- expand roadmap scope
+- invent deliverables
+
+Additional ideas belong in:
+
+Open Tasks
+
+Do not execute them automatically.
+
+---
+
+# Documentation Synchronization
+
+Whenever changing:
+
+- code
+- infrastructure
+- deployment
+- configuration
+- architecture
+- workflows
+
+Evaluate whether updates are required for:
+
+- docs/ROADMAP.md
+- docs/SESSION_SUMMARY.md
+- docs/DECISIONS.md
+- docs/BLOCKERS.md
+- docs/HANDOFF.md
+- design documentation
+- operational runbooks
+
+Documentation drift is a defect.
+
+Work is incomplete until documentation is synchronized.
+
+---
+
+# Design Documentation Rules
+
+Design documentation must remain consistent.
+
+When updating a primary design document:
+
+- synchronize chapter documents
+- synchronize glossary entries
+- preserve references
+- preserve traceability
+
+Open design questions must never be resolved silently.
+
+Document:
+
+- options
+- trade-offs
+- owner
+
+before implementation begins.
+
+---
+
+# Markdown Quality Rules
+
+After modifying Markdown:
+
+Validate:
+
+- heading hierarchy
+- links
+- references
+- code blocks
+- tables
+
+Do not use escaped pipes inside table cells.
+
+Rewrite content instead.
+
+---
+
+# Large Document Rules
+
+For documents larger than 1000 lines:
+
+- edit in place
+- preserve structure
+- minimize changes
+
+Avoid full-document rewrites.
+
+---
+
+# Context Compression
+
+Compression is mandatory when:
+
+- session exceeds 100 turns
+- milestone completes
+- release completes
+- context becomes difficult to review
+
+Compression process:
+
+1. update SESSION_SUMMARY.md
+2. update DECISIONS.md
+3. update BLOCKERS.md
+4. generate HANDOFF.md
+5. end session
+
+Chat history is not long-term storage.
+
+---
+
+# Handoff Requirements
+
+Generate HANDOFF.md when:
+
+- ending a session
+- changing operators
+- changing models
+- completing a milestone
+
+A new agent must be able to continue using only:
+
+- ROADMAP.md
+- SESSION_SUMMARY.md
+- DECISIONS.md
+- BLOCKERS.md
+- HANDOFF.md
+
+Historical conversation must never be required.
+
+---
+
+# Recovery Requirement
+
+The project must be recoverable from project documents alone.
+
+If recovery requires historical conversations:
+
+Documentation is incomplete.
+
+---
+
+# Release Gate
+
+Deployment is not complete until:
+
+- deployment succeeds
+- verification succeeds
+- health checks pass
+- critical logs reviewed
+- evidence recorded
+
+No evidence = not deployed.
+
+No verification = not released.
+
+---
+
+# Session Completion Checklist
+
+Before ending a session verify:
+
+- SESSION_SUMMARY.md updated
+- DECISIONS.md updated
+- BLOCKERS.md updated
+- HANDOFF.md updated
+- next action defined
+- evidence recorded
+
+Otherwise:
+
+The session is incomplete.
+
+---
+
+# Project Principles
+
+Prefer:
+
+State over conversation.
+Evidence over explanation.
+Decisions over reasoning.
+Summaries over history.
+Documents over memory.
+Outcomes over activity.
+
+The project must remain:
+
+- recoverable
+- auditable
+- transferable
+- maintainable
