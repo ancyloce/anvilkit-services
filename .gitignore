@@ -48,6 +48,7 @@ outputs/
 # tools/check-docs.py and tools/check-source-export.py treat its absence in a clone as
 # UNEXECUTED, not as a failure.
 /docs/
+.project-memory-version
 
 # Logs
 logs/
