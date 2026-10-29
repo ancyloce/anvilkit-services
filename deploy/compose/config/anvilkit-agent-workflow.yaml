@@ -48,6 +48,12 @@ kubernetes:
     identity_secret: anvilkit-job-access-sidecar-identity
 lifecycle:
   pagix_double_dir: /var/lib/anvilkit/pagix
+  # DEC-024 (B1 run 4, plan 0005 §11.9): the Preparation analysis may emit up
+  # to the route bound (controlled-openai-v1 max_output_tokens 4096 in
+  # anvilkit-agent-model-proxy.yaml); the Workflow default is 2048. The other
+  # preparation keys keep their defaults (koanf merges key by key).
+  preparation:
+    max_output_tokens: 4096
 model_proxy:
   identity:
     mode: mtls
