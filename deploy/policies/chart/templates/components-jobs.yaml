@@ -47,7 +47,7 @@ spec:
     - name: fixtureDigests
       expression: "['sha256:9db7b59979c38555a39def84a31fb98b5296952f9e3afd4f6f11f05b07adfab0']"
     - name: supervisorDigests
-      expression: "['sha256:3c6434eb16e34c42621c61e4640954b1f06951a6b249d276139f3c784d4f170c', 'sha256:caac0a52448a5ee16572e97202c7057267685dae1a1f745abd785606a3c946ae', 'sha256:198ec51c6971d6c719d619ed319ad5e2accb76284a64a94d73a7386d89745408']"
+      expression: "['sha256:3c6434eb16e34c42621c61e4640954b1f06951a6b249d276139f3c784d4f170c', 'sha256:87458f7da41a64a847e1bbd94da67f263e76f0d352fe6772d2effdb2b9e12ec8', 'sha256:7214ac0234c5a9be4ab2cb54ba94423101493f18724c9c32b2fdadc1894ffac8']"
     - name: sidecarDigests
       expression: "['sha256:90976a8cf4935e72d0da3031c3f3bc61e75af435759488a6a7c615ff74203374']"
     - name: supervisorEnv
@@ -90,14 +90,14 @@ spec:
     - name: teamCommand
       expression: "['/usr/local/bin/anvilkit-codegen-supervisor', 'team']"
     # One digest per team profile (contracts/jobs/profiles.json): the
-    # production profile codegen-team-v1 (disabled, revision 4) and its
-    # development twin codegen-team-dev-v1 (revision 13) pin the same
-    # CI-published image since 2026-10-27 (release jobs-v0.1.9); they may
+    # production profile codegen-team-v1 (disabled, revision 8) and its
+    # development twin codegen-team-dev-v1 (revision 17) pin the same
+    # CI-published image since 2026-10-29 (release jobs-v0.1.14); they may
     # diverge again, so each keeps its own variable.
     - name: teamDigest
-      expression: "'sha256:198ec51c6971d6c719d619ed319ad5e2accb76284a64a94d73a7386d89745408'"
+      expression: "'sha256:7214ac0234c5a9be4ab2cb54ba94423101493f18724c9c32b2fdadc1894ffac8'"
     - name: teamDevDigest
-      expression: "'sha256:198ec51c6971d6c719d619ed319ad5e2accb76284a64a94d73a7386d89745408'"
+      expression: "'sha256:7214ac0234c5a9be4ab2cb54ba94423101493f18724c9c32b2fdadc1894ffac8'"
     # P0.8: the development-state candidate profiles this environment admits
     # without the gVisor RuntimeClass (DEVELOPMENT_ONLY; empty elsewhere).
     - name: developmentProfiles
@@ -105,7 +105,7 @@ spec:
     - name: validatorCommand
       expression: "['/usr/local/bin/node', '/anvilkit/validator/dist/job.js']"
     - name: validatorDigest
-      expression: "'sha256:caac0a52448a5ee16572e97202c7057267685dae1a1f745abd785606a3c946ae'"
+      expression: "'sha256:87458f7da41a64a847e1bbd94da67f263e76f0d352fe6772d2effdb2b9e12ec8'"
     # The access sidecar's workload certificate (P0.1): the one Secret volume
     # a harness Pod carries, mounted read-only into the sidecar alone.
     - name: sidecarIdentitySecret
