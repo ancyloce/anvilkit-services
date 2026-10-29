@@ -1,30 +1,13 @@
 ---
-description: Save current project state and prepare the next Claude Code session
+description: Save a project-memory checkpoint under AGENTS.md, report, and stop
 ---
 
-Stop implementation and create a project checkpoint.
+# Save a Checkpoint
 
-Follow `CLAUDE.md`.
+When the user explicitly invokes `/checkpoint`:
 
-Review the current session, repository state, and:
+1. Follow [AGENTS.md](../../AGENTS.md), including its [Project memory policy](../../AGENTS.md#project-memory).
+2. Execute the [shared checkpoint workflow](../../AGENTS.md#memory-checkpoint) once in checkpoint mode. Include the recovery step only if the request also asks to close or hand off the session.
+3. Finish with that workflow's report-and-stop step.
 
-- `docs/ROADMAP.md`
-- `docs/SESSION_SUMMARY.md`
-- `docs/DECISIONS.md`
-- `docs/BLOCKERS.md`
-- `docs/HANDOFF.md`
-
-Then:
-
-1. Record verified completed and in-progress work.
-2. Update roadmap status without expanding scope.
-3. Record significant decisions without deleting history.
-4. Update blockers using evidence-based statuses.
-5. Regenerate `HANDOFF.md` with one next action and explicit `Do Not Do` items.
-6. Calculate and record the project health score.
-7. Validate that a new session can continue without chat history.
-8. Return a concise closeout report and stop.
-
-Do not modify application code.
-
-Do not stage, commit, push, create a PR, create or switch branches, create worktrees, modify Git history, deploy, release, publish, or bypass protections.
+Use the shared workflow's scope and draft-only handling; this command adds no permissions or separate memory rules.
