@@ -105,6 +105,7 @@ Use the pinned CPython 3.12 interpreter `.local/verification-venv/bin/python` fo
 | Contracts repository | In `contracts/`, `sh tools/verification-env.sh`: checks, generation `--check`, Go with `GOWORK=off`, TypeScript, Python; reads only that repository |
 | Parent contract integration | `tools/check-contracts.py` and `tools/generate-contracts.py --check` with the pinned interpreter; delegates to contracts and checks Control's sqlc |
 | Source inclusion | `tools/check-source-export.py` with the pinned interpreter; Git listings plus an independently checked/built disposable export |
+| Model route bounds (`jobs/codegen/team/team.yaml` route or role caps, the Compose Model Proxy or Workflow configuration) | `tools/check-model-routes.py` with the pinned interpreter (also in the chain's `deployment` step); the team's `test/prompts.test.ts` holds the planner to `route.maxTokens` |
 | Go modules | `go build ./...`, `go vet ./...`, `go test ./...` per module; Testcontainers requires Docker. Report tests skipped with `ANVILKIT_SKIP_DOCKER_TESTS=1` |
 | API, Control, Workflow | Apply `GOWORK=off GOFLAGS=-mod=readonly` to each build/vet/test command; also `docker build .` and `helm lint deploy/chart` in each repository |
 | Race checks | `go test -race` for API transport, Control application, and Workflow packages |
