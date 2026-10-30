@@ -1,7 +1,11 @@
 # Verification of anvilkit-services from a clean recursive clone (P3.1, plan
 # 0004): the checkout below is the parent at the pushed commit with every
-# submodule at the gitlink it records, nothing else (the static job adds only
-# the contracts' go/v* tag refs). Its jobs:
+# submodule at the gitlink it records, nothing else (the static and generated
+# jobs add only the contracts' go/v* tag refs). Its jobs:
+#   generated  the chain's docs and evals steps alone (generated status rows,
+#              registry citations: the usual cause of a red static job after a
+#              gitlink commit), so their result shows in about a minute instead
+#              of after the full chain; exit 2 is handled as in static (D-6)
 #   static     sh tools/verification-env.sh --static (the chain's docs,
 #              generate, contracts, evals, deployment, handover, export, ts,
 #              validator, model-proxy, team, python, knowledge, background,
@@ -29,6 +33,36 @@ env:
   HELM_VERSION: "v3.19.0"
   KYVERNO_VERSION: v1.19.1
 jobs:
+  generated:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          submodules: recursive
+          persist-credentials: false
+      # As in static: tools/docs-status.py names the go/v* tag of each pinned
+      # contracts commit, and the shallow submodule clone holds only the tip's.
+      - name: The contracts' go/v* tags
+        run: git -C contracts fetch --quiet --no-tags --depth=1 origin '+refs/tags/go/*:refs/tags/go/*'
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+      - name: Generated status rows and registry citations (docs and evals steps; D-6 as in static)
+        shell: bash
+        env:
+          ANVILKIT_PYTHON: python3.12
+        run: |
+          set +e
+          sh tools/verification-env.sh --static --only docs --only evals 2>&1 | tee "$RUNNER_TEMP/generated.log"
+          rc=${PIPESTATUS[0]}
+          set -e
+          case "$rc" in
+            0) ;;
+            2) summary=$(grep -E '^[0-9]+ steps:' "$RUNNER_TEMP/generated.log" | tail -1)
+               echo "::warning title=Generated files: not every unit ran::${summary:-exit 2} (docs/ is local-only; decision D-6)" ;;
+            *) exit "$rc" ;;
+          esac
   static:
     runs-on: ubuntu-24.04
     timeout-minutes: 90
