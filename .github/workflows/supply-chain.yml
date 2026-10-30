@@ -1,0 +1,40 @@
+# Supply-chain preflight (DEC-032): what makes a release BLOCKED or its image build
+# fail, checked before a tag meets it. tools/check-dependencies.py applies the release
+# gate's own rule (tools/release-artifacts.py: its pinned Trivy image, a fixable
+# CRITICAL or HIGH vulnerability blocks) to the lockfiles and go.mod files of every
+# build context the release builds, here from a clean recursive clone (each
+# submodule at its gitlink), and checks that the Debian archive still serves every
+# package version the Dockerfiles pin. It runs on every push to main (a gitlink
+# bump brings new dependencies) and daily (advisories and the archive change
+# without a push). It builds, signs and publishes nothing; the token can read the
+# repository only.
+name: supply-chain
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+      - name: Debian pins against the archive, dependencies against the release gate's policy
+        run: python3.12 tools/check-dependencies.py --report-out "$RUNNER_TEMP/dependencies.trivy.json"
+      - name: The Trivy report of the run
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: dependencies-trivy-report
+          path: ${{ runner.temp }}/dependencies.trivy.json
+          if-no-files-found: ignore
