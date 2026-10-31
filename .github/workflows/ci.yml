@@ -18,11 +18,14 @@
 #              the committed fixtures with the pinned CLI
 #   migration  the migration Job of the knowledge and mcp schemas (jobs/migration)
 #              against PostgreSQL 17 through Testcontainers
+# A push whose only change is the Compose image pin (deploy/compose/images.env)
+# skips this workflow; pin.yml checks it instead (DEC-034).
 # Every action is pinned by commit; the token can read the repository only.
 name: ci
 on:
   push:
     branches: [main]
+    paths-ignore: [deploy/compose/images.env]
   pull_request:
 permissions:
   contents: read

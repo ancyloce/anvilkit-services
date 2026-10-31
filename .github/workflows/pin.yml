@@ -1,0 +1,33 @@
+# The deploy pin check (DEC-034). A push whose only change is the Compose image
+# pin (deploy/compose/images.env, written by deploy/compose/images.sh from a
+# SIGNED release manifest) skips the ci workflow (its paths-ignore): the rest of
+# the tree is unchanged since a commit ci already checked. tools/check-image-pin.py
+# passes only when the commit changes the pin alone, the pin equals what
+# images.sh writes for a SIGNED v* release (compared by Git blob hash), and the
+# nearest non-pin ancestor has a green ci run. A green run here is the pin
+# commit's deploy gate (DEC-009). It reads the repository and its workflow runs
+# and releases; it writes nothing.
+name: pin
+on:
+  push:
+    branches: [main]
+    paths: [deploy/compose/images.env]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  pin:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 25
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+      - name: The pin is a SIGNED release's and the rest of the tree passed ci
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3.12 tools/check-image-pin.py "$GITHUB_SHA"

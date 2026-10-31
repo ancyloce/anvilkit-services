@@ -74,12 +74,18 @@ jobs:
         # reviewed profiles pin (contracts/jobs/profiles.json, re-pinned on
         # 2026-10-27 to the job-images releases jobs-v0.1.6 and jobs-v0.1.9) from
         # the registry named here, then scanned and signed again; the platform
-        # mirror (pause) is still left out.
+        # mirror (pause) is still left out. DEC-033: the owned service images
+        # build three at a time and reuse BuildKit's layer cache kept beside
+        # each image (<image>:buildcache; a cache failure never fails a build);
+        # scans and signing stay one image at a time, and a scan or verification
+        # that fails on a transient transport error is retried twice. Removing
+        # --build-cache and --build-jobs 3 restores the previous builds.
         run: >-
           .local/verification-venv/bin/python tools/release-artifacts.py --run "$GITHUB_REF_NAME"
           --registry-push "$ANVILKIT_RELEASE_REGISTRY" --registry "$ANVILKIT_RELEASE_REGISTRY" --network host
           --signing keyless --certificate-identity "$IDENTITY"
           --certificate-oidc-issuer https://token.actions.githubusercontent.com --provenance
+          --build-cache --build-jobs 3
           --only anvilkit-agent-api --only anvilkit-agent-control --only anvilkit-agent-workflow
           --only anvilkit-agent-model-proxy --only anvilkit-agent-knowledge --only anvilkit-knowledge-forwarder
           --only anvilkit-agent-mcp --only anvilkit-agent-background-worker --only anvilkit-agent-inference
