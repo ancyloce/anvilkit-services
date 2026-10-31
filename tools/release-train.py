@@ -819,17 +819,19 @@ class Train:
         return getattr(self, kind)()
 
 
-def confirm(plan: dict) -> bool:
-    """The owner types the release tag in a terminal; without one (an agent's shell) nothing runs."""
+def confirm(plan: dict) -> tuple[bool, str]:
+    """The owner types the release tag in a terminal; without one (an agent's shell) nothing runs.
+    This stops an accidental start; it is no security boundary. Returns (confirmed, why not)."""
     if not (sys.stdin.isatty() and sys.stdout.isatty()):
-        return False
+        return False, "stdin and stdout are not a terminal (run it in a terminal, not through a pipe or `!`)"
     try:
-        with open("/dev/tty", "r+", encoding="utf-8") as tty:
-            tty.write(f"Type {plan['release']} to run this train with your Git and gh credentials: ")
-            tty.flush()
-            return tty.readline().strip() == plan["release"]
-    except OSError:
-        return False
+        # Unbuffered binary: a buffered read-write text stream needs a seekable file, and a terminal is not one.
+        with open("/dev/tty", "rb+", buffering=0) as tty:
+            tty.write(f"Type {plan['release']} to run this train with your Git and gh credentials: ".encode())
+            typed = tty.readline().decode("utf-8", "replace").strip()
+    except OSError as e:
+        return False, f"/dev/tty cannot be used ({e})"
+    return (True, "") if typed == plan["release"] else (False, f"typed {typed!r}, not {plan['release']}")
 
 
 def run_cmd(out: pathlib.Path) -> int:
@@ -850,8 +852,9 @@ def run_cmd(out: pathlib.Path) -> int:
     if foreign:
         print(f"not started: the parent has tracked changes the train would not commit ({foreign[:5]}); commit or restore them first")
         return 1
-    if not confirm(train.plan):
-        print("not started: run needs an interactive terminal and the typed release tag. The owner starts a train; "
+    confirmed, why = confirm(train.plan)
+    if not confirmed:
+        print(f"not started: {why}. run needs an interactive terminal and the typed release tag. The owner starts a train; "
               "development agents never do (AGENTS.md section 4, DEC-008, DEC-035).")
         return 1
     LOG = out / "train.log"
@@ -953,11 +956,34 @@ def self_test() -> int:
     cases.append(("job runs: validator first, team alone", job_runs([VALIDATOR, "anvilkit-parser", TEAM_IMAGE]) == [[VALIDATOR, "anvilkit-parser"], [TEAM_IMAGE]]))
     cases.append(("service release steps", step_ids({"images": [], "jobs": [], "release": "v1.0.1"}) == ["release:v1.0.1", "pin:v1.0.1"]))
     cases += git_mechanics()
+    cases.append(("a terminal: the typed release tag confirms", confirm_in_terminal("v9.9.9\n") == 0))
+    cases.append(("a terminal: another text refuses", confirm_in_terminal("v9.9.8\n") == 1))
     failed = [n for n, ok in cases if not ok]
     for n in failed:
         print("FAIL", n)
     print(f"release-train self-test: {'PASS' if not failed else 'FAIL'} ({len(cases) - len(failed)}/{len(cases)})")
     return 1 if failed else 0
+
+
+def confirm_in_terminal(typed: str) -> int:
+    """confirm() alone, in a child whose controlling terminal is a new pseudo-terminal (as the owner's
+    is), for a dummy plan; typed is fed to it. 0 confirmed, 1 refused, 2 failed. No train runs."""
+    import pty
+    pid, fd = pty.fork()
+    if pid == 0:
+        code = 2
+        try:
+            code = 0 if confirm({"release": "v9.9.9"})[0] else 1
+        finally:
+            os._exit(code)
+    os.write(fd, typed.encode())
+    try:
+        while os.read(fd, 1024):
+            pass
+    except OSError:  # EIO once the child has exited
+        pass
+    os.close(fd)
+    return os.waitstatus_to_exitcode(os.waitpid(pid, 0)[1])
 
 
 def git_mechanics() -> list[tuple[str, bool]]:
