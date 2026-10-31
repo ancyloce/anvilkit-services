@@ -62,6 +62,7 @@ Work in the primary checkout: untracked task inputs can be absent from a worktre
 
 - Never `git commit`, `git push`, or open a PR unless the user explicitly asks in that message (commit/push may also be hook-blocked — a block is the policy working, not an obstacle to route around). Default: leave changes uncommitted and report modified files, flagging those inside submodules and nested repositories (`contracts/`, `services/agent/{api,control,workflow}`).
 - Never stage, amend, rebase, merge, cherry-pick, reset, clean, tag, switch branches, register or change submodules (`git submodule add/update/sync`, `.gitmodules`) or publish a package unless asked for that exact action. Never force-push, never push `main`. Read-only git is always fine. Prepare such operations locally and present their concrete targets for authorization.
+- Never run `tools/release-train.py run`: it commits, tags, pushes and dispatches in the owner's name. Agents may run its `plan`, `--self-test` and `--replay` (DEC-035).
 - Never publish, deploy, or send anything to an external service without task authorization.
 
 ## 5. Architecture boundaries
@@ -109,6 +110,7 @@ Use the pinned CPython 3.12 interpreter `.local/verification-venv/bin/python` fo
 | Validator change, or a prompt rule before its Job image tag | `tools/replay-candidates.py` as root (corpus under `outputs/candidate-corpus/`; add a hand-derived case for a new rule); DEC-028's isolation is built in |
 | Dependency or Dockerfile pin change | `tools/check-dependencies.py --pins` locally; the release gate's vulnerability policy runs in CI (`supply-chain.yml`, push and daily) |
 | Deploying a Compose image pin commit | its `pin` workflow run, or `tools/check-image-pin.py <commit>` locally (read-only); a push that changes only the pin runs no `ci` |
+| Release path after a Job image change (tags, re-pins, consumer bumps, release, pin) | `tools/release-train.py plan` (read-only) prepares it and the owner starts `run` (DEC-035); `--replay` and `--self-test` after changing its re-pin or bump rules |
 | Go modules | `go build ./...`, `go vet ./...`, `go test ./...` per module; Testcontainers requires Docker. Report tests skipped with `ANVILKIT_SKIP_DOCKER_TESTS=1` |
 | API, Control, Workflow | Apply `GOWORK=off GOFLAGS=-mod=readonly` to each build/vet/test command; also `docker build .` and `helm lint deploy/chart` in each repository |
 | Race checks | `go test -race` for API transport, Control application, and Workflow packages |
