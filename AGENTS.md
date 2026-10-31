@@ -108,6 +108,7 @@ Use the pinned CPython 3.12 interpreter `.local/verification-venv/bin/python` fo
 | Model route bounds (`jobs/codegen/team/team.yaml` route or role caps, the Compose Model Proxy or Workflow configuration) | `tools/check-model-routes.py` with the pinned interpreter (also in the chain's `deployment` step); the team's `test/prompts.test.ts` holds the planner to `route.maxTokens` |
 | Validator change, or a prompt rule before its Job image tag | `tools/replay-candidates.py` as root (corpus under `outputs/candidate-corpus/`; add a hand-derived case for a new rule); DEC-028's isolation is built in |
 | Dependency or Dockerfile pin change | `tools/check-dependencies.py --pins` locally; the release gate's vulnerability policy runs in CI (`supply-chain.yml`, push and daily) |
+| Deploying a Compose image pin commit | its `pin` workflow run, or `tools/check-image-pin.py <commit>` locally (read-only); a push that changes only the pin runs no `ci` |
 | Go modules | `go build ./...`, `go vet ./...`, `go test ./...` per module; Testcontainers requires Docker. Report tests skipped with `ANVILKIT_SKIP_DOCKER_TESTS=1` |
 | API, Control, Workflow | Apply `GOWORK=off GOFLAGS=-mod=readonly` to each build/vet/test command; also `docker build .` and `helm lint deploy/chart` in each repository |
 | Race checks | `go test -race` for API transport, Control application, and Workflow packages |
