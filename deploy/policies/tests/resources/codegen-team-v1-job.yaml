@@ -37,8 +37,8 @@ spec:
         - name: ANVILKIT_ATTEMPT_ID
           value: att_policy
         - name: ANVILKIT_LAUNCH_ENVELOPE
-          value: '{"attemptId":"att_policy","component":{"componentId":"cmp_policy","packageName":"@anvilkit/hero-policy","puckType":"Hero","sourceRevision":"3"},"deadline":"2026-09-16T12:10:00Z","executionEpoch":"1","inputs":[{"digest":"sha256:5555555555555555555555555555555555555555555555555555555555555555","handle":"h_policy_source","name":"source"}],"jobKind":"codegen","launchEpoch":"1","launchId":"lch_policy","launchKey":"policy-codegen-team-v1","operationId":"op_policy","profileId":"codegen-team-v1","profileRevision":"9","schemaVersion":1}'
-        image: localhost:5001/anvilkit-codegen-team@sha256:c9a7dd3d291ef03367a75a787168568917fc11f3fe768342e92a39ebe90fc617
+          value: '{"attemptId":"att_policy","component":{"componentId":"cmp_policy","packageName":"@anvilkit/hero-policy","puckType":"Hero","sourceRevision":"3"},"deadline":"2026-09-16T12:10:00Z","executionEpoch":"1","inputs":[{"digest":"sha256:5555555555555555555555555555555555555555555555555555555555555555","handle":"h_policy_source","name":"source"}],"jobKind":"codegen","launchEpoch":"1","launchId":"lch_policy","launchKey":"policy-codegen-team-v1","operationId":"op_policy","profileId":"codegen-team-v1","profileRevision":"10","schemaVersion":1}'
+        image: localhost:5001/anvilkit-codegen-team@sha256:e32cebe85f967f817e59f2e280ac9276421f4b5e46532b0ea2e2069ef8781493
         name: supervisor
         resources:
           limits:
@@ -90,7 +90,7 @@ spec:
               apiVersion: v1
               fieldPath: metadata.uid
         - name: ANVILKIT_SIDECAR_LAUNCH_ENVELOPE
-          value: '{"attemptId":"att_policy","component":{"componentId":"cmp_policy","packageName":"@anvilkit/hero-policy","puckType":"Hero","sourceRevision":"3"},"deadline":"2026-09-16T12:10:00Z","executionEpoch":"1","inputs":[{"digest":"sha256:5555555555555555555555555555555555555555555555555555555555555555","handle":"h_policy_source","name":"source"}],"jobKind":"codegen","launchEpoch":"1","launchId":"lch_policy","launchKey":"policy-codegen-team-v1","operationId":"op_policy","profileId":"codegen-team-v1","profileRevision":"9","schemaVersion":1}'
+          value: '{"attemptId":"att_policy","component":{"componentId":"cmp_policy","packageName":"@anvilkit/hero-policy","puckType":"Hero","sourceRevision":"3"},"deadline":"2026-09-16T12:10:00Z","executionEpoch":"1","inputs":[{"digest":"sha256:5555555555555555555555555555555555555555555555555555555555555555","handle":"h_policy_source","name":"source"}],"jobKind":"codegen","launchEpoch":"1","launchId":"lch_policy","launchKey":"policy-codegen-team-v1","operationId":"op_policy","profileId":"codegen-team-v1","profileRevision":"10","schemaVersion":1}'
         - name: ANVILKIT_SIDECAR_MODEL_PROXY_URL
           value: https://anvilkit-agent-model-proxy.anvilkit-apps.svc.cluster.local:9103
         - name: ANVILKIT_SIDECAR_MCP_ADDRESS
