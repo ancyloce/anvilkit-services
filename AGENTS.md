@@ -4,14 +4,14 @@ Shared instructions for Claude, Codex, other development agents, and people work
 
 ## 1. Read first
 
-At task startup, read this file, [docs/README.md](docs/README.md), then the [architecture overview](docs/architecture/architecture.md).
+At a first orientation on the project, read this file, [docs/README.md](docs/README.md), then the [architecture overview](docs/architecture/architecture.md). A continuation of recorded work follows the scenario table in [11.1](#memory-startup): this file is always read; the overview when the task touches the architecture.
 
 | Before doing this | Read |
 | --- | --- |
 | Work on a domain or component | Its owning document in [navigation](#navigation) |
 | Touch credentials, candidate code, retrieved/tool-returned content, model/tool sends, or external effects | [Security](docs/architecture/security.md) |
 | Claim an implementation stage, release status, or qualification result | [Delivery](docs/architecture/delivery.md) |
-| Start or resume project work | [Memory startup](#memory-startup), after the required reading above |
+| Start or resume project work | [Memory startup](#memory-startup), by scenario |
 
 **Authority:** `docs/architecture/` defines the adopted target; the checkout establishes observed implementation; `docs/archive/` is historical. Keep adopted design, observed implementation, pending inputs (ENV-01–ENV-10), and qualification evidence distinct. The recorded baseline is G-01–G-14 `NOT_RUN`, release `NOT_VERIFIED`; changes require the applicable evidence.
 
@@ -103,6 +103,7 @@ Use the pinned CPython 3.12 interpreter `.local/verification-venv/bin/python` fo
 | Task | Check |
 | --- | --- |
 | Repository documentation | `tools/check-docs.py` with the pinned interpreter; read-only, current baseline, required inputs must be present |
+| Project memory files (`docs/{SESSION_SUMMARY,HANDOFF,BLOCKERS,DECISIONS,ROADMAP}.md`, `docs/operations/compose/`) | `tools/check-memory.py` with the pinned interpreter; read-only; `--self-test` proves its rules; `UNEXECUTED` without `docs/` |
 | Contracts repository | In `contracts/`, `sh tools/verification-env.sh`: checks, generation `--check`, Go with `GOWORK=off`, TypeScript, Python; reads only that repository |
 | Parent contract integration | `tools/check-contracts.py` and `tools/generate-contracts.py --check` with the pinned interpreter; delegates to contracts and checks Control's sqlc |
 | Source inclusion | `tools/check-source-export.py` with the pinned interpreter; Git listings plus an independently checked/built disposable export |
@@ -174,13 +175,13 @@ See [known limitations](README.md#known-limitations-for-the-next-phase) and [cle
 
 ## 11. Project memory
 
-All agents use this policy; `CLAUDE.md` and commands only reference it. Reading rules or editing command templates does not invoke them.
+All agents use this policy; `CLAUDE.md` and commands only reference it. Reading rules or editing command templates does not invoke them. Memory supplies context, never authorization: a stored next action, a verified-state row or a recorded conclusion authorizes nothing.
 
 | Trigger | Action |
 | --- | --- |
-| Start/resume work | [Startup](#memory-startup) |
+| Start/resume work | [Startup](#memory-startup), by scenario |
 | Meaningful result, decision, blocker/milestone change, authorized release | [Update](#memory-update) affected records within scope, then continue |
-| Context becomes difficult to use | Save relevant state within scope, then continue |
+| Context becomes difficult to use | Save the Resume block and affected records within scope, then continue |
 | Explicit checkpoint request | [Checkpoint](#memory-checkpoint), report, stop |
 | Explicit closeout/handoff request | Checkpoint plus [readiness](#memory-closeout), report, stop |
 
@@ -190,48 +191,59 @@ Review-only/draft-only requests leave repository memory unchanged.
 
 ### 11.1 Startup
 
-After section 1's required reading:
+Read what the scenario needs. Material already in context and still valid is not read again; a note that something "was read" in an earlier context does not replace reading it after `/clear`.
 
-1. Read HANDOFF's entry points and SESSION_SUMMARY's current state.
-2. Follow task-relevant milestone, decision, blocker, plan, and runbook references. Load history when it explains a dependency or conflict.
-3. Compare remembered state with the checkout and evidence; resolve conflicts using section 1's authority.
-4. Establish objective, scope, success criteria, and prerequisites. Proceed when the next authorized action is clear; otherwise identify the blocking input.
+| Scenario | Read | Then |
+| --- | --- | --- |
+| First orientation (a new agent, or a task that touches the architecture) | this file with section 1's required reading; `docs/HANDOFF.md` in full; `docs/SESSION_SUMMARY.md`'s Resume block, Verified state table and Next Action | steps 1–4 |
+| Continuation within one session | nothing again, except a record another actor may have edited since the last read | steps 2–4 for the next action's inputs |
+| Continuation after `/checkpoint` and `/clear`, or after a compacted context | this file (reached through `CLAUDE.md`); HANDOFF's Access and Evidence, Standing cautions and Do Not Do; SESSION_SUMMARY's Resume block, Verified state table and Next Action | steps 1–4 |
+| Start after `/close-session` | as a first orientation, plus the readiness and gaps the closeout report named | steps 1–4 |
+| Recovery after a detected change or gap (the checkout, a record or evidence differs from memory, or is missing) | the owning record of the differing fact and its evidence | step 3 first: record the difference at its owner, then continue |
 
-A stored next action is context, not authorization. Missing information blocks dependent work only. Seek input while continuing independent authorized work. Create missing records only within scope from known facts; keep unknowns explicit.
+1. Follow only the references the next action names. Load history (plan sections, `DEC` and `B` records, archived copies) when it explains a dependency or a conflict.
+2. Confirm read-only the inputs the next action depends on: HANDOFF's state-confirmation commands, and the Verified state table, which names each conclusion's inputs and what invalidates it. An unchanged local `HEAD` establishes nothing about uncommitted content, other repositories or the remote. Read the current target code before editing it. Reconcile an uncertain external operation under its original identity; a new session never repeats it.
+3. Resolve a conflict between memory and the checkout or evidence with section 1's authority; update the owning record. A missing record or evidence file is named as a gap, never filled from assumption.
+4. Establish objective, scope, success criteria and prerequisites. Proceed when the next authorized action is clear; otherwise identify the blocking input, seek it, and continue independent authorized work. Create missing records only within scope from known facts; keep unknowns explicit.
 
 <a id="memory-ownership"></a>
 
 ### 11.2 Document ownership
 
-Each fact has one owner; other files use brief descriptions, IDs, and links. Accurate unchanged files need no edit.
+Each fact has one owner; other files use brief descriptions, IDs and links. Accurate unchanged files need no edit.
 
-| Document | Update trigger |
-| --- | --- |
-| `docs/SESSION_SUMMARY.md` | Objective, observed state, verification, or next action changes |
-| `docs/BLOCKERS.md` | A blocker appears, changes, or meets resolution criteria |
-| `docs/DECISIONS.md` | A significant choice is proposed, adopted, superseded, or reverted |
-| `docs/ROADMAP.md` | Approved scope, milestone status, or exit criteria change |
-| `docs/HANDOFF.md` | Startup requirements, references, cautions, or access needs change |
+| Document | Owns | Update trigger | Budget |
+| --- | --- | --- | --- |
+| `docs/SESSION_SUMMARY.md` | current state and the single next action | objective, observed state, verification or next action changes | 16000 bytes |
+| `docs/BLOCKERS.md` | unresolved issues and their resolution history | a blocker appears, changes or meets its resolution criteria | active part 24000 bytes |
+| `docs/DECISIONS.md` | durable choices, with an index table | a significant choice is proposed, adopted, superseded or reverted | none (append-only history) |
+| `docs/ROADMAP.md` | milestones: approved scope, status, exit criteria, dependencies, plan and evidence links | approved scope, milestone status or exit criteria change | 20000 bytes |
+| `docs/HANDOFF.md` | resumption: reading order, access and evidence, references, standing cautions, Do Not Do | access, references or cautions change | 16000 bytes |
+| `docs/operations/compose/*.md` | the Compose placement's procedures and their traps, each with a "read when / answers" line | a procedure or trap changes | none; `tools/check-docs.py` validates them |
 
-**SESSION_SUMMARY owns current state:** objective/scope, milestone references, observed state, relevant completed/unfinished work, verification/evidence links, decision/blocker IDs, and remaining risks. Its stable `Next Action` section has one action, owner, prerequisites, and completion condition. Identify a procedure's first action and approval boundary. If blocked, identify the prerequisite to resolve; if no work is assigned, say so. Replace stale snapshots; execution history stays in evidence records.
+**SESSION_SUMMARY** opens with a `# Resume` block: Objective, Authorized scope, Stopping point (the last completed step with its evidence), Uncommitted work (per repository), External operations (running or uncertain, with their identities), Pending checks, Reusable conclusions; then a `## Verified state` table (check, inputs and observation time, result, invalidated by). The rest: goal, stage, status, observed state, unverified or partial items, open tasks (open ones only), risks, decision and blocker IDs, and the stable `# Next Action` with one action, owner, prerequisites, completion condition and approval boundary. If blocked, name the prerequisite; if no work is assigned, say so. History (finished tasks, per-run tables, update diaries) lives in the evidence records, `B` records, plan sections or the archive copy and is linked, not restated.
 
-**BLOCKERS owns unresolved issues and resolution history:** ID, status, priority, owner, issue, affected result, evidence/uncertainty, required action, resolution criteria. Statuses: `OPEN`, `IN_PROGRESS`, `RESOLVED`, `CLOSED`. Retain resolution evidence/date and stable anchors; separate active issues from history. A fix/publication alone does not resolve a runtime failure. Pause dependent work; bound retries by a question and new evidence.
+**BLOCKERS**: ID, status (`OPEN`, `IN_PROGRESS`, `RESOLVED`, `CLOSED`), priority, owner, issue, impact, required action, resolution criteria, evidence, resolution. Active records stay above `# Resolution History`; resolved ones move below it and keep their anchor. A fix or publication alone does not resolve a runtime failure. Pause dependent work; bound retries by a question and new evidence.
 
-**DECISIONS owns durable choices:** ID, owner, date, status, decision, context/rationale, alternatives, impact/risks, reversal conditions, adoption/source references. Statuses: `PROPOSED`, `ACTIVE`, `SUPERSEDED`, `REVERTED`; leave unknown approval/ownership explicit. Preserve history and link successors. Architecture entries reference the governing design; resolve conflicts before implementation.
+**DECISIONS**: ID, owner, date, one-word status (`PROPOSED`, `ACTIVE`, `SUPERSEDED`, `REVERTED`; notes on their own line), decision, context, alternatives, impact, risks, reversal conditions, references; the index table mirrors every record. Never delete; link successors. Unsettled questions go to the open table. Architecture entries reference the governing design; resolve conflicts before implementation.
 
-**ROADMAP owns milestones:** approved scope, status, exit criteria, dependencies, plan/evidence links. Change status only when criteria support it. Link task progress and blockers to their owners; new ideas remain unapproved candidates.
+**ROADMAP**: change a status only when criteria support it; the track table is milestone-level, not a step diary; new ideas remain unapproved candidates.
 
-**HANDOFF owns resumption:** reading order, environment prerequisites, state/milestone/decision/blocker references, runbooks, evidence access, cautions. Link `SESSION_SUMMARY.md#next-action`; keep state, completed-work lists, verification tables, and health scores with their owners. Preserve unique procedures here or link their existing runbook; relocate only within scope.
+**HANDOFF**: links `SESSION_SUMMARY.md#next-action`, holds no state and no next action, and is not regenerated at session end. Procedures live in `docs/operations/compose/`; HANDOFF points to them.
 
 <a id="memory-update"></a>
 
 ### 11.3 Updates and evidence
 
-Apply section 3's edit precautions. Update changed facts at their owner, then affected summary fields/references. Preserve IDs, history, and unrelated content; leave accurate files/timestamps unchanged.
+Apply section 3's edit precautions; re-read a memory file before writing it. Update changed facts at their owner, then affected summary fields and references. **Replace snapshots, never append.** `Last Updated` is one line, `Last Updated: <UTC minute>` with at most a short parenthesis, and the previous value is not kept. Preserve IDs, anchors, history records and unrelated content; leave accurate files and timestamps unchanged.
 
-State claims identify revision, environment, observation time, and evidence. Distinguish planned, implemented, committed, built, published, deployed, verified, and qualified; distinguish parent gitlinks, submodule HEADs, and uncommitted work where relevant. Attribute unverified prior claims to their source/date.
+State claims identify revision, environment, observation time and evidence. Distinguish planned, implemented, committed, pushed, built, published, deployed, verified and qualified; distinguish parent gitlinks, submodule `HEAD`s, local commits and uncommitted work. Attribute unverified prior claims to their source and date. A reusable check result is recorded with its inputs and what invalidates it (the Verified state table); a changed input means the check is re-run, not reused.
+
+At any stopping point the Resume block must let a new context continue: the last completed step with its evidence, uncommitted work per repository, running or uncertain external operations under their identities, pending checks, and the inputs the next action depends on.
 
 Use [verification reporting](#verification-results) and section 6's data rules. Link detailed evidence instead of copying output into memory. Inaccessible evidence remains a limitation or, when it prevents continuation, a blocker.
+
+A budget failure from `tools/check-memory.py` is a maintenance signal: condense at the owner, or move history to its evidence record or `docs/archive/memory/`. Never drop a constraint, an open task or an unresolved blocker to fit, and never edit the archive.
 
 Health scoring requires a user request. Store it only in SESSION_SUMMARY with date, agreed rubric, evidence, and limitations. Unsupported categories are `NOT_ASSESSED`; incomplete assessments have no complete total. Scores do not qualify releases.
 
@@ -241,12 +253,12 @@ Health scoring requires a user request. Store it only in SESSION_SUMMARY with da
 
 For an explicit checkpoint/closeout, pause implementation. Limit work to memory maintenance, necessary read-only inspection, and documentation validation; section 4's restricted actions gain no authorization.
 
-1. **Inspect:** Review relevant outcomes, memory sections, parent/affected nested-repository diffs, and evidence. Identify changed facts, unfinished work, and uncertainty.
-2. **Record:** Assign changes to owners under 11.2; apply 11.3 within scope. Each affected record must be current or have a stated recording gap. Draft/review requests leave the repository untouched.
-3. **Check consistency:** Match claims to sources, revision/image/version/environment/time identities, and state labels. Resolve links; require evidence for resolution/milestone claims; confirm one next action (or none assigned) and HANDOFF's reference. Correct introduced inconsistencies; report unresolved pre-existing contradictions. Preserve operational knowledge.
-4. **Validate:** Check headings, links, anchors, fences, and tables; avoid escaped table-cell pipes. Run section 8's documentation check for repository edits or its draft checks for unapplied files. Record actual outcomes/reasons. Closeout does not authorize installing missing tools or expanding scope.
+1. **Inspect:** Review relevant outcomes, memory sections, parent/affected nested-repository diffs, and evidence. Identify changed facts, unfinished work, uncertain external operations, and uncertainty.
+2. **Record:** Assign changes to owners under 11.2; apply 11.3 within scope, replacing snapshots. Each affected record must be current or have a stated recording gap. Draft/review requests leave the repository untouched.
+3. **Check consistency:** Match claims to sources, revision/image/version/environment/time identities, and state labels. Resolve links; require evidence for resolution/milestone claims; confirm one next action (or none assigned), its completion condition, and HANDOFF's reference. Correct introduced inconsistencies; report unresolved pre-existing contradictions. Preserve operational knowledge.
+4. **Validate:** Check headings, links, anchors, fences, and tables; avoid escaped table-cell pipes. Run `tools/check-memory.py` and section 8's documentation check for repository edits, or their draft checks for unapplied files. Record actual outcomes and reasons. Closeout does not authorize installing missing tools or expanding scope.
 5. **Check recovery:** For closeout/handoff, apply 11.5; a checkpoint-only request skips this step.
-6. **Report and stop:** State saved/draft/incomplete status, completed/unfinished work, changed documents, relevant decision/blocker changes, checks/results, the recorded next action or none assigned, and remaining gaps. Include readiness for closeout. Stop; executing the next action needs a subsequent user request.
+6. **Report and stop:** State saved/draft/incomplete status, completed/unfinished work, changed documents, relevant decision/blocker changes, checks/results, the recorded next action or none assigned, and remaining gaps. Include readiness for closeout. Stop: the user's `/clear` or next request follows, and executing the next action needs a subsequent user request.
 
 Saving state does not complete the underlying task or qualify a release.
 
@@ -254,7 +266,7 @@ Saving state does not complete the underlying task or qualify a release.
 
 ### 11.5 Closeout readiness
 
-Follow startup as a new agent without chat history. Verify that required records/references are usable and that local-only evidence has an access path or a documented limitation.
+Follow startup as a new agent without chat history (the "start after `/close-session`" scenario). Verify that required records/references are usable and that local-only evidence has an access path or a documented limitation.
 
 - **Usable:** Records support resumption; known blockers have documented resolution actions.
 - **Limited:** Missing material affects later work; current state and immediate next action remain clear.
