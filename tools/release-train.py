@@ -682,8 +682,7 @@ class Train:
             self.save()
             say(f"  dispatched job-images.yml on {tag} for {' '.join(images)}")
         found = wait_run(self.repo, "job-images.yml", tag, event="workflow_dispatch", branch=tag, timeout=4 * 3600,
-                         hint=f"; it was dispatched at {dispatched[tag]}: if no run exists, dispatch it by hand "
-                              f"(gh workflow run job-images.yml --ref {tag} -f images='{' '.join(images)}') and run the train again")
+                         hint=dispatch_hint(dispatched, tag, images))
         path, manifest = self.signed_manifest(tag, "job-images-manifest.json", images)
         return {"tag": tag, "commit": at, "run": found["id"], "manifest": str(path.relative_to(ROOT)),
                 "digests": {i: manifest["images"][i]["digest"] for i in images}, "validatorSource": gitlink(at, VALIDATOR_SOURCE)}
@@ -817,6 +816,15 @@ class Train:
         if kind == "jobs":
             return self.jobs([f"jobs:{j['tag']}" for j in self.plan["jobs"]].index(step))
         return getattr(self, kind)()
+
+
+def dispatch_hint(dispatched: dict, tag: str, images: list[str]) -> str:
+    """The no-run message's advice. A run that existed before the train (dispatched by hand) has no
+    recorded dispatch."""
+    if tag not in dispatched:
+        return ""
+    return (f"; the train dispatched it at {dispatched[tag]}: if no run exists, dispatch it by hand "
+            f"(gh workflow run job-images.yml --ref {tag} -f images='{' '.join(images)}') and run the train again")
 
 
 def confirm(plan: dict) -> tuple[bool, str]:
@@ -955,6 +963,8 @@ def self_test() -> int:
     cases.append(("a re-plan shares no step id with the old plan", not set(step_ids(validator)) & set(step_ids(replanned))))
     cases.append(("job runs: validator first, team alone", job_runs([VALIDATOR, "anvilkit-parser", TEAM_IMAGE]) == [[VALIDATOR, "anvilkit-parser"], [TEAM_IMAGE]]))
     cases.append(("service release steps", step_ids({"images": [], "jobs": [], "release": "v1.0.1"}) == ["release:v1.0.1", "pin:v1.0.1"]))
+    cases.append(("a run dispatched by hand (none recorded) gives no hint and no error", dispatch_hint({}, "jobs-v1.0.1", [TEAM_IMAGE]) == ""))
+    cases.append(("a recorded dispatch names its time", "05:00:00Z" in dispatch_hint({"jobs-v1.0.1": "05:00:00Z"}, "jobs-v1.0.1", [TEAM_IMAGE])))
     cases += git_mechanics()
     cases.append(("a terminal: the typed release tag confirms", confirm_in_terminal("v9.9.9\n") == 0))
     cases.append(("a terminal: another text refuses", confirm_in_terminal("v9.9.8\n") == 1))
