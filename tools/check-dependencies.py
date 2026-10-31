@@ -21,7 +21,11 @@ BLOCKED or its image build fail, checked on every push to main and daily, before
         the archive dropped fails the image build at release time (plan 0006 §9.10).
 Not covered: license categories and the base images' OS packages (image properties; the
 release gate still scans every image), the contracts repository's own lockfiles (schemas
-only reach the images), and the Node and Python runtimes of the base images.
+only reach the images), and the Node and Python runtimes of the base images. Lockfiles under
+fixtures/ or testdata/ are data, never installed: the gate's image scans read installed
+packages, not lockfiles (v0.1.12's reports list no lockfile target), so they do not count
+(the first CI run flagged happy-dom 20.14.5 in the validator's hero fixture lockfile, while
+the image installs 21.0.4).
 Exit 0: nothing blocking; 1: a blocking finding; 2: not runnable here (--scan outside GitHub
 Actions or without Docker, the archive unreachable for --pins). The scan runs a container, so it
 runs in CI only (supply-chain.yml): DEC-028 keeps containers off the development host.
@@ -56,6 +60,7 @@ ARCHIVE = {
 }
 PIN = re.compile(r"(?<![\w.=-])([a-z0-9][a-z0-9+.-]+)=([0-9][^\s\\'\"]*)")
 GOLANG = re.compile(r"^\s*FROM\s+golang:(\d+\.\d+\.\d+)", re.M | re.I)
+DATA = re.compile(r"(^|/)(fixtures|testdata)/")
 
 
 class Unrunnable(Exception):
@@ -171,7 +176,7 @@ def judged(report: dict, go: dict[str, str]) -> dict:
     results = []
     for r in report.get("Results") or []:
         context = context_of(r.get("Target", ""))
-        if context is None:
+        if context is None or DATA.search(r.get("Target", "")):
             continue
         vulns = []
         for v in r.get("Vulnerabilities") or []:
@@ -229,6 +234,10 @@ def self_test() -> int:
 
     cases.append(("a fixable HIGH in a released context blocks", scan_failures(vuln("services/agent/api/go.mod", "github.com/go-jose/go-jose/v4", "HIGH", "4.1.6"), go)))
     cases.append(("a fixable HIGH outside the released contexts does not", not scan_failures(vuln("tests/integration/go.mod", "x", "HIGH", "2"), go)))
+    cases.append(("a fixture lockfile (data, never installed) does not: the first CI run's happy-dom finding",
+                  not scan_failures(vuln("jobs/validator/fixtures/component/hero/pnpm-lock.yaml", "happy-dom", "HIGH", "21.0.4", "20.14.5"), go)))
+    cases.append(("the context's own lockfile still does",
+                  scan_failures(vuln("jobs/validator/pnpm-lock.yaml", "happy-dom", "HIGH", "21.0.4", "20.14.5"), go)))
     cases.append(("an unfixable CRITICAL does not", not scan_failures(vuln("services/agent/api/go.mod", "x", "CRITICAL", None), go)))
     cases.append(("a fixable MEDIUM does not", not scan_failures(vuln("services/agent/api/go.mod", "x", "MEDIUM", "2"), go)))
     cases.append(("stdlib fixed in the builder's minor line at or below it does not",

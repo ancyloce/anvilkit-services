@@ -4,8 +4,14 @@
   .local/verification-venv/bin/python tools/release-artifacts.py [--run ID] [--only NAME ...] [--no-build] [--from-run RUN]
       [--registry-push HOST] [--registry REF] [--network NAME] [--signing key|keyless] [--key REF]
       [--certificate-identity ID --certificate-oidc-issuer URL] [--transparency-log] [--provenance]
+      [--build-cache] [--build-jobs N]
   .local/verification-venv/bin/python tools/release-artifacts.py --jobs [--only NAME ...] [same registry and signing options]
   .local/verification-venv/bin/python tools/release-artifacts.py --self-test
+
+Speed (DEC-033):
+- --build-cache: with --provenance, BuildKit's layer cache is kept in the registry beside each image (<image>:buildcache).
+- --build-jobs N: builds N owned service images at once. Scans and signing stay one image at a time, and Job images, which build on one another, are built one at a time.
+- A scan or verification that fails on a transient registry or scanner transport error is retried twice (retried, TRANSIENT). Nothing else is retried, so the gate stays fail-closed.
 
 Owned service images (the eight services, the Knowledge forwarder sidecar and the
 knowledge/mcp migration Job) are built from each repository's own Dockerfile and pushed to
@@ -56,6 +62,7 @@ blocking finding; 1 otherwise; 2 when Docker, helm or the registry is unavailabl
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import datetime
 import hashlib
 import json
@@ -66,6 +73,7 @@ import secrets
 import shutil
 import subprocess
 import sys
+import time
 import urllib.request
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -75,7 +83,8 @@ REGISTRY = os.environ.get("ANVILKIT_RELEASE_REGISTRY", "anvilkit-dev-registry:50
 NETWORK = os.environ.get("ANVILKIT_RELEASE_NETWORK", "kind")
 DEVELOPMENT_REGISTRIES = {"localhost:5001", "anvilkit-dev-registry:5000"}
 BLOCKING_SEVERITIES = ("CRITICAL", "HIGH")
-SETTINGS: dict = {"signing": "key", "key": None, "insecure": True, "tlog": False, "identity": None, "issuer": None, "provenance": False}
+SETTINGS: dict = {"signing": "key", "key": None, "insecure": True, "tlog": False, "identity": None, "issuer": None, "provenance": False,
+                  "build_cache": False, "build_jobs": 1}
 TRIVY = "aquasec/trivy@sha256:bcc376de8d77cfe086a917230e818dc9f8528e3c852f7b1aff648949b6258d1c"   # 0.69.3
 COSIGN = "ghcr.io/sigstore/cosign/cosign@sha256:68839b7f13dac5a6744a5d8818e984dd39183374e37855c19e14d623d9bc9037"  # v2.6.1
 KEYS = ROOT / ".local/release"
@@ -132,6 +141,28 @@ def must(cmd: list[str], **kw) -> str:
     return p.stdout
 
 
+# Registry and scanner transport failures (release v0.1.8, attempt 1: an HTTP/2 stream reset
+# while Trivy read a layer of the inference image cost a rerun of the whole release). A
+# read-only tool run that fails with one of them is run again, at most twice; a finding, a
+# refusal and any other error still fail at once, so the gate stays fail-closed.
+TRANSIENT = re.compile(r"PROTOCOL_ERROR|INTERNAL_ERROR|stream error|connection reset by peer|TLS handshake timeout|i/o timeout|"
+                       r"unexpected EOF|50[234] (?:Bad Gateway|Service Unavailable|Gateway Timeout)|toomanyrequests|TOOMANYREQUESTS")
+RETRY_DELAYS = (15, 60)  # seconds before the second and the third attempt
+
+
+def retried(attempt, read_only: bool, sleep=time.sleep):
+    """attempt() once, and again after each delay while it fails with a transient error
+    and the run is read-only (it scans or verifies; signing and attesting run once)."""
+    for n, delay in enumerate((*RETRY_DELAYS, None), 1):
+        try:
+            return attempt()
+        except RuntimeError as e:
+            if not read_only or delay is None or not TRANSIENT.search(str(e)):
+                raise
+            print(f"[transient error, attempt {n}, again in {delay} s] ", end="", flush=True)
+            sleep(delay)
+
+
 def helm() -> str | None:
     local = ROOT / ".local/bin/helm"
     return str(local) if local.exists() else shutil.which("helm")
@@ -161,7 +192,14 @@ def tool(image: str, args: list[str], out: pathlib.Path, env: dict | None = None
     """Runs one pinned tool container. With expect, a container the Docker daemon
     fails to reap after the tool exited (observed on this host: the process gone,
     the container still "running") is bounded: when the output file is complete
-    JSON the result stands and the named container is removed; otherwise it fails."""
+    JSON the result stands and the named container is removed; otherwise it fails.
+    A scan or a verification that fails on a transient transport error is retried
+    (retried); each attempt is a new container."""
+    read_only = image == TRIVY or (image == COSIGN and args[:1] in (["verify"], ["verify-attestation"]))
+    return retried(lambda: tool_once(image, args, out, env, expect), read_only)
+
+
+def tool_once(image: str, args: list[str], out: pathlib.Path, env: dict | None, expect: pathlib.Path | None) -> str:
     name = f"anvilkit-release-{secrets.token_hex(6)}"
     # The tool runs as the invoking user: on a CI runner that is not root and
     # cannot enter /root in the tool images, so the writable places are named
@@ -261,13 +299,41 @@ def policy_view(report: dict) -> dict:
     return {"severities": severities, "fixableBlocking": sorted(set(fixable)), "licenses": {k: sorted(n for n in v if n) for k, v in licenses.items()}}
 
 
+def buildx_command(name: str, context: str, extra: list[str], tag: str, meta: pathlib.Path) -> list[str]:
+    """The provenance build. With build_cache, BuildKit's layer cache is read from and written
+    to the registry beside the image (<image>:buildcache, every stage: mode=max): a layer whose
+    inputs did not change since the last release is reused instead of rebuilt and pushed again.
+    The cache never decides an outcome: a cache that cannot be read is a cold build, one that
+    cannot be written is ignored (ignore-error), and every image is scanned and signed as before."""
+    cache = []
+    if SETTINGS["build_cache"]:
+        ref = f"{HOST_REGISTRY}/{name}:buildcache"
+        cache = ["--cache-from", f"type=registry,ref={ref}",
+                 "--cache-to", f"type=registry,ref={ref},mode=max,image-manifest=true,oci-mediatypes=true,ignore-error=true"]
+    return ["docker", "buildx", "build", "--provenance=mode=max", "--push", "--metadata-file", str(meta), *cache, *extra, "-t", tag, context]
+
+
+def build_all(items: list[tuple[str, str, list[str]]], jobs: int, build_one) -> dict[str, str | RuntimeError]:
+    """Builds independent images (no image of items is another's base) with up to jobs builds
+    at a time: name -> digest, or the RuntimeError of that build alone."""
+    results: dict[str, str | RuntimeError] = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, jobs)) as pool:
+        futures = {pool.submit(build_one, name, context, extra): name for name, context, extra in items}
+        for f in concurrent.futures.as_completed(futures):
+            try:
+                results[futures[f]] = f.result()
+            except RuntimeError as e:
+                results[futures[f]] = e
+    return results
+
+
 def build(name: str, context: str, extra: list[str], run_id: str, out: pathlib.Path) -> str:
     tag = f"{HOST_REGISTRY}/{name}:{run_id}"
     log = out / f"{name}.build.log"
     if SETTINGS["provenance"]:
         # BuildKit's SLSA provenance (mode=max) is pushed with the image (P3.2).
         meta = out / f"{name}.build-metadata.json"
-        p = sh(["docker", "buildx", "build", "--provenance=mode=max", "--push", "--metadata-file", str(meta), *extra, "-t", tag, context], cwd=ROOT)
+        p = sh(buildx_command(name, context, extra, tag, meta), cwd=ROOT)
         log.write_text(p.stdout + p.stderr)
         if p.returncode != 0:
             raise RuntimeError(f"build failed, see {log.relative_to(ROOT)}")
@@ -453,6 +519,56 @@ def self_test() -> int:
     cases.append(("the team image builds on the validator its Dockerfile pins, or one not rebuilt in the run", accepted))
     order = [n for n, _, _, _ in JOBS]
     cases.append(("Job images build after the base they pin", all(order.index(b[0]) < order.index(n) for n, _, _, b in JOBS if b)))
+
+    # Transient transport errors: retried for scans and verifications, never for anything else.
+    v018 = ("docker run --rm --name...: FATAL Fatal error run error: image scan error: scan error: scan failed: failed analysis: analyze "
+            "error: pipeline error: failed to analyze layer (sha256:3f8d…): walk error: failed to extract the archive: stream error: "
+            "stream ID 15; PROTOCOL_ERROR; received from peer")
+
+    def run(errors: list[str], read_only: bool) -> tuple[str, int]:
+        calls, sleeps = [], []
+
+        def attempt():
+            calls.append(1)
+            if len(calls) <= len(errors):
+                raise RuntimeError(errors[len(calls) - 1])
+            return "ok"
+        try:
+            return retried(attempt, read_only, sleep=sleeps.append), len(sleeps)
+        except RuntimeError:
+            return "raised", len(sleeps)
+    cases.append(("the v0.1.8 scanner stream reset is transient and the scan succeeds on its next attempt", run([v018], True) == ("ok", 1)))
+    cases.append(("two transient failures are retried, a third fails the run", run([v018] * 2, True) == ("ok", 2) and run([v018] * 3, True) == ("raised", 2)))
+    cases.append(("a transient failure of a signing (not read-only) run is not retried", run([v018], False) == ("raised", 0)))
+    cases.append(("a missing image (MANIFEST_UNKNOWN) is not transient", run(["docker run...: MANIFEST_UNKNOWN: manifest unknown"], True) == ("raised", 0)))
+    cases.append(("registry throttling and gateway errors are transient",
+                  all(TRANSIENT.search(m) for m in ("toomanyrequests: retry later", "received unexpected HTTP status: 503 Service Unavailable", "read: connection reset by peer"))))
+
+    # The registry build cache: present only when asked for, and never fatal.
+    saved = dict(SETTINGS)
+    SETTINGS["build_cache"] = False
+    plain = buildx_command("anvilkit-agent-api", "services/agent/api", [], "r/anvilkit-agent-api:v1", pathlib.Path("m.json"))
+    SETTINGS["build_cache"] = True
+    cached = buildx_command("anvilkit-agent-api", "services/agent/api", [], "r/anvilkit-agent-api:v1", pathlib.Path("m.json"))
+    SETTINGS.update(saved)
+    cache_to = next((cached[i + 1] for i, x in enumerate(cached) if x == "--cache-to"), "")
+    cases.append(("without --build-cache the build reads and writes no cache", "--cache-from" not in plain and "--cache-to" not in plain))
+    cases.append(("with --build-cache the image's own :buildcache is read and written (mode=max) and a write failure is ignored",
+                  f"type=registry,ref={HOST_REGISTRY}/anvilkit-agent-api:buildcache" in cached and "mode=max" in cache_to
+                  and "ignore-error=true" in cache_to and cached[-1] == "services/agent/api"))
+
+    # Parallel builds: every image's own digest or error, whatever the completion order.
+    def fake_build(name: str, context: str, extra: list[str]) -> str:
+        time.sleep({"a": 0.03, "b": 0.0, "c": 0.01}[name])
+        if name == "b":
+            raise RuntimeError("build failed, see b.build.log")
+        return f"sha256:{name}"
+    results = build_all([("a", "ctx-a", []), ("b", "ctx-b", []), ("c", "ctx-c", [])], 3, fake_build)
+    cases.append(("parallel builds keep each image's digest and each failure to its own image",
+                  results.get("a") == "sha256:a" and results.get("c") == "sha256:c" and isinstance(results.get("b"), RuntimeError)))
+    froms = {c: re.findall(r"^\s*FROM\s+(\S+)", (ROOT / c / "Dockerfile").read_text(), re.M | re.I) for _, c, _ in OWNED}
+    cases.append(("owned service images have no base among each other (safe to build together)",
+                  not any(n in ref for refs in froms.values() for ref in refs for n, _, _ in OWNED)))
     failures = [n for n, ok in cases if not ok]
     for n, ok in cases:
         print(f"{'PASS' if ok else 'FAIL':<5} self-test: {n}")
@@ -479,6 +595,10 @@ def main() -> int:
     ap.add_argument("--provenance", action="store_true", help="build with BuildKit SLSA provenance (docker buildx, pushed with the image)")
     ap.add_argument("--jobs", action="store_true", help="build and publish the owned Job images (JOBS) into job-images-manifest.json "
                                                        "instead of the release set")
+    ap.add_argument("--build-cache", action="store_true", help="--provenance builds read and write BuildKit's layer cache in the registry "
+                                                              "(<image>:buildcache, mode=max); a cache failure never fails a build")
+    ap.add_argument("--build-jobs", type=int, default=1, help="build up to this many owned service images at once (scans and signing stay "
+                                                               "one at a time; Job images, which build on one another, always one at a time)")
     ap.add_argument("--self-test", action="store_true", help="prove the status rules on synthetic manifests and exit")
     a = ap.parse_args()
     if a.self_test:
@@ -488,7 +608,7 @@ def main() -> int:
         ap.error("--signing keyless needs --certificate-identity and --certificate-oidc-issuer")
     SETTINGS.update({"signing": a.signing, "key": a.key, "insecure": HOST_REGISTRY in DEVELOPMENT_REGISTRIES or REGISTRY in DEVELOPMENT_REGISTRIES,
                      "tlog": a.signing == "keyless" or a.transparency_log, "identity": a.certificate_identity, "issuer": a.certificate_oidc_issuer,
-                     "provenance": a.provenance})
+                     "provenance": a.provenance, "build_cache": a.build_cache and a.provenance, "build_jobs": a.build_jobs})
     helm_bin = helm()
     if not shutil.which("docker") or (not helm_bin and not a.jobs) or not registry_up():
         print(f"UNEXECUTED: docker, helm and the registry ({HOST_REGISTRY}) are required")
@@ -525,6 +645,8 @@ def main() -> int:
     manifest = {"schemaVersion": 1, "kind": "job-images" if a.jobs else "release", "run": a.run, "parentTag": placement["tag"],
                 "registry": {"push": HOST_REGISTRY, "reference": REGISTRY, "insecure": SETTINGS["insecure"]},
                 "signing": signing, "provenance": "BuildKit SLSA mode=max" if a.provenance else "none",
+                "build": {"cache": f"registry {HOST_REGISTRY}/<image>:buildcache, mode=max" if SETTINGS["build_cache"] else "none",
+                          "parallelBuilds": 1 if a.jobs else max(1, a.build_jobs)},
                 "tools": {"trivy": TRIVY, "cosign": COSIGN, "helm": must([helm_bin, "version", "--short"]).strip() if helm_bin else "not used", "docker": must(["docker", "version", "--format", "{{.Server.Version}}"]).strip()},
                 "policy": "block: fixable CRITICAL or HIGH vulnerability; forbidden license category; dirty input; unverified signature or attestation (P3.2 rule pending the security owner)",
                 "images": {}, "charts": {}}
@@ -558,6 +680,20 @@ def main() -> int:
         except (RuntimeError, OSError) as e:
             findings.append(f"{name}: {e}")
             print(f"FAILED {e}")
+    # The owned service images do not build on one another: with --build-jobs they are built
+    # together first; each is then scanned, signed and recorded below, in OWNED's order, as before.
+    prebuilt: dict[str, str | RuntimeError] = {}
+    if not a.jobs and not a.no_build and a.build_jobs > 1:
+        prebuilt = build_all([(n, c, x) for n, c, x in OWNED if selected(n)], a.build_jobs,
+                             lambda n, c, x: build(n, c, x, a.run, out))
+
+    def built_service(name: str, context: str, extra: list[str]) -> str:
+        if name not in prebuilt:
+            return build(name, context, extra, a.run, out)
+        if isinstance(prebuilt[name], RuntimeError):
+            raise prebuilt[name]
+        return prebuilt[name]
+
     for name, context, extra in ([] if a.jobs else OWNED):
         if not selected(name):
             if name in prior.get("images", {}):
@@ -566,7 +702,7 @@ def main() -> int:
         print(f"image {name}: ", end="", flush=True)
         try:
             entry = {"kind": "service", "source": source(context), "build": {"context": context, "arguments": extra}}
-            digest = prior["images"][name]["digest"] if a.no_build else build(name, context, extra, a.run, out)
+            digest = prior["images"][name]["digest"] if a.no_build else built_service(name, context, extra)
             ref = f"{REGISTRY}/{name}@{digest}"
             entry.update({"reference": ref, "digest": digest})
             entry.update(scan(name, ref, out))
