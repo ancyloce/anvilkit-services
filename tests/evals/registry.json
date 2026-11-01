@@ -2147,7 +2147,7 @@
       {
         "case": "U-VALIDATOR",
         "name": "independent certification of the fixed component refuses altered protected fixtures without executing them",
-        "file": "jobs/validator/test/validate.test.ts:291",
+        "file": "jobs/validator/test/validate.test.ts:293",
         "checks": "Altered protected validation fixtures are refused before any execution.",
         "title": "refuses altered protected fixtures without executing them"
       },
@@ -2190,21 +2190,21 @@
       {
         "case": "U-VALIDATOR",
         "name": "independent certification of the fixed component treats a forged exit 0 as no evidence",
-        "file": "jobs/validator/test/validate.test.ts:524",
+        "file": "jobs/validator/test/validate.test.ts:597",
         "checks": "A candidate exit 0 without observer evidence is not certification.",
         "title": "treats a forged exit 0 as no evidence"
       },
       {
         "case": "U-VALIDATOR",
         "name": "independent certification of the fixed component rejects missing CSS and an unshipped resource",
-        "file": "jobs/validator/test/validate.test.ts:222",
+        "file": "jobs/validator/test/validate.test.ts:224",
         "checks": "Missing CSS or an unshipped resource fails certification.",
         "title": "rejects missing CSS and an unshipped resource"
       },
       {
         "case": "U-VALIDATOR",
         "name": "independent certification of the fixed component refuses an incompatible Host ABI as a profile problem, not a source defect",
-        "file": "jobs/validator/test/validate.test.ts:273",
+        "file": "jobs/validator/test/validate.test.ts:275",
         "checks": "A wrong Host ABI is refused and classified as a profile problem.",
         "title": "refuses an incompatible Host ABI as a profile problem, not a source defect"
       },
