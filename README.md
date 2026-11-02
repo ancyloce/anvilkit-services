@@ -154,9 +154,8 @@ Contract consumers pin: `go/v0.1.18` (`services/agent/api`, `services/agent/mcp`
 | `packages/profile-schemas` | The shared configuration schemas (`apollo-snapshot`, `config-generation`), their cross-language fixtures and the executable Python consumer example for the Inference service | P14-06; consumed by the Go (MCP) and TypeScript (Knowledge) loaders' tests and the `profiles` step of the chain |
 | `deploy/gitops/`, `deploy/qualification/` | The GitOps environment chart, the environment combinations and the deployment lock (`deploy/gitops`); the DEVELOPMENT_ONLY qualification environment's platform charts, bootstrap, checks and drills (`deploy/qualification`, P23 and plan 0004) | Release, promotion and qualification tooling; production combination pending ENV-01..ENV-10 |
 | `deploy/local/`, `compose.yaml`, `tools/prepare-local-compose.py` | Docker Compose profile of the legacy local-check flow (PostgreSQL 18.6, Temporal 1.31.2), mounts repointed to `docs/archive/contracts/`; the legacy API, Control and Workflow services pinned to their own images (`legacy-20260915`, `legacy-20260916`) and the preserved legacy worktrees under `.local/legacy/` | Legacy environment; not handed over, not a startup procedure for the replacement |
-| `packages/biome-config`, `packages/typescript-config`, `apps/` | pnpm/Turborepo starter | Starter only; the Model Proxy is its own pnpm workspace root (as `contracts/` and `jobs/validator`), Knowledge arrives with P15 |
 
-Not present in any form: a `jobs/preview` directory.
+Not present in any form: a `jobs/preview` directory, or a root Node workspace. Every TypeScript package (`contracts/`, `jobs/validator`, `jobs/codegen/team`, Model Proxy, Knowledge, Background Worker) is its own pnpm workspace root with its own Biome and TypeScript configuration and builds alone; the create-turbo starter (root `package.json`, `turbo.json`, `packages/{biome-config,typescript-config}`) was removed on 2026-11-02 because nothing consumed it.
 
 ## Reading route
 
