@@ -16,7 +16,7 @@
 # template at Job admission, i.e. against what the launcher submits; the
 # ephemeral-container subresource has its own policy below. The registry
 # allowlist is the environment's separate policy
-# (anvilkit-components-registries.yaml).
+# (anvilkit-components-registries, templates/registries.yaml).
 apiVersion: policies.kyverno.io/v1
 kind: ValidatingPolicy
 metadata:
@@ -76,10 +76,11 @@ spec:
         ['/bin/sh', '-c', r'''set -e; d=$(printf "anvilkit-local-check-v1\n" | sha256sum | cut -d" " -f1); printf '{"schemaVersion":1,"launchId":"%s","attemptId":"%s","jobKind":"validator","profileId":"local-check-v1","verdict":"certified","outputs":[{"class":"result","digest":"sha256:%s","sizeBytes":"24"}],"completedAt":"%s"}' "$ANVILKIT_LAUNCH_ID" "$ANVILKIT_ATTEMPT_ID" "$d" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > /dev/termination-log''']
     - name: supervisorCommand
       expression: "['/usr/local/bin/anvilkit-codegen-supervisor']"
-    # The reviewed entrypoint of the validator image (P10d; P0.8 the profiles
-    # validator-fixture-v1, validator-source-v1, validator-source-dev-v1): the
-    # same harness layout with the validator's trusted process as the
-    # supervisor container.
+    # The profiles of the validator image (jobKind validator in
+    # contracts/jobs/profiles.json, local-check-v1 aside) with its reviewed
+    # entrypoint and digest (validatorCommand, validatorDigest): the same
+    # harness layout with the validator's trusted process as the supervisor
+    # container.
     - name: validatorProfiles
       expression: "['validator-fixture-v1', 'validator-source-v1', 'validator-source-dev-v1', 'preview-build-v1']"
     # P2.4: the coding team (P12) as the supervisor's team mode: its own image
@@ -90,9 +91,8 @@ spec:
     - name: teamCommand
       expression: "['/usr/local/bin/anvilkit-codegen-supervisor', 'team']"
     # One digest per team profile (contracts/jobs/profiles.json): the
-    # production profile codegen-team-v1 (disabled, revision 14) and its
-    # development twin codegen-team-dev-v1 (revision 23) pin the same
-    # CI-published image since 2026-11-01 (release jobs-v0.1.22); they may
+    # production profile codegen-team-v1 (disabled) and its development twin
+    # codegen-team-dev-v1 currently pin the same CI-published image; they may
     # diverge again, so each keeps its own variable.
     - name: teamDigest
       expression: "'sha256:50c8a48ba030d24e11faecd46c26ddc939f117cf277c94f22784cba25c9a51e3'"

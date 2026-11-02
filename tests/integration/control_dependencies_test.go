@@ -17,8 +17,10 @@ import (
 	"time"
 )
 
-// Disposable database used by the counting-upstream regression. Control's
-// Temporal frontend is also private to that run; no everyday dependencies are used.
+// isolatedControlDatabase gives the scenario a disposable Control database,
+// migrated by Control's own migration command, and a private Temporal
+// frontend and artifact store (isolatedTemporalAndObjects); no everyday
+// dependencies are used.
 func isolatedControlDatabase(t *testing.T) {
 	t.Helper()
 	isolatedControlDatabaseMigratedBy(t, func(dsn string) *exec.Cmd {

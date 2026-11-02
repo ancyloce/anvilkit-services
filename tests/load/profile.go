@@ -35,23 +35,24 @@ type Profile struct {
 type Scenario struct {
 	RatePerSecond float64 `json:"ratePerSecond"`
 	MaxInFlight   int     `json:"maxInFlight"`
-	// LocalCheck and Preparation operations: the share canceled through the
-	// commands endpoint after their first progress; the share held there and
-	// resumed holdSeconds later (an operator's hold under load); whether the
-	// subscriber drops and resumes its stream (Last-Event-ID) once; extra
-	// subscribers of the same stream; the bound on one operation.
+	// CancelRatio through DeadlineSeconds apply to LocalCheck and Preparation
+	// operations: the share canceled through the commands endpoint after their
+	// first progress; the share held there and resumed holdSeconds later (an
+	// operator's hold under load); whether the subscriber drops and resumes its
+	// stream (Last-Event-ID) once; extra subscribers of the same stream; the
+	// bound on one operation.
 	CancelRatio     float64 `json:"cancelRatio,omitempty"`
 	HoldRatio       float64 `json:"holdRatio,omitempty"`
 	HoldSeconds     int     `json:"holdSeconds,omitempty"`
 	ResumeStream    bool    `json:"resumeStream,omitempty"`
 	ExtraListeners  int     `json:"extraListeners,omitempty"`
 	DeadlineSeconds int     `json:"deadlineSeconds,omitempty"`
-	// Knowledge searches.
+	// Query and MaxContextItems apply to Knowledge searches.
 	Query           string `json:"query,omitempty"`
 	MaxContextItems int    `json:"maxContextItems,omitempty"`
 }
 
-// Scenario names the tool drives through the public API.
+// knownScenarios are the scenario names the tool drives through the public API.
 var knownScenarios = map[string]bool{"local_check": true, "preparation": true, "knowledge_search": true, "mcp_catalog": true}
 
 func loadProfile(path string) (Profile, error) {

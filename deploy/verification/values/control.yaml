@@ -69,7 +69,7 @@ artifacts:
     secret:
       name: artifacts
 # P2.3: the DEVELOPMENT_ONLY bearer token of the Model Proxy client, as
-# chart values (the post-renderer that injected it is gone).
+# chart values (no post-renderer).
 modelProxy:
   address: http://anvilkit-agent-model-proxy:9103
   identityMode: development

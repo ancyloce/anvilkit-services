@@ -11,8 +11,8 @@
 #   sh deploy/dev/control-chart.sh install     # build, load, secrets, helm upgrade --install, wait
 #   sh deploy/dev/control-chart.sh uninstall
 #
-# Inside kind Control reaches the foundation's PostgreSQL, Temporal and MinIO
-# by their kind-network addresses (up.sh attaches them; .local/dev/env.sh
+# Inside kind Control reaches the foundation's PostgreSQL, Temporal, MinIO and
+# NATS by their kind-network addresses (up.sh attaches them; .local/dev/env.sh
 # exports them as ANVILKIT_DEV_*_CLUSTER). The two replicas share the
 # anvilkit-inventory bucket (the S3 inventory backend), never a local
 # directory. ANVILKIT_DEV_GOPROXY / ANVILKIT_DEV_GONOSUMDB, when set, are

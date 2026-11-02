@@ -3,21 +3,18 @@
 
 Usage: python3 tools/check-source-export.py [--keep DIR] [--skip-build] [--self-test]
 
-A `.gitignore` edit is not evidence that the design and build inputs are included in the
-source, and neither is a file that merely exists on disk. Since P3.1 (plan 0004, AC5) this
-check computes the export set the way a clean recursive clone would see it: the parent's
-committed tree at HEAD and, for each replacement repository mounted in the tree (the contracts
-repository at contracts/, the API, Control and Workflow repositories at
-services/agent/{api,control,workflow,model-proxy}, since P14 the Knowledge and MCP repositories
-at services/agent/{knowledge,mcp}, the access sidecar repository at jobs/shared/access-sidecar,
-the validator repository at jobs/validator, since 2026-10-04, the Background Worker, Inference
-and parser Job repositories at services/agent/{background-worker,inference} and jobs/parser and,
-since 2026-10-06, the codegen Job's supervisor and team repositories at
-jobs/codegen/{supervisor,team}), that repository's committed tree at the gitlink the parent
-records. Untracked files, uncommitted edits and a submodule checked out at another commit are
-never part of the export, even when present on disk; they are reported. A replacement
-repository the parent does not record as a gitlink is not in a clean clone and fails. The
-shared configuration schemas (packages/profile-schemas) are a plain directory of the parent.
+A `.gitignore` edit is not evidence that the design and build inputs are included
+in the source, and neither is a file that merely exists on disk. This check (P3.1,
+plan 0004, AC5) computes the export set the way a clean recursive clone would see
+it: the parent's committed tree at HEAD and, for each replacement repository
+mounted in the tree (REPLACEMENT_REPOS: the contracts at contracts/ and every
+service and Job repository under services/agent/ and jobs/), that repository's
+committed tree at the gitlink the parent records. Untracked files, uncommitted
+edits and a submodule checked out at another commit are never part of the export,
+even when present on disk; they are reported. A replacement repository the parent
+does not record as a gitlink is not in a clean clone and fails. The shared
+configuration schemas (packages/profile-schemas) are a plain directory of the
+parent.
 Then:
 
   1. Required inputs: every file under each declared input directory and every anchor file
@@ -30,8 +27,10 @@ Then:
      __pycache__/ or *.egg-info/, no `.env*`, `*.pem`, `*.log`, `*.kubeconfig`, and nothing
      from inside a legacy submodule.
   3. Disposable export: the committed trees are extracted (`git archive`) into a temporary
-     directory and checked there on its own: tools/check-docs.py, tools/check-contracts.py and `go build ./...`
-     in every go.work module (GOFLAGS=-mod=readonly), so the export is self-contained.
+     directory and checked there on its own: tools/check-docs.py, tools/check-contracts.py,
+     the codegen repositories' process protocol copies, `go build ./...` in every go.work
+     module and, without the workspace (GOWORK=off), in each Go service repository
+     (GOFLAGS=-mod=readonly), so the export is self-contained.
 
 Legacy environment tooling that the cleanup record keeps (deploy/local/, compose.yaml,
 tools/prepare-local-compose.py, tools/component/) is reported, not required and not failed.
@@ -247,8 +246,9 @@ REQUIRED_FILES = (
     "tools/run-verification.py", "tools/check-source-export.py", "tools/pyenv_check.py",
     "tools/requirements.txt", "tools/verification-env.sh",
 )
-# This P10 directory is generated from checked source by host-bundles.ts;
-# it is a build cache, never a required source input or an exported artifact.
+# Build outputs generated from checked source (the validator's host-bundles.ts bundles and
+# the TypeScript packages' dist/): build caches, never a required source input or an
+# exported artifact.
 GENERATED_OUTPUT_PREFIXES = ("jobs/validator/fixtures/host/browser/dist/", "jobs/validator/fixtures/preview/dist/", "services/agent/model-proxy/dist/", "jobs/codegen/team/dist/", "services/agent/knowledge/dist/", "services/agent/background-worker/dist/")
 EXCLUDED_PREFIXES = ("docs/archive/", "outputs/", "logs/", ".local/", "node_modules/")
 EXCLUDED_INFIXES = ("/node_modules/", "/__pycache__/", ".egg-info/")

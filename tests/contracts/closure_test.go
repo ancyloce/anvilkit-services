@@ -24,8 +24,8 @@ import (
 // markers: the legacy modules are recognized by what they imported
 // (Connect-Go, the retained contracts and their generated Connect packages
 // under internal/contracts) and by the retired paths (the parent-hosted
-// module paths of Control and Workflow before their relocation, the
-// in-tree generated clients), which the forbidden list covers.
+// module paths of the API, Control and Workflow before their relocation,
+// the in-tree generated clients), which the forbidden list covers.
 var (
 	// expectedModules binds each service directory to the module path its
 	// repository publishes; a module under one of these paths with any

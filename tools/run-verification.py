@@ -7,7 +7,7 @@ contract and evidence recording").
   .local/verification-venv/bin/python tools/run-verification.py --static
 
 Steps, in order:
-  docs        tools/check-docs.py                      current-baseline Markdown, missing inputs fail, generated status drift (docs-status.py)
+  docs        tools/check-docs.py                      current-baseline Markdown, missing inputs fail, generated status drift (docs-status.py, whose --self-test runs first)
   generate    pnpm install --frozen-lockfile in        the contracts repository's pinned generators (ts-proto and
               contracts/, then                         openapi-typescript come from that locked install) reproduce
               tools/generate-contracts.py --check      every checked-in binding (contracts/{go,ts,python});
@@ -20,14 +20,14 @@ Steps, in order:
                                                        the evaluator's skip/BLOCKED/roll-up negatives hold
   deployment  tools/check-deployment-lock.py           the P23 deployment lock (deploy/gitops/lock.yaml): the eight
               --self-test; the self-tests of           charts rendered with the qualification values carry its
-                                                       replica/HPA/PDB/spread/probe/grace/pool limits, the
-                                                       connection budgets fit, production fields stay REQUIRED;
-              tools/release-artifacts.py,              its negative probes must each be detected; the release
-              deploy/gitops/publish.py and             tools refuse BLOCKED, dirty or unsigned inputs and
-              deploy/qualification/record.py           evidence of another release (P3.2)
+              tools/release-artifacts.py,              replica/HPA/PDB/spread/probe/grace/pool limits, the
+              deploy/gitops/publish.py,                connection budgets fit, production fields stay REQUIRED;
+              deploy/qualification/record.py and       its negative probes must each be detected; the release
+              the further checks main()'s              tools refuse BLOCKED, dirty or unsigned inputs and
+              deployment entry lists                   evidence of another release (P3.2)
   handover    deploy/handover/rehearse.py self-test    the P24 rehearsal's decisions on synthetic inputs: each
-                                                       single violation of a preservation rule requires a
-                                                       transfer; legacy-name patterns and route classifiers
+              and deploy/handover/handover.py          single violation of a preservation rule requires a
+              --self-test                              transfer; legacy-name patterns, route classifiers; handover.py's refusals
   export      tools/check-source-export.py             the committed trees a clean recursive clone checks out
               --self-test, then the check              (the parent's HEAD and each submodule at its gitlink)
                                                        hold every declared input and no archive/secret/
@@ -75,22 +75,22 @@ Steps, in order:
                                                        Workflow repository's cluster scenario the parent
                                                        starts a Control from the Control repository first
 
-Each step prints PASS, PARTIAL, FAIL or UNEXECUTED (P3.3, plan 0004). PASS means every
-part of the step ran and passed. PARTIAL means what ran passed but work was omitted: a
-step that only byte-compiles or builds under --static (knowledge, background, parser,
-inference), or any test that skipped itself. The Go and Vitest suites run with their
-JSON reporters (`go test -json`, `vitest --reporter=json`), and every skipped package,
-test or subtest is listed as an UNEXECUTED unit with its skip reason; the summary counts
-those units apart from the steps. UNEXECUTED means the step's environment is missing.
-Neither PARTIAL nor UNEXECUTED is ever counted as a pass. Running as root sets
-ANVILKIT_REQUIRE_ROOT_TESTS=1, which turns a root-only skip into a failure, and
-ANVILKIT_REQUIRE_VALIDATOR=1 once jobs/validator is built; their absence is reported.
-Every command has a timeout (ANVILKIT_VERIFY_TIMEOUT seconds, default 2400). An unknown
---only name is refused. Exit code 1 if anything failed, 2 if any step is not a full PASS,
-0 otherwise. This runner never regenerates, deletes or publishes anything; --check mode
-generation writes only into a temporary directory. The runner itself refuses to start
-under an interpreter other than the pinned one (tools/requirements.txt), because the Python
-steps would then report failures of the machine rather than of the checkout.
+Each step prints PASS, PARTIAL, FAIL or UNEXECUTED (P3.3, plan 0004). PASS means every part of
+the step ran and passed. PARTIAL means what ran passed but work was omitted: a step that only
+byte-compiles or builds under --static (knowledge, background, parser, inference) or without
+its image (parser, inference), the go step under --static, or any test that skipped itself.
+The Go and Vitest suites run with their JSON reporters (`go test -json`,
+`vitest --reporter=json`), and every skipped package, test or subtest is listed as an
+UNEXECUTED unit with its skip reason; the summary counts those units apart from the steps.
+UNEXECUTED means the step's environment is missing. Neither PARTIAL nor UNEXECUTED is ever
+counted as a pass. Running as root sets ANVILKIT_REQUIRE_ROOT_TESTS=1, which turns a root-only
+skip into a failure; a built jobs/validator sets ANVILKIT_REQUIRE_VALIDATOR=1; their absence
+is reported. Every command has a timeout (ANVILKIT_VERIFY_TIMEOUT seconds, default 2400). An
+unknown --only name is refused. Exit code 1 if anything failed, 2 if any step is not a full
+PASS, 0 otherwise. This runner never regenerates, deletes or publishes anything; --check mode
+generation writes only into a temporary directory. The runner itself refuses to start under an
+interpreter other than the pinned one (tools/requirements.txt), because the Python steps would
+then report failures of the machine rather than of the checkout.
 """
 from __future__ import annotations
 
@@ -234,7 +234,7 @@ def step_go(static: bool, units: Units) -> tuple[str, str]:
     for mod in workspace_modules():
         listed = run(["go", "list", "./..."], mod, env)
         if "matched no packages" in listed.stderr:
-            # Entirely tag-gated (tests/integration): vet with the tag; the integration step runs it.
+            # Entirely tag-gated (no untagged package): vet with the tag; the integration step runs it.
             p = run(["go", "vet", "-tags", "integration", "./..."], mod, env)
             out.append(f"{mod.relative_to(ROOT)}: go vet -tags integration -> {'ok' if p.returncode == 0 else 'FAIL'}")
             if p.returncode != 0:
@@ -339,15 +339,15 @@ SUPERVISOR_REPO = ROOT / "jobs" / "codegen" / "supervisor"
 
 
 def step_team(units: Units) -> tuple[str, str]:
-    """The codegen team package (P12, repository anvilkit-job-codegen-team):
-    its locked install (better-sqlite3's prebuilt binary is the one lifecycle
-    script its workspace file allows), type check, lint, build (the coder and
-    coordinator the tests and the integration scenario spawn), the reviewed
-    tools document checked against the build, the tests (a countable sidecar
-    double; the coordinator over the process protocol; the validation test
-    runs the real validator chain from jobs/validator when it is built, and
-    must then, ANVILKIT_REQUIRE_VALIDATOR), and the process protocol copies of
-    both codegen repositories against contracts/jobs/codegen (the
+    """The codegen team package (P12, repository anvilkit-job-codegen-team): its locked
+    install (its workspace file denies every lifecycle script; the better-sqlite3
+    addon comes from the package's tools/build-better-sqlite3.sh, which this step
+    does not run), type check, lint, build (the coder and coordinator the tests and
+    the integration scenario spawn), the reviewed tools document checked against the
+    build, the tests (a countable sidecar double; the coordinator over the process
+    protocol; the validation test runs the real validator chain from jobs/validator
+    when it is built, and must then, ANVILKIT_REQUIRE_VALIDATOR), and the process
+    protocol copies of both codegen repositories against contracts/jobs/codegen (the
     supervisor's Go tests run in the go step)."""
     pnpm = shutil.which("pnpm")
     if not pnpm or not shutil.which("node"):
@@ -406,9 +406,9 @@ def pnpm_package(rel: pathlib.Path, env: dict, units: Units, static: bool) -> tu
 
 def step_knowledge(static: bool, units: Units) -> tuple[str, str]:
     """The Knowledge owner (P14-P17): type check, lint, build (the entries the
-    forwarder test and the integration scenarios spawn, since P17 also the
-    Store's vendor migration and memoryctl) and tests (Vitest; Docker-backed
-    PostgreSQL with the Store's vendor schema and, since P16, Qdrant through
+    forwarder test and the integration scenarios spawn, the Store's vendor
+    migration and memoryctl among them) and tests (Vitest; Docker-backed
+    PostgreSQL with the Store's vendor schema and Qdrant through
     Testcontainers, so --static leaves the tests out and is PARTIAL). The Go
     forwarder sidecar module is covered by the go step."""
     return pnpm_package(pathlib.Path("services/agent/knowledge"), dict(os.environ), units, static)

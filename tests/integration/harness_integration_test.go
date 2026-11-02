@@ -152,7 +152,7 @@ func startSidecar(t *testing.T, b harnessBinaries, l harnessLayout, controlAddr,
 	return p
 }
 
-// summary mirrors the supervisor's termination message.
+// harnessSummary mirrors the supervisor's termination message.
 type harnessSummary struct {
 	Outcome       string                              `json:"outcome"`
 	Verdict       string                              `json:"verdict"`

@@ -15,11 +15,11 @@
 # registry, a tag, an unsigned image or a signature by another key is denied at
 # admission. Platform images are mirrored into the release registry and signed
 # by tools/release-artifacts.py (PLATFORM) before a namespace is listed here.
-# The release's signed CycloneDX SBOM attestations are verified by
-# tools/release-artifacts.py, not here: Kyverno 1.19.1 refuses every
+# The release's signed SBOM attestations (cosign type spdxjson) are verified
+# by tools/release-artifacts.py, not here: Kyverno 1.19.1 refuses every
 # attestation without a transparency-log bundle (VerifyAttestationSignature
-# requires cosign's bundle verification), and the release uploads nothing to
-# a public log.
+# requires cosign's bundle verification), and a release signed with the
+# development key uploads nothing to a public log.
 # Pods only: autogen is off, so a Deployment is admitted and its ReplicaSet's
 # Pods are what the policy decides (Argo CD reports them as Degraded).
 apiVersion: policies.kyverno.io/v1

@@ -11,7 +11,8 @@ Install once per checkout (remove the file to uninstall; `git push --no-verify` 
   printf '#!/bin/sh\\nexec "$(git rev-parse --show-toplevel)/.local/verification-venv/bin/python" -I "$(git rev-parse --show-toplevel)/tools/pre-push.py" "$@"\\n' > .git/hooks/pre-push
   chmod +x .git/hooks/pre-push
 
-For every commit the push sends to a branch or tag, the commit is materialized as CI's clean
+For the commit each pushed branch or tag points to (the pushed tip, as CI checks it; the
+commits before it in the same push are not checked), the commit is materialized as CI's clean
 recursive clone sees it: the parent's committed tree plus each replacement repository's
 committed tree at the gitlink that commit records (the export set of
 tools/check-source-export.py, whose functions this reuses). Two units of the static chain then

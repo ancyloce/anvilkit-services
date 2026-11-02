@@ -52,10 +52,11 @@ type laneDataPlane struct {
 	queue         testcontainers.Container
 }
 
-// The NKey users of the lane's JetStream and what each may do: a forwarder
-// publishes its owner's events (with the JetStream acknowledgement inbox), a
-// relay drives its own durable pull consumer on its owner's stream, admin
-// provisions the streams for the test and observes them.
+// natsPermissions are the NKey users of the lane's JetStream and what each
+// may do: a forwarder publishes its owner's events (with the JetStream
+// acknowledgement inbox), a relay drives its own durable pull consumer on its
+// owner's stream, admin provisions the streams for the test and observes
+// them.
 var natsPermissions = map[string][2][]string{
 	"knowledge-forwarder": {{"anvilkit.knowledge.>", "$JS.API.INFO", "$JS.API.STREAM.INFO.ANVILKIT_KNOWLEDGE"}, {"_INBOX.>"}},
 	"mcp-forwarder":       {{"anvilkit.mcp.>", "$JS.API.INFO", "$JS.API.STREAM.INFO.ANVILKIT_MCP"}, {"_INBOX.>"}},
@@ -69,10 +70,11 @@ func relayPublish(stream string) []string {
 		"$JS.API.CONSUMER.MSG.NEXT." + stream + ".>", "$JS.API.CONSUMER.DURABLE.CREATE." + stream + ".>", "$JS.ACK." + stream + ".>"}
 }
 
-// The Valkey ACL users: the worker consumes every owner's queue, each relay
-// writes only its owner's; none may run the dangerous commands (FLUSHALL,
-// KEYS, CONFIG, DEBUG, …) beyond INFO, which BullMQ reads for the server
-// version. admin is the test's own (FLUSHDB between scenarios, ACL rotation).
+// queueACL holds the Valkey ACL users: the worker consumes every owner's
+// queue, each relay writes only its owner's; none may run the dangerous
+// commands (FLUSHALL, KEYS, CONFIG, DEBUG, …) beyond INFO, which BullMQ reads
+// for the server version. admin is the test's own (FLUSHDB between
+// scenarios, ACL rotation).
 var queueACL = map[string]string{
 	"worker":          "~anvilkit:* &anvilkit:* +@all -@dangerous +info",
 	"relay-knowledge": "~anvilkit:knowledge:* &anvilkit:knowledge:* +@all -@dangerous +info",

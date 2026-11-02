@@ -1,10 +1,10 @@
 //go:build integration
 
-// Package integration proves the P05 LocalCheck control chain on the real
-// development foundation (deploy/dev): PostgreSQL 17, Temporal 1.31.2 and a
-// kind cluster. It builds and runs the three replacement binaries as
-// separate processes and drives them only through the public API, the
-// Control database (read-only assertions) and the Kubernetes API.
+// Package integration holds the parent's cross-service scenarios on the real
+// development foundation (deploy/dev): PostgreSQL 17, Temporal 1.31.2, kind.
+// Its harness (this file) runs the Control, API and Workflow binaries as
+// separate processes; TestLocalCheckChain (P05) drives them only through the
+// public API, the Control database (read-only) and the Kubernetes API.
 //
 //	. .local/dev/env.sh && go test -tags integration -count=1 ./...
 package integration
@@ -114,7 +114,7 @@ func repoRoot(t *testing.T) string {
 
 var integrationPort atomic.Uint32
 
-// Keep listener reservations outside Linux's ephemeral client-port range.
+// freePort picks a loopback port outside Linux's ephemeral client-port range.
 // The OS must still confirm availability; already owned listeners are skipped.
 func freePort(t *testing.T) string {
 	t.Helper()

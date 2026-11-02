@@ -3,8 +3,9 @@
 # nodes whose zone labels are simulated failure domains on one host). The
 # chart is owned by the service repository; this file is the parent's
 # environment combination. The image digest comes from the release manifest
-# (tools/release-artifacts.py) through deploy/gitops; Secrets are created by
-# deploy/qualification/bootstrap.py and never enter Git. The replica, HPA,
+# (tools/release-artifacts.py) through deploy/gitops; the credentials reach the
+# Pods from OpenBao through the CSI driver (P0.6; bootstrap.py writes them
+# there) and never enter Git. The replica, HPA,
 # disruption, placement and pool limits are the ones deploy/gitops/lock.yaml
 # declares for this environment (tools/check-deployment-lock.py).
 image:
@@ -47,7 +48,8 @@ owners:
   mcp:
     address: anvilkit-agent-mcp.anvilkit-apps.svc.cluster.local:9106
 # Telemetry (P23-06): spans to the node-local Collector (anvilkit-telemetry,
-# internalTrafficPolicy Local), metrics scraped from the annotated Pod's health port.
+# internalTrafficPolicy Local); Prometheus scrapes the Pod's health port
+# through the anvilkit-observability chart's PodMonitors (P3.6).
 podAnnotations:
   prometheus.io/scrape: "true"
 telemetry:

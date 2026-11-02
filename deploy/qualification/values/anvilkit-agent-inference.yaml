@@ -3,8 +3,8 @@
 # nodes whose zone labels are simulated failure domains on one host). The
 # chart is owned by the service repository; this file is the parent's
 # environment combination. The image digest comes from the release manifest
-# (tools/release-artifacts.py) through deploy/gitops; Secrets are created by
-# deploy/qualification/bootstrap.py and never enter Git. The replica, HPA,
+# (tools/release-artifacts.py) through deploy/gitops; the service carries no
+# credential beyond its workload certificate (anvilkit-pki). The replica, HPA,
 # disruption, placement and pool limits are the ones deploy/gitops/lock.yaml
 # declares for this environment (tools/check-deployment-lock.py).
 image:

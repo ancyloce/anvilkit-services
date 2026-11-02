@@ -37,7 +37,9 @@ worker:
   attempts: 3
   backoff: 5s
   concurrency: 4
-  handler_timeout: 5m
+  # Above the parser profile's 600 s deadline plus Knowledge's 30 s grace: a
+  # slow parse ends on the Job's deadline (Knowledge's verdict), not here.
+  handler_timeout: 12m
   heartbeat_interval: 15s
   lease_seconds: 60
   lock_duration: 60s

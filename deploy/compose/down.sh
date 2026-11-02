@@ -1,7 +1,8 @@
 #!/bin/sh
-# Stops the Compose placement. Containers are removed; the data volumes
-# (postgres, minio, nats, valkey-queue, qdrant) stay unless --volumes is given,
-# and the secrets and certificates under ${ANVILKIT_HOME} always stay.
+# Stops the Compose placement. Containers are removed; the named volumes of
+# compose.yaml (the data stores and the Pagix double's directory) stay unless
+# --volumes is given, and the secrets and certificates under ${ANVILKIT_HOME}
+# always stay.
 set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)
 export ANVILKIT_HOME=${ANVILKIT_HOME:-/srv/anvilkit}

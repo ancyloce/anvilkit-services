@@ -20,12 +20,12 @@ import (
 )
 
 // TestRelease is P21's acceptance run on the development foundation
-// (DEVELOPMENT_ONLY: the Pagix review, publication and activation ports
-// are the Workflow's filesystem double until ENV-07; the Studio host is
-// not qualified, ENV-08). It starts the API, one Control and one Workflow
-// worker (the certification runs the reviewed validator Job in kind; up.sh
-// migrates Control to 00014), saves fixed Hero sources on fresh lineages
-// through preview builds and releases their saved revisions:
+// (DEVELOPMENT_ONLY: the Pagix review, publication and activation ports are
+// the Workflow's filesystem double until ENV-07; the Studio host is not
+// qualified, ENV-08). It starts the API, one Control and one Workflow worker
+// (the certification runs the reviewed validator Job in kind; up.sh applies
+// Control's migrations, 00014 included), saves fixed Hero sources on fresh
+// lineages through preview builds and releases their saved revisions:
 //
 //	A  the exact subject approved after the wait rolled over (continue as
 //	   new); the browser publication's and the activation's answers are

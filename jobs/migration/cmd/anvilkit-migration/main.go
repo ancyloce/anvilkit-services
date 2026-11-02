@@ -1,8 +1,8 @@
 // anvilkit-migration is the migration Job class (architecture.md naming: job
-// kind "migration") of the domains without a service repository yet
-// (knowledge, mcp; Control migrates through its own repository's Job). It
-// applies one owned domain's schema with the domain's migrator role and
-// exits. It never reads legacy tables or runtime config.
+// kind "migration") of the domains whose service repositories do not own
+// their migrations yet (knowledge, mcp; Control migrates through its own
+// repository's Job). It applies one owned domain's schema with the domain's
+// migrator role and exits. It never reads legacy tables or runtime config.
 //
 //	anvilkit-migration -domain knowledge (-dsn "$ANVILKIT_MIGRATION_DSN" | -dsn-file "$ANVILKIT_MIGRATION_DSN_FILE") [-development] [-to N -destructive] [-status]
 //

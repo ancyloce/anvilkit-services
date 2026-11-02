@@ -32,7 +32,7 @@ import (
 // an operation against the brief is admitted (permit, active deadline),
 // its scope checked, funded and leased under stable occurrences, and its
 // codegen launch is refused by the launcher because the development team
-// profile (state development since P2.4) is not enabled in this
+// profile (state development, P2.4) is not enabled in this
 // environment (kubernetes.enabled_profiles): the operation fails
 // PROFILE_UNQUALIFIED with its lease released and its permit freed.
 // Nothing here claims candidate readiness: that needs a qualified Job

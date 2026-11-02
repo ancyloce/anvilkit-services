@@ -1,10 +1,10 @@
 # DEVELOPMENT_ONLY build of anvilkit-job-access-sidecar against the contracts
 # checkout of this parent repository (build context: the parent root). The
 # sidecar's own Dockerfile (jobs/shared/access-sidecar/Dockerfile) builds
-# from its repository alone against the published contracts module; until
-# a contracts release that carries ExecutionService.GetInstance is
-# published, that build cannot succeed, and this file substitutes the
-# checkout through a replace directive that exists only inside this build.
+# from its repository alone against the published contracts module, and
+# deploy/dev/images.sh uses that build; this file substitutes the checkout
+# through a replace directive that exists only inside this build (contracts
+# changes not yet published), and nothing in this repository invokes it.
 FROM golang:1.27.2-alpine@sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900924f0504e7e27e12d AS build
 ARG GOPROXY=https://proxy.golang.org,direct
 ENV GOWORK=off CGO_ENABLED=0 GOPROXY=$GOPROXY

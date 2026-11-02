@@ -3,8 +3,9 @@
 # with BuildKit SLSA provenance, scans it (Trivy: a fixable CRITICAL or HIGH
 # finding blocks), attaches an SPDX SBOM attestation, signs it keylessly with
 # this workflow's OIDC identity (Sigstore, transparency log), pushes it to the
-# release registry by digest, packages and signs the eight service charts, and
-# writes the release manifest. tools/release-artifacts.py derives the status:
+# release registry by digest, and writes the release manifest (the service
+# charts only when --only selects them; see the build step).
+# tools/release-artifacts.py derives the status:
 # SIGNED only for a clean, tagged, provenance-bearing, keylessly signed build;
 # BLOCKED (and this job fails) on any finding. A SIGNED manifest and its
 # evidence are attached to the tag's GitHub release; deploy/gitops/publish.py
@@ -69,14 +70,16 @@ jobs:
       - name: Build, scan, SBOM, sign and attest (refuses dirty inputs; BLOCKED on any finding)
         env:
           IDENTITY: https://github.com/${{ github.workflow_ref }}
-        # --only names the ten owned images (and the eight charts of the same
-        # names) and the fixed Job images, which are taken at the digests their
-        # reviewed profiles pin (contracts/jobs/profiles.json, re-pinned on
-        # 2026-10-27 to the job-images releases jobs-v0.1.6 and jobs-v0.1.9) from
-        # the registry named here, then scanned and signed again; the platform
-        # mirror (pause) is still left out. DEC-033: the owned service images
-        # build three at a time and reuse BuildKit's layer cache kept beside
-        # each image (<image>:buildcache; a cache failure never fails a build);
+        # --only names the owned service images (OWNED in
+        # tools/release-artifacts.py) and the fixed Job images, which are taken at
+        # the digests their reviewed profiles pin (contracts/jobs/profiles.json,
+        # re-pinned after each job-images release) from the registry named here,
+        # then scanned and signed again (busybox, the third-party LocalCheck
+        # fixture, is scanned only). It names no chart: under --only the tool
+        # selects a chart as <name>-chart, so no service chart is packaged. The
+        # platform mirror (pause) is not named either. DEC-033: the owned service
+        # images build three at a time and reuse BuildKit's layer cache kept
+        # beside each image (<image>:buildcache; a cache failure never fails a build);
         # scans and signing stay one image at a time, and a scan or verification
         # that fails on a transient transport error is retried twice. Removing
         # --build-cache and --build-jobs 3 restores the previous builds.

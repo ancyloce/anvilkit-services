@@ -168,8 +168,8 @@ flows:
   - {from: postgresBusiness, toExternal: backups}
   - {from: postgresTemporal, toExternal: backups}
   # Telemetry: OTLP from the services to the Collector and its Kubernetes
-  # attributes; since P3.6 Prometheus scrapes the metrics listeners (the
-  # Collector exports traces and logs to Tempo and Loki inside the namespace).
+  # attributes; Prometheus scrapes the metrics listeners (P3.6; the Collector
+  # exports traces and logs to Tempo and Loki inside the namespace).
   - {from: api, to: collector, ports: [4317, 4318]}
   - {from: control, to: collector, ports: [4317, 4318]}
   - {from: workflow, to: collector, ports: [4317, 4318]}

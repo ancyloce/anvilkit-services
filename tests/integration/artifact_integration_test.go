@@ -195,7 +195,7 @@ func TestArtifactTransfer(t *testing.T) {
 	require.Zero(t, actualSize)
 
 	// The public contract is validated at the edge: a class outside the
-	// reviewed catalog never reaches Control (npm is supported since P10).
+	// reviewed catalog never reaches Control.
 	code, out = e.call("POST", "/api/v1/artifacts/transfers", tokenA, `{"commandId":"xfer-`+run+`-unknown","class":"not-reviewed","expectedDigest":"`+digestOf("x")+`","expectedSize":"1","mediaType":"application/octet-stream"}`)
 	require.Equal(t, 400, code, "an unreviewed class must be rejected before any upload capability is issued")
 }

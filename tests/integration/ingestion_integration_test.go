@@ -29,20 +29,6 @@ import (
 	knowledgev1 "github.com/ancyloce/anvilkit-agent-contracts/go/anvilkit/knowledge/v1"
 )
 
-// P15 on the development foundation: a document registered through
-// Knowledge's SourceService (the actual bytes verified, the trusted ACL
-// and the knowledge-ingest request committed together) is claimed by the
-// Background Worker, whose handler asks Knowledge's IngestService to launch
-// the fixed Docling parser Job in anvilkit-parsing (kind, the parsing
-// Kyverno policies, the launcher's least Role); Knowledge reads and
-// verifies the Job's result bytes and the owner accepts the chunks with
-// their provenance. Then the refusals: a DOCX archive bomb rejected inside
-// the Job, bytes that differ from their description, a caller-assigned ACL,
-// a non-claimant driving a parse, a tampered Job refused by admission even
-// with the launcher's own credentials; deletion blocking readability; the
-// accepted chunk text embedded by the Inference service under the locked
-// profile with digest binding.
-
 const mcImage = "minio/mc@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727"
 
 func sha(b []byte) string {
@@ -278,6 +264,20 @@ func inputDigest(parts ...string) string {
 	return "sha256:" + hex.EncodeToString(h.Sum(nil))
 }
 
+// TestIngestion runs P15 on the development foundation: a document
+// registered through Knowledge's SourceService (the actual bytes
+// verified, the trusted ACL and the knowledge-ingest request
+// committed together) is claimed by the Background Worker, whose
+// handler asks Knowledge's IngestService to launch the fixed Docling
+// parser Job in anvilkit-parsing (kind, the parsing Kyverno policies,
+// the launcher's least Role); Knowledge reads and verifies the Job's
+// result bytes and the owner accepts the chunks with their
+// provenance. Then the refusals: a DOCX archive bomb rejected inside
+// the Job, bytes that differ from their description, a
+// caller-assigned ACL, a non-claimant driving a parse, a tampered Job
+// refused by admission even with the launcher's own credentials;
+// deletion blocking readability; the accepted chunk text embedded by
+// the Inference service under the locked profile with digest binding.
 func TestIngestion(t *testing.T) {
 	laneEnv(t, "ANVILKIT_KNOWLEDGE_OBJECTS_ENDPOINT", "ANVILKIT_KNOWLEDGE_OBJECTS_STAGE_ENDPOINT", "ANVILKIT_KNOWLEDGE_OBJECTS_CREDENTIALS_FILE",
 		"ANVILKIT_KNOWLEDGE_KUBECONFIG", "ANVILKIT_KNOWLEDGE_IMAGE_REGISTRY", "ANVILKIT_DEV_KNOWLEDGE_MIGRATOR_DSN", "ANVILKIT_DEV_INFERENCE_URL")
@@ -554,8 +554,8 @@ func TestIngestion(t *testing.T) {
 		require.NoError(t, err)
 		_, err = in.sources.GetSource(context.Background(), &knowledgev1.GetSourceRequest{Scope: scope, SourceId: mdSource.GetSourceId()})
 		require.Equal(t, codes.NotFound, status.Code(err))
-		// P2.8: source.authorization-revoked left the event catalog (no
-		// consumer); the read gate and the removal inventory carry it.
+		// P2.8: the event catalog has no source.authorization-revoked (no
+		// consumer); the read gate and the removal inventory carry the revocation.
 		events := l.query(migrator, `SELECT payload::text AS p FROM outbox WHERE payload::text LIKE '%' || $1 || '%'`, "anvilkit.knowledge.source.authorization-revoked")
 		require.Empty(t, events)
 		removals := l.query(migrator, `SELECT source_id FROM source_removals WHERE source_id = $1`, mdSource.GetSourceId())

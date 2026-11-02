@@ -7,8 +7,8 @@
 # allowlist and server-name verification are unchanged. Keys never leave
 # ${ANVILKIT_HOME}/certs (0700); each principal directory is 0755 with 0644 files
 # because the containers' own users (65532, 10001) read them through a bind mount
-# whose parent is not traversable on the host. Idempotent: an unexpired leaf is
-# kept; `renew` reissues every leaf.
+# whose parent is not traversable on the host. Idempotent: a leaf valid for at
+# least 30 more days is kept; `renew` reissues every leaf.
 #
 #   sh deploy/compose/pki.sh [issue|renew|verify]
 set -eu

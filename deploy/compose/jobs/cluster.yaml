@@ -1,6 +1,6 @@
 # The Job namespaces of the Compose placement's Jobs node (plan 0006 step 5),
-# applied by `jobs-node.sh cluster` after the admission chart and the
-# default-deny policies of deploy/policies/network.
+# applied by `jobs-node.sh cluster` once Kyverno runs and before the
+# default-deny policies of deploy/policies/network and the admission chart.
 #
 # The Job pods reach the Compose services the way the qualified topology lets
 # them (deploy/qualification/platform/network: jobs -> control 9101, model proxy

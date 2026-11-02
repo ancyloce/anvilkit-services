@@ -13,13 +13,13 @@ Speed (DEC-033):
 - --build-jobs N: builds N owned service images at once. Scans and signing stay one image at a time, and Job images, which build on one another, are built one at a time.
 - A scan or verification that fails on a transient registry or scanner transport error is retried twice (retried, TRANSIENT). Nothing else is retried, so the gate stays fail-closed.
 
-Owned service images (the eight services, the Knowledge forwarder sidecar and the
+Owned service images (OWNED: the eight services, the Knowledge forwarder sidecar and the
 knowledge/mcp migration Job) are built from each repository's own Dockerfile and pushed to
 the registry; the fixed Job images are taken at the exact digests their reviewed profiles
 pin (contracts/jobs/profiles.json), never rebuilt; the third-party platform images
 (PLATFORM) are copied into the registry by digest. For every image, by digest: an SPDX
 SBOM and a vulnerability and license scan (Trivy), a Cosign signature and a signed SBOM
-attestation, both verified. The eight service charts are packaged, pushed as OCI artifacts
+attestation, both verified. The service charts (CHARTS) are packaged, pushed as OCI artifacts
 and signed. Everything is bound in outputs/qualification/<run>/release/release-manifest.json
 together with each source's repository head, cleanliness and build-context digest, the
 parent's release tag and the pinned tool images.
@@ -110,7 +110,7 @@ OWNED = [
 JOBS = [
     # The validator publishes as anvilkit-job-validator (its repository's name): the GHCR
     # name anvilkit-validator is held by a hand-made package workflows cannot write
-    # (deleted 2026-10-26, still reserved). The profiles take the new name when they are re-pinned.
+    # (deleted 2026-10-26, still reserved). The profiles pin the validator under this name.
     ("anvilkit-job-validator", "jobs/validator", ["--build-context", "contracts=contracts"], None),
     ("anvilkit-job-access-sidecar", "jobs/shared/access-sidecar", [], None),
     ("anvilkit-codegen", "jobs/codegen/supervisor", [], None),

@@ -14,7 +14,8 @@ then:
     image digests and references, release files) and packages the anvilkit-environment
     chart (deploy/gitops/environment) with the resolved values and the environment
     values files as anvilkit-environment-<environment> into <registry>/environments;
-  * signs every pushed chart with the release key (no transparency log) and verifies it;
+  * signs every pushed chart with the combination's signing (the development default: the
+    release key, no transparency log) and verifies it;
   * writes outputs/qualification/<RUN>/gitops/{environment-manifest.json,root-application.yaml}.
 
 Release gate (P3.2): nothing is published from a release manifest that has findings or a

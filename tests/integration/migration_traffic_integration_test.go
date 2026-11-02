@@ -28,9 +28,9 @@ import (
 // can serve as image N: ddc688d, which made a replica accept a schema ahead
 // of its own, does not build alone, and 2d39e01 builds but withholds
 // readiness on a newer schema (a Kubernetes rollout would take it out of
-// its Service mid-migration). Both are built from the Control repository's
-// own history (git archive into a temporary directory, no worktree) with
-// the module requirements they were committed with.
+// its Service mid-migration). Images N and N+1 are both built from the
+// Control repository's own history (git archive into a temporary directory,
+// no worktree) with the module requirements they were committed with.
 const controlRelease = "29ddee8caa5041348b23430d588a1b7067083aea"
 
 // buildControlAt builds the Control service and its migration command of

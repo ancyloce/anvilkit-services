@@ -20,27 +20,27 @@ and trial report is bound by its sha256; the report binds the registry digest
 and the inventory (repository revisions and working-tree digests, contract,
 profile, lockfile and image digests, toolchains).
 
-Statuses: a case is PASS, FAIL or NOT_RUN (its environment is missing, or a test or
-subtest it ran skipped itself; never a pass). Since P3.3 (plan 0004) every runner
-reports through a machine-readable result: go suites through `go test -json`, where
-any skipped test or subtest of the selection makes the case NOT_RUN with the skip
-reasons and the MISSING_INPUT tokens the test printed; pnpm suites, and command
-suites that declare `"report": "vitest-json"`, through Vitest's JSON reporter (a
-skipped, pending or todo test, or no test at all, is NOT_RUN); command suites that
-declare `"report": "exit-code"` are the project's own checkers with the 0/1/2
-contract (2 = could not run), and a skip marker in their output still makes them
-NOT_RUN. A requirement's local status is FAIL when any of its registered cases
-failed, NOT_RUN when any did not run — including every registered case this run
-did not select — and PASS only when every registered case mapped to it ran and
-passed; its qualification status stays NOT_RUN while any NOT_RUN entry names it. A
-gate closes only when no NOT_RUN entry names it and every registered case that
-contributes to it ran in this run and passed; synthetic fixtures and local
-placements never close one by themselves. The release candidate is qualifiable
-only when no reason against it exists, a BLOCKED or otherwise unsigned release
-included. Trials are aggregated from the evaluators' own reports: pass@k (a case
-passed in at least one of its k trials) and pass^k (in all of them), failure
-classes and latency percentiles over every trial, none selected or dropped.
-Monetary cost is reported only where a priced route exists (none does: ENV-06).
+Statuses: a case is PASS, FAIL or NOT_RUN (its environment is missing, or a test or subtest
+it ran skipped itself; never a pass). Every runner reports through a machine-readable result
+(P3.3, plan 0004): go suites through `go test -json`, where any skipped test or subtest of
+the selection makes the case NOT_RUN with the skip reasons and the MISSING_INPUT tokens the
+test printed; pnpm suites, and command suites that declare `"report": "vitest-json"`,
+through Vitest's JSON reporter (a skipped, pending or todo test, or no test at all, is
+NOT_RUN); command suites that declare `"report": "exit-code"` are the project's own checkers
+with the 0/1/2 contract (2 = could not run), and a skip marker in their output still makes
+them NOT_RUN. A requirement is judged by its named assertions (the registry's "assertions",
+P3.4; a registry without them, by its registered cases): its local status is FAIL when any
+of them failed, NOT_RUN when it has none or any did not run — including those of every
+registered case this run did not select — and PASS only when every one ran and passed; its
+qualification status is PASS only when its local status is PASS and every gate it maps to
+closes (its traceability gates, its cases' gates and the gates of the NOT_RUN entries that
+name it). A gate closes only when no NOT_RUN entry names it and every registered case that
+contributes to it ran in this run and passed; synthetic fixtures and local placements never
+close one by themselves. The release candidate is qualifiable only when no reason against it
+exists, a BLOCKED or otherwise unsigned release included. Trials are aggregated from the
+evaluators' own reports: pass@k (a case passed in at least one of its k trials) and pass^k
+(in all of them), failure classes and latency percentiles over every trial, none selected or
+dropped. Monetary cost is reported only where a priced route exists (none does: ENV-06).
 
 --self-test proves those rules on synthetic inputs; --reclassify RUN_DIR applies
 them to the raw logs of an earlier run and lists every status that changes.
@@ -352,7 +352,7 @@ def tool_version(argv: list[str]) -> str:
 def release_reasons(manifests: list[pathlib.Path] | None = None) -> list[str]:
     """What the newest P23 release manifest (tools/release-artifacts.py) says about the
     candidate's signed images, SBOMs and charts. Any status other than a signed one is a
-    reason against qualification; a BLOCKED manifest also lists its findings (P3.3)."""
+    reason against qualification; a BLOCKED manifest's reason also counts its findings (P3.3)."""
     if manifests is None:
         manifests = sorted((ROOT / "outputs" / "qualification").glob("*/release/release-manifest.json"))
     if not manifests:

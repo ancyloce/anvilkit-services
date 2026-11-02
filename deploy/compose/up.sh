@@ -137,7 +137,8 @@ setup() {
 
 migrate() {
   # Roles created by postgres-init.sh exist on a fresh data directory; an
-  # existing database gets the P14/P17 identities here, idempotently.
+  # existing database gets the relay, forwarder, Store and cleanup identities
+  # (P14, P17, P2.7) here, idempotently.
   PW=$(sed -n 's/^ANVILKIT_DEV_PASSWORD=//p' "$SECRETS/postgres.env")
   for role in anvilkit_knowledge_relay anvilkit_mcp_relay anvilkit_knowledge_forwarder anvilkit_knowledge_store_migrator anvilkit_knowledge_store anvilkit_knowledge_cleanup; do
     $COMPOSE exec -T postgres psql -v ON_ERROR_STOP=1 -U postgres -d postgres -tAc "SELECT 1 FROM pg_roles WHERE rolname = '$role'" | grep -qx 1 \

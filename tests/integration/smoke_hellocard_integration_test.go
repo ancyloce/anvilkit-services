@@ -46,7 +46,7 @@ const (
 	// (scale-6 USD: 200000 = USD 0.20).
 	smokeExposurePerSend = int64(200_000)
 	// smokeCeiling is the pool cap of the run (USD 5, the authorized
-	// live-provider ceiling of deploy/pi-upgrade/README.md).
+	// live-provider ceiling of 2026-10-12, recorded under ENV-06).
 	smokeCeiling = int64(5_000_000)
 )
 

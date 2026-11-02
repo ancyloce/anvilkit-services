@@ -32,8 +32,8 @@ type knowledgeProc struct {
 	logs   string
 	conn   *grpc.ClientConn
 	memory knowledgev1.MemoryServiceClient
-	// model proposes as the access sidecar: since P2.7 a proposal's origin
-	// is its caller's, and the API workload serves users only.
+	// model proposes as the access sidecar: a proposal's origin is its
+	// caller's (P2.7), and the API workload serves users only.
 	model knowledgev1.MemoryServiceClient
 	once  sync.Once
 }

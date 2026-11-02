@@ -22,8 +22,8 @@ import (
 )
 
 // recoveryControlConfig is the dispatch configuration of the recovery
-// scenarios. Operator actions are no longer a configured fixture (P0.3):
-// each request carries the operator's verified scope (operatorScope).
+// scenarios. Operator actions are not a configured fixture (P0.3): each
+// request carries the operator's verified scope (operatorScope).
 func recoveryControlConfig(t *testing.T, root, dir string) string {
 	t.Helper()
 	base, err := os.ReadFile(dispatchControlConfig(t, root, dir))
@@ -58,18 +58,18 @@ func recoveryWorkerConfig(t *testing.T, root, dir string) string {
 	return path
 }
 
-// TestRecoveryReconciliation runs the P07 loop end to end on the
-// development foundation: two Control processes on one database and one
-// inventory directory, the real Workflow worker driving RecoveryWorkflow,
-// a countable upstream standing in for the provider, and a database that
-// loses a dispatch after its single physical send (the row is removed as
-// the migrator, which is what a restore to an earlier point leaves behind
-// while the inventory keeps the obligation). The operation that carries
-// the send is also relayed to a LocalCheck run of its own, so the run's
-// launch on the kind cluster is fenced mid-flight by the recovery: its
-// finding stays unresolved until the launcher's evidence (observation
-// recorded, then the key confirmed empty) or the canceled run's own close
-// with definite cleanup settles it; presence alone never does.
+// TestRecoveryReconciliation runs the P07 loop end to end on a disposable
+// Control database and the foundation's kind cluster: two Control processes
+// on one database and one inventory directory, the real Workflow worker
+// driving RecoveryWorkflow, a countable upstream standing in for the
+// provider, and a database that loses a dispatch after its single physical
+// send (the row is removed as the migrator, which is what a restore to an
+// earlier point leaves behind while the inventory keeps the obligation). The
+// operation that carries the send is also relayed to a LocalCheck run of its
+// own, so the run's launch on the kind cluster is fenced mid-flight by the
+// recovery: its finding stays unresolved until the launcher's evidence
+// (observation recorded, then the key confirmed empty) or the canceled run's
+// own close with definite cleanup settles it; presence alone never does.
 func TestRecoveryReconciliation(t *testing.T) {
 	isolatedControlDatabase(t)
 	root := repoRoot(t)

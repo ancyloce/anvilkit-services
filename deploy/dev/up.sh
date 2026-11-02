@@ -1,12 +1,12 @@
 #!/bin/sh
-# Brings up the DEVELOPMENT_ONLY foundation: PostgreSQL 17 + Temporal 1.31.2 +
-# the MinIO object stores (the versioned artifact bucket of P08, the shared
-# inventory bucket of the in-cluster Control replicas and the Model Proxy's
-# record/evidence bucket of P11) in the anvilkit-dev
-# Compose project, the three owned schemas (Control's through its own
-# repository's migration Job, knowledge/mcp through jobs/migration), and a
-# kind cluster with the least-privilege launcher identity for host-side
-# workers, rendered from the Workflow chart that owns it. Idempotent.
+# Brings up the DEVELOPMENT_ONLY foundation: the anvilkit-dev Compose project
+# of deploy/dev/compose.yaml (PostgreSQL 17, Temporal 1.31.2, the MinIO object
+# stores of minio-setup.sh, NATS JetStream, the queue and cache Valkeys,
+# Qdrant and the OIDC provider), the three owned schemas (Control's through
+# its own repository's migration Job, knowledge/mcp through jobs/migration),
+# and a kind cluster with the development PKI, the Job-admission chart and
+# the least-privilege launcher identities for host-side workers, rendered
+# from the Workflow and Knowledge charts that own them. Idempotent.
 # Writes only under .local/dev/ (gitignored). Never touches anvilkit-local.
 set -eu
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
@@ -98,9 +98,11 @@ docker compose -f "$ROOT/deploy/dev/compose.yaml" run --rm --no-deps nats-setup 
 # every other DSN must be sslmode=verify-full).
 (cd "$ROOT/services/agent/control" && GOWORK=off go run ./cmd/anvilkit-migration -development \
   -dsn "postgres://anvilkit_control_migrator:${PW}@127.0.0.1:25432/anvilkit_control?sslmode=disable")
-# P14: the owner queue relay identities and the Knowledge outbox forwarder
-# identity that migration 00002 grants to (postgres-init.sh creates them on a
-# fresh data directory; an existing foundation gets them here, idempotently).
+# The identities beyond app and migrator that the domain migrations grant to:
+# the owner queue relays and the Knowledge outbox forwarder (P14, migration
+# 00002), Knowledge's Store migrator and Store roles (P17) and its cleanup
+# identity (P2.7). postgres-init.sh creates them on a fresh data directory;
+# an existing foundation gets them here, idempotently.
 for role in anvilkit_knowledge_relay anvilkit_mcp_relay anvilkit_knowledge_forwarder anvilkit_knowledge_store_migrator anvilkit_knowledge_store anvilkit_knowledge_cleanup; do
   docker compose -f "$ROOT/deploy/dev/compose.yaml" exec -T postgres psql -v ON_ERROR_STOP=1 -U postgres -d postgres -tAc \
     "SELECT 1 FROM pg_roles WHERE rolname = '$role'" | grep -qx 1 \
@@ -149,7 +151,7 @@ sh "$ROOT/deploy/dev/certs.sh" >/dev/null
 # is that chart's ServiceAccount, Role and RoleBinding rendered under the
 # release name anvilkit-agent-workflow-host into anvilkit-components; the
 # in-cluster release (deploy/dev/workflow-chart.sh) creates its own from the
-# same templates. The dev-script-managed copy of earlier passes
+# same templates. The copy earlier versions of this script managed
 # (ServiceAccount anvilkit-agent-workflow and Role/RoleBinding
 # anvilkit-agent-workflow-launcher in anvilkit-components, applied by kubectl)
 # is removed so the chart release can own those names.
@@ -175,8 +177,8 @@ kubectl --context kind-anvilkit-dev -n anvilkit-components wait certificate/anvi
 # them qualifies gVisor, the RKE2/Cilium combination or a production registry):
 # a local image registry on the kind network reached by digest through the
 # node's containerd hosts configuration, the components node pool label, the
-# candidate syscall profile on the node, Kyverno 1.19.1 and the P09 policies,
-# and the MinIO artifact store attached to the kind network so a Job's sidecar
+# candidate syscall profile on the node, Kyverno 1.19.1 and the Job-admission
+# chart (deploy/policies/chart), and the MinIO artifact store attached to the kind network so a Job's sidecar
 # can reach the presigned upload it was issued.
 NODE=anvilkit-dev-control-plane
 REGISTRY_IMAGE=registry:3@sha256:1be55279f18a2fe1a74edf2664cac61c1bea305b7b4642dab412e7affdcb3e33
@@ -233,8 +235,8 @@ helm --kube-context kind-anvilkit-dev upgrade --install anvilkit-job-admission "
   -f "$ROOT/deploy/dev/values/anvilkit-job-admission.yaml" --wait --timeout 4m >/dev/null
 kubectl --context kind-anvilkit-dev -n kube-system rollout status ds/anvilkit-seccomp-installer --timeout=180s >/dev/null
 # The development foundation's own network isolation of the Job namespaces:
-# default deny and the egress rule generated below from this machine's
-# addresses (its Control and object store run outside the cluster).
+# default deny, and for the parser Pods the object-store egress rule generated
+# below from this machine's addresses (kindnet enforces neither).
 kubectl --context kind-anvilkit-dev apply -f "$ROOT/deploy/policies/network/anvilkit-components-egress.yaml" -f "$ROOT/deploy/policies/network/anvilkit-parsing-egress.yaml" >/dev/null
 # The foundation's PostgreSQL, Temporal, MinIO and NATS join the kind network
 # so the Control and Workflow releases in the cluster (and a Job's sidecar)
@@ -393,7 +395,9 @@ export ANVILKIT_WORKFLOW_IMAGE_REGISTRY="localhost:5001"
 # P09 (DEVELOPMENT_ONLY): the kind network gateway (a host-side Control that
 # listens on 0.0.0.0 is reached from a Job Pod at this address), the artifact
 # store as the kind network sees it (Control's S3 endpoint for a run whose
-# uploads come from inside the cluster) and the Kyverno CLI for offline checks.
+# uploads come from inside the cluster) and the development registry of the
+# Job images (deploy/dev/images.sh); ANVILKIT_KYVERNO_CLI below names the
+# Kyverno CLI for offline checks.
 export ANVILKIT_DEV_KIND_GATEWAY="${KIND_GATEWAY}"
 export ANVILKIT_DEV_ARTIFACTS_ENDPOINT_CLUSTER="http://${MINIO_KIND_IP}:9000"
 export ANVILKIT_DEV_REGISTRY="localhost:5001"

@@ -1,12 +1,12 @@
 #!/bin/sh
-# Offline and cluster checks of the P09 admission policies.
+# Offline and cluster checks of the Job-admission policies (deploy/policies/chart).
 #
 #   sh deploy/policies/check.sh              # offline: kyverno apply (CLI) against the launcher's fixtures and their mutations
 #   sh deploy/policies/check.sh --cluster    # in addition: server-side dry-run admission against the development cluster
 #
 # The fixtures are the launcher's renders (services/agent/workflow,
 # TestRenderPolicyFixtures; the parser's by Knowledge) committed under
-# deploy/policies/tests/resources. Since P3.3 this script never rewrites them:
+# deploy/policies/tests/resources. This script never rewrites them (P3.3):
 # it renders into a scratch directory, fails on any difference from the
 # committed files (drift between the launchers and the tested fixtures), and
 # tests the committed files; the negative cases are derived from them by
@@ -204,9 +204,9 @@ if [ "${1:-}" = "--cluster" ]; then
     expect=$("$PY" -c "import json,sys; print(json.load(open('$WORK/cases/expectations.json'))['$case'])")
     if { [ "$case" = valid-candidate-pod ] || [ "$case" = valid-validator-source-pod ] || [ "$case" = valid-preview-build-pod ] || [ "$case" = valid-team-pod ]; } && [ "$gvisor" = no ]; then
       # The API server refuses a Pod whose RuntimeClass does not exist: on a
-      # cluster without gVisor the candidate profile cannot be admitted at
-      # all, which is the state P09 records (the profile stays disabled);
-      # P2.4's preview-build-v1 and codegen-team-v1 Pods likewise.
+      # cluster without gVisor the Pods of the gVisor profiles (codegen-fixed-v1,
+      # validator-source-v1, preview-build-v1, codegen-team-v1; all disabled
+      # until G-04 qualifies the runtime) cannot be admitted at all.
       printf 'UNEXECUTED cluster %-29s no gVisor RuntimeClass on this cluster; the API server refuses the Pod before Kyverno decides\n' "$case"
       continue
     fi

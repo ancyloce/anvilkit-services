@@ -81,7 +81,7 @@ func identityEnv(t testing.TB, prefix, principal string) []string {
 
 // identityCreds is the mTLS client credential of a principal with standard
 // hostname verification against serverName (a DNS SAN of the server's
-// certificate); caBundle nil means the development CA.
+// certificate), trusting the development CA of the principal's files.
 func identityCreds(t testing.TB, principal, serverName string) credentials.TransportCredentials {
 	t.Helper()
 	certFile, keyFile, caFile := identityFiles(t, principal)

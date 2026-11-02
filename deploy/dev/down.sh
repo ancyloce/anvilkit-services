@@ -1,6 +1,7 @@
 #!/bin/sh
 # Tears down only the anvilkit-dev resources this profile created. Pass
-# --volumes to also delete the PostgreSQL data volume; .local/dev/ is kept.
+# --volumes to also delete the named data volumes of deploy/dev/compose.yaml;
+# .local/dev/ is kept.
 set -eu
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 export PATH="$PATH:$(go env GOPATH)/bin"

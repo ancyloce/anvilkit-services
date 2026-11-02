@@ -24,17 +24,17 @@ import (
 
 // TestStudioWorkbench is P20's acceptance run against the Studio host
 // (DEVELOPMENT_ONLY placement; ENV-08 gates the real host). It starts the
-// API, one Control and one Workflow worker on the disposable dependencies
-// of the development foundation (the preview build runs the reviewed
-// validator Job in kind; up.sh migrates Control to 00012), seeds one
-// preview_build on a fresh lineage of the Pagix source double from the
-// fixed Hero source, starts the separate preview origin, and runs the
-// Studio Playwright spec e2e/agent-workbench.spec.ts against a Studio dev
-// server that forwards to this API. The spec proves concurrent editing
-// with conflict preservation and rebase, frame replacement and disposal,
-// stale previews, CSS loading in the sandboxed frame, remote releases
-// loaded without a host rebuild, type collisions, lossless placeholders and
-// exact locks on save and reopen.
+// API, one Control and one Workflow worker on the development foundation
+// (its Control database; the preview build runs the reviewed validator Job
+// in kind; up.sh migrates Control to its newest migration, 00012's preview
+// builds included), seeds one preview_build on a fresh lineage of the Pagix
+// source double from the fixed Hero source, starts the separate preview
+// origin, and runs the Studio Playwright spec e2e/agent-workbench.spec.ts
+// against a Studio dev server that forwards to this API. The spec proves
+// concurrent editing with conflict preservation and rebase, frame
+// replacement and disposal, stale previews, CSS loading in the sandboxed
+// frame, remote releases loaded without a host rebuild, type collisions,
+// lossless placeholders and exact locks on save and reopen.
 //
 // ANVILKIT_STUDIO_DIR names the Studio app (default
 // ../anvilkit-studio/apps/studio next to this repository); port 3000 must be

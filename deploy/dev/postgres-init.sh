@@ -19,6 +19,7 @@ SQL
   # migration 00002); Control has neither. P17: the PostgresStore vendor
   # migration identity (00005 lets it create its schema) and the runtime
   # Store role (DML on that schema only, granted by the vendor migration).
+  # P2.7: the Knowledge cleanup identity (00011: purge and retention deletes).
   if [ "$domain" != control ]; then
     psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d postgres <<SQL
 CREATE ROLE anvilkit_${domain}_relay LOGIN PASSWORD '${ANVILKIT_DEV_PASSWORD}';

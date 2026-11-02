@@ -30,10 +30,10 @@ import (
 	"github.com/ancyloce/anvilkit-agent-contracts/go/modelproxyapi"
 )
 
-// modelProxyControlConfig is the P06 dispatch configuration plus the
-// reviewed fixture price and authorization of the Proxy's controlled route
-// (provider fixture, model fixture-model: what the Proxy's configuration
-// binds) and the recovery operator. No real price or provider is involved.
+// modelProxyControlConfig is recoveryControlConfig (the P06 dispatch
+// configuration) plus the reviewed fixture price and authorization of the
+// Proxy's controlled route (provider fixture, model fixture-model: what the
+// Proxy's configuration binds). No real price or provider is involved.
 func modelProxyControlConfig(t *testing.T, root, dir string) string {
 	t.Helper()
 	base, err := os.ReadFile(recoveryControlConfig(t, root, dir))
@@ -328,14 +328,14 @@ func (p *proxyProcess) stop() {
 	}
 }
 
-// modelCall is one caller's POST of the frozen transport: the SSE answer is
-// collected into frames; stopAfter ends the read early (a disconnect).
+// modelCallReply is the answer to one caller's POST: its status, and its SSE frames or body.
 type modelCallReply struct {
 	status int
 	frames []modelproxyapi.StreamFrame
 	body   []byte
 }
 
+// postModelCall is one caller's POST of the frozen transport; stopAfter ends the SSE read early (a disconnect).
 func postModelCall(t *testing.T, url, token string, req modelproxyapi.ModelCallRequest, stopAfter int) modelCallReply {
 	t.Helper()
 	raw, err := json.Marshal(req)

@@ -3,8 +3,9 @@
 # nodes whose zone labels are simulated failure domains on one host). The
 # chart is owned by the service repository; this file is the parent's
 # environment combination. The image digest comes from the release manifest
-# (tools/release-artifacts.py) through deploy/gitops; Secrets are created by
-# deploy/qualification/bootstrap.py and never enter Git. The replica, HPA,
+# (tools/release-artifacts.py) through deploy/gitops; the fixture principals
+# reach the Pods from OpenBao through anvilkit-secrets (P0.6; bootstrap.py
+# writes them there) and never enter Git. The replica, HPA,
 # disruption, placement and pool limits are the ones deploy/gitops/lock.yaml
 # declares for this environment (tools/check-deployment-lock.py).
 image:
@@ -41,7 +42,8 @@ auth:
   principalsSecret:
     name: anvilkit-agent-api-principals
 # Telemetry (P23-06): spans to the node-local Collector (anvilkit-telemetry,
-# internalTrafficPolicy Local), metrics scraped from the annotated Pod's metrics port.
+# internalTrafficPolicy Local); Prometheus scrapes the Pod's metrics port
+# through the anvilkit-observability chart's PodMonitors (P3.6).
 podAnnotations:
   prometheus.io/scrape: "true"
 telemetry:
@@ -60,8 +62,9 @@ identity:
   certificate:
     issuerRef:
       name: anvilkit-qualification-ca
-# The data plane of this environment is still plaintext (P0.6): each such
-# connection names its development mode and the top-level guard admits it;
-# the gRPC listener and clients stay mTLS.
+# DEVELOPMENT_ONLY (P0.6): the top-level guard admits the one
+# development-labelled connection left, the OTLP export
+# (telemetry.otlpTls.mode development, B-36); the gRPC listener and clients
+# stay mTLS.
 development:
   enabled: true

@@ -4,9 +4,9 @@
 Usage: python3 tools/check-docs.py [--root PATH] [--include-archive]
 
 Scope: README.md, AGENTS.md, CLAUDE.md, docs/README.md and every Markdown file under
-docs/architecture/ and, since P3.6, docs/operations/ (the runbooks). docs/archive/ is historical and is skipped unless --include-archive
-is given; its results are then printed under a separate heading and never affect the
-exit status.
+docs/architecture/ and docs/operations/ (the runbooks, P3.6). docs/archive/ is historical
+and is skipped unless --include-archive is given; its results are then printed under a
+separate heading and never affect the exit status.
 
 The documents under docs/ are local-only: the owner keeps them out of the repository, so a
 clone has no docs/ directory. Without it the root documents (README.md, AGENTS.md,
@@ -20,6 +20,7 @@ Checks:
   2. Fenced code blocks are balanced; every table row has the header's column count.
   3. Every relative link resolves to a file and every fragment resolves to an explicit
      `<a id>` or a generated heading anchor.
+  4. The generated status blocks match the checkout (tools/docs-status.py, P3.8).
 
 Contract sources are checked by tools/check-contracts.py. This script never writes files
 and never contacts a service; it establishes nothing about runtime behavior.

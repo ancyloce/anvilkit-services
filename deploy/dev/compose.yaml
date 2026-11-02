@@ -4,7 +4,7 @@
 # topology, never HA evidence and never a production layout; production uses
 # CloudNativePG clusters, a separately deployed Temporal (platform.md DD-10)
 # and the qualified object backends of C09 (the MinIO below is the S3 API of
-# the artifact store for P08 only; it is not RGW and qualifies no failure
+# the foundation's object stores only; it is not RGW and qualifies no failure
 # domain, placement or retention).
 name: anvilkit-dev
 
@@ -76,11 +76,12 @@ services:
 
   # The object stores: one S3-compatible API with the versioned artifact
   # bucket of P08 (anvilkit-artifacts, the foundation's root credentials in
-  # .local/dev/minio.env) and the shared inventory bucket of the Control
-  # replicas in the kind cluster (anvilkit-inventory, its own user and policy
-  # in .local/dev/minio-inventory.env), on its own volume. Host-side runs keep
-  # the filesystem inventory; either way the two permission boundaries are
-  # separate credentials.
+  # .local/dev/minio.env) and one bucket per further owner (the shared
+  # inventory of the Control replicas in the kind cluster, the Model Proxy's
+  # store, Knowledge's objects and removal inventory), each with its own user
+  # and policy (minio-setup.sh), on its own volume. Host-side Control runs
+  # keep the filesystem inventory; either way each permission boundary is a
+  # separate credential.
   minio:
     image: minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
     restart: unless-stopped

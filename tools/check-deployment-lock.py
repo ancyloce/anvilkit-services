@@ -13,8 +13,8 @@ probes on the service container, a termination grace above every shutdown bound 
 rendered configuration declares, and the exact per-replica pools (configuration keys
 from the rendered ConfigMap, fixed pools from their source lines). Each connection
 budget (pools x open generations x autoscaling maximum + reserves) must fit the
-cluster's max_connections. The lock must name all eight services and every DD-10 §3
-platform row with a production status of REQUIRED and its ENV inputs.
+cluster's max_connections. The lock must name all eight services (SERVICES) and every
+DD-10 §3 platform row (PLATFORM) with a production status of REQUIRED and its ENV inputs.
 
 Production fields that are REQUIRED are listed as NOT_VERIFIED; they never pass.
 Once ENV-01..ENV-10 supply them (P3.8), a production row is SUPPLIED with its source

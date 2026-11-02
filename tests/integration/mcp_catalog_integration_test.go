@@ -27,22 +27,6 @@ import (
 	mcpv1 "github.com/ancyloce/anvilkit-agent-contracts/go/anvilkit/mcp/v1"
 )
 
-// P18 on the development foundation: the private MCP catalog and the grant
-// barrier across real processes — MCP (its own lane database, NATS and
-// queue), one real Control process on the foundation's Control database, a disposable ContextForge v1.0.11 as the connection layer, and
-// a fixture MCP server built with the official Go MCP SDK. Asserted:
-// discovery through ContextForge binds the live descriptor (a listing that
-// disagrees with the live server, including its negotiated protocol
-// version, is refused); four-eyes review and role separation; a grant is
-// executable only after Control's receipt, and every registration boundary
-// (Control down, a registration applied whose answer was lost, MCP killed
-// with a pending grant) stays non-executable and completes under the
-// original command identity; a revocation denies new MCP admission at its
-// commit, Control's fence denies new tool admission, and REVOKED waits for
-// a sender holding a consumed permission — across a Control outage and an
-// MCP crash; a changed server is a new revision that grants do not follow;
-// disabling a revision revokes its grants.
-
 const cfImage = "ghcr.io/ibm/mcp-context-forge:v1.0.11@sha256:e9639c030162d6cb2f9f188600dd69af8091ec62a7ce307d4a74f4d4f86873df"
 
 func randomHex(n int) string {
@@ -141,6 +125,22 @@ func serverIDOf(tenant, resource string) string {
 	return "srv-" + hex.EncodeToString(h.Sum(nil))[:32]
 }
 
+// TestMCPCatalog runs P18 on the development foundation: the private MCP
+// catalog and the grant barrier across real processes — MCP (its own lane
+// database, NATS and queue), one real Control process on the foundation's
+// Control database, a disposable ContextForge v1.0.11 as the connection
+// layer, and a fixture MCP server built with the official Go MCP SDK.
+// Asserted: discovery through ContextForge binds the live descriptor (a
+// listing that disagrees with the live server, including its negotiated
+// protocol version, is refused); four-eyes review and role separation; a
+// grant is executable only after Control's receipt, and every registration
+// boundary (Control down, a registration applied whose answer was lost, MCP
+// killed with a pending grant) stays non-executable and completes under the
+// original command identity; a revocation denies new MCP admission at its
+// commit, Control's fence denies new tool admission, and REVOKED waits for a
+// sender holding a consumed permission — across a Control outage and an MCP
+// crash; a changed server is a new revision that grants do not follow;
+// disabling a revision revokes its grants.
 func TestMCPCatalog(t *testing.T) {
 	laneEnv(t, "ANVILKIT_DEV_CONTROL_DSN", "ANVILKIT_DEV_TEMPORAL_ADDRESS")
 	root := repoRoot(t)

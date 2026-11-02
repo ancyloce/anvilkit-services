@@ -27,20 +27,6 @@ import (
 	knowledgev1 "github.com/ancyloce/anvilkit-agent-contracts/go/anvilkit/knowledge/v1"
 )
 
-// P16 on the development foundation: the labeled development corpus of
-// tests/evals/rag goes through the real pipeline — SourceService, the Docling
-// parser Jobs on kind, the Background Worker's knowledge-ingest and
-// knowledge-project handlers, BGE-M3 embeddings from the Inference service,
-// named dense/sparse points in the foundation's Qdrant, the accepted index
-// generation — and is searched through RetrievalService under snapshots and
-// the current ACL. The evaluator scores every case over repeated trials and
-// writes a report under outputs/rag-eval/ (ignored by Git). Asserted: zero
-// unauthorized disclosure, every citation verifiable against Knowledge's
-// records, the positive authorization control answered, revocation of a
-// frozen snapshot and deletion across the index. Reported, never asserted:
-// Recall@k, nDCG@k, no-answer behavior, latency and compute — the corpus is
-// DEVELOPMENT_ONLY and no quality threshold is invented.
-
 type ragSource struct {
 	Doc    string   `json:"doc"`
 	File   string   `json:"file"`
@@ -178,6 +164,20 @@ func qdrantCount(t *testing.T, collection, key, value string) int {
 	return out.Result.Count
 }
 
+// TestRetrieval runs P16 on the development foundation: the labeled
+// development corpus of tests/evals/rag goes through the real pipeline —
+// SourceService, the Docling parser Jobs on kind, the Background Worker's
+// knowledge-ingest and knowledge-project handlers, BGE-M3 embeddings from the
+// Inference service, named dense/sparse points in the run's own disposable
+// Qdrant (ownQdrant), the accepted index generation — and is searched
+// through RetrievalService under snapshots and the current ACL. The evaluator
+// scores every case over repeated trials and writes a report under
+// outputs/rag-eval/ (ignored by Git). Asserted: zero unauthorized disclosure, every citation verifiable
+// against Knowledge's records, the positive authorization control answered,
+// revocation of a frozen snapshot and deletion across the index, and the
+// corpus's DEVELOPMENT_ONLY regression bounds on Recall@k, nDCG@k and
+// no-answer behavior (tests/evals/rag/thresholds.json, P3.4). Reported, never
+// asserted: latency and compute.
 func TestRetrieval(t *testing.T) {
 	laneEnv(t, "ANVILKIT_KNOWLEDGE_OBJECTS_ENDPOINT", "ANVILKIT_KNOWLEDGE_OBJECTS_STAGE_ENDPOINT", "ANVILKIT_KNOWLEDGE_OBJECTS_CREDENTIALS_FILE",
 		"ANVILKIT_KNOWLEDGE_KUBECONFIG", "ANVILKIT_KNOWLEDGE_IMAGE_REGISTRY", "ANVILKIT_DEV_KNOWLEDGE_MIGRATOR_DSN", "ANVILKIT_DEV_INFERENCE_URL",

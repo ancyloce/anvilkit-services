@@ -150,11 +150,11 @@ applications:
         backups: {cidrs: ["172.22.0.0/16"], ports: [9000]}
         inventory: {cidrs: ["172.22.0.0/16"], ports: [9000]}
   # The redacted telemetry pipeline (P23-06): one Collector per worker node. It
-  # reads the anvilkit-* container logs, scrapes the services' metrics ports and
-  # receives their spans over OTLP; spans keep the allowlisted attributes only
-  # (security.md), log bodies lose secret shapes. Since P3.6 the Collector
-  # exports traces to Tempo and logs to Loki (OTLP, inside anvilkit-observability)
-  # instead of node files; Prometheus scrapes the services' metrics itself
+  # reads the container logs of the AnvilKit namespaces (filelog below) and
+  # receives the services' spans over OTLP; spans keep the allowlisted
+  # attributes only (security.md), log bodies lose secret shapes. It exports
+  # traces to Tempo and logs to Loki (OTLP, inside anvilkit-observability,
+  # P3.6); Prometheus scrapes the services' metrics itself
   # (anvilkit-observability chart's PodMonitors). check-telemetry.py --source
   # backends reads what the backends kept.
   - name: anvilkit-telemetry
@@ -174,8 +174,8 @@ applications:
         digest: sha256:fd328de2552466ad78385e1b1289c3f2402b1c45f265b252aab1955b42845ac1
       command: {name: otelcol-contrib}
       nodeSelector: {anvilkit.io/pool: components}
-      # Root reads the kubelet's 0640 pod logs and writes the node directory; no
-      # capability, read-only root file system.
+      # Root reads the kubelet's 0640 pod logs; no capability, read-only root
+      # file system.
       securityContext:
         runAsUser: 0
         runAsGroup: 0
@@ -653,8 +653,8 @@ applications:
           secrets:
             # DEVELOPMENT_ONLY: the API's fixture principals (no IdP in qualification, ENV-07).
             - {name: anvilkit-agent-api-principals, data: {principals.json: api-principals}}
-            # DEVELOPMENT_ONLY: the Model Proxy's bearer principals (its listener's mtls mode
-            # with the SPIFFE mapping is the next step; F-P0.1-1 landed in the service).
+            # DEVELOPMENT_ONLY: the Model Proxy's bearer principals; unread while this
+            # environment's listener runs identity.mode mtls (P2.3), which mounts none.
             - {name: anvilkit-agent-model-proxy-principals, data: {principals.json: model-proxy-principals}}
   # P3.7: scheduled off-cluster backups of Qdrant (collection snapshots), OpenBao
   # (raft snapshot) and the object store (a mirror into the versioned, locked

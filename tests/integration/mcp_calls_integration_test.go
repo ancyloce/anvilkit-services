@@ -25,23 +25,6 @@ import (
 	mcpv1 "github.com/ancyloce/anvilkit-agent-contracts/go/anvilkit/mcp/v1"
 )
 
-// P19 on the development foundation: guarded tool execution across real
-// processes — MCP (its lane on the foundation's MCP database), a real
-// Control, a disposable ContextForge v1.0.11 for discovery and the
-// official-SDK fixture server with its own authorization server. Every
-// upstream receipt of tools/call is counted by the fixture. Asserted: a
-// paid read and a free write each pass Control's AdmitTool (with the
-// argument digest and effect class in the dispatch) and reach the
-// upstream exactly once under a resource-bound token obtained through the
-// protected-resource metadata the reviewed descriptor bound, never under
-// the inbound AnvilKit credential; a repeated command sends nothing;
-// hostile results stay bounded data; schema drift after review is refused
-// before the send; a connection lost after receipt is UNKNOWN, never
-// resent, and restricts new calls to the server (a replacement id
-// included) across an MCP restart, since the server has no original-outcome
-// query; a revoked grant admits no call and stays REVOKING while its
-// UNKNOWN call is open.
-
 func digestOfBytes(b []byte) string { return fmt.Sprintf("sha256:%x", sha256.Sum256(b)) }
 
 type fixtureCounts struct {
@@ -50,6 +33,23 @@ type fixtureCounts struct {
 	Protos   map[string]bool `json:"protos"`
 }
 
+// TestMCPToolCalls runs P19 on the development foundation: guarded
+// tool execution across real processes — MCP (its own lane
+// database, NATS and queue), a real Control, a disposable
+// ContextForge v1.0.11 for discovery and the official-SDK fixture
+// server with its own authorization server. Every upstream receipt
+// of tools/call is counted by the fixture. Asserted: a paid read
+// and a free write each pass Control's AdmitTool (with the argument
+// digest and effect class in the dispatch) and reach the upstream
+// exactly once under a resource-bound token obtained through the
+// protected-resource metadata the reviewed descriptor bound, never
+// under the inbound AnvilKit credential; a repeated command sends
+// nothing; hostile results stay bounded data; schema drift after
+// review is refused before the send; a connection lost after
+// receipt is UNKNOWN, never resent, and restricts new calls to the
+// server (a replacement id included) across an MCP restart, since
+// the server has no original-outcome query; a revoked grant admits
+// no call and stays REVOKING while its UNKNOWN call is open.
 func TestMCPToolCalls(t *testing.T) {
 	laneEnv(t, "ANVILKIT_DEV_CONTROL_DSN", "ANVILKIT_DEV_TEMPORAL_ADDRESS")
 	root := repoRoot(t)

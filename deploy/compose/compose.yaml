@@ -1,12 +1,16 @@
 # Single-server deployment of the replacement system with Docker Compose
-# (DEVELOPMENT_ONLY placement; no Kubernetes). One instance per service, every
+# (DEVELOPMENT_ONLY placement; the services run without Kubernetes, the Jobs on
+# the RKE2 Jobs node of deploy/compose/jobs). One instance per service, every
 # owned image a CI-published release image pinned by digest (images.env, derived
 # from the SIGNED release manifest by images.sh), the same foundation images as
-# deploy/dev/compose.yaml, secrets as restricted files under ${ANVILKIT_HOME}/secrets
-# (up.sh generates them), workload certificates from the openssl PKI of pki.sh under
-# ${ANVILKIT_HOME}/certs. Internal ports stay private: only the API (9100) and the
+# deploy/dev/compose.yaml (MinIO from its mirror, below), secrets as restricted
+# files under ${ANVILKIT_HOME}/secrets (up.sh generates them), workload
+# certificates from the openssl PKI of pki.sh under ${ANVILKIT_HOME}/certs.
+# Internal ports stay private: only the API (9100) and the
 # operations ports of the foundation are published, all on 127.0.0.1 (reach them
-# over an SSH tunnel). Not HA, not the qualified platform, not production.
+# over an SSH tunnel), plus the Job-facing ports of MinIO, Control and the Model
+# Proxy on the Jobs node's host-only address 10.255.255.1. Not HA, not the
+# qualified platform, not production.
 name: anvilkit
 
 x-logging: &logging
@@ -287,7 +291,7 @@ services:
     secrets: [knowledge-store-migrator-dsn]
     depends_on: { postgres: { condition: service_healthy } }
 
-  # ---- the eight services (release images by digest; see images.env) ------
+  # ---- the services, forwarder and relays (release images by digest; images.env)
   anvilkit-agent-control:
     <<: *service
     stop_grace_period: 30s
@@ -356,12 +360,12 @@ services:
       start_period: 15s
     deploy: { resources: { limits: { cpus: "1", memory: 256m } } }
 
-  # The Workflow's launcher is the fixed-template Kubernetes port; this
-  # placement has no cluster and no other execution backend, so the launcher
-  # identity is a kubeconfig naming no reachable API server: the worker
-  # starts and runs the model-call Activities, and every Job launch
-  # (LocalCheck, codegen, validator) fails at CreateJob. Recorded as a
-  # blocker in README.md; nothing here pretends otherwise.
+  # The Workflow's launcher is the fixed-template Kubernetes port; it launches
+  # on the RKE2 Jobs node of deploy/compose/jobs through the kubeconfig
+  # `jobs-node.sh identities` writes. Until then the launcher identity is
+  # up.sh's placeholder naming no reachable API server: the worker starts and
+  # runs the model-call Activities, and every Job launch (LocalCheck, codegen,
+  # validator) fails at CreateJob (README.md, B-1).
   # Docker creates a named volume root-owned when the image has no directory at
   # its mount point; the Workflow (65532) must own the Pagix double's directory.
   pagix-double-init:

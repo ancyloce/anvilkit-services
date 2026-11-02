@@ -306,8 +306,9 @@ FIXTURES = {
 # fixture kind. P2.5 removed MCP's local-check entry point from the
 # production binary and the fixture kind from its production schema
 # (DEVELOPMENT_ONLY fixture set only); MCP's lane is drilled through
-# mcp-catalog-refresh once ContextForge and a reviewed upstream exist in
-# this environment, and is recorded UNEXECUTED until then.
+# mcp-catalog-refresh once a reviewed upstream exists behind this
+# environment's ContextForge (MCP's values list none), and is recorded
+# UNEXECUTED until then.
 LANE_OWNERS = ("knowledge",)
 LANE_UNEXECUTED = {"mcp": "UNEXECUTED: local-check is absent from MCP's production binary and schema since P2.5; "
                           "the MCP lane needs mcp-catalog-refresh against a reviewed upstream (ContextForge not deployed here)"}

@@ -9,7 +9,8 @@
 # set by the script. No route credential Secret is referenced: the
 # controlled route stays declared and unserved in the cluster (the
 # integration scenarios enable it on host-side Proxies with their own
-# copies), and no real provider route exists.
+# copies), and no real provider route exists unless an overlay adds one
+# (anvilkit-agent-model-proxy-deepseek.yaml).
 replicaCount: 2
 image:
   repository: anvilkit-agent-model-proxy

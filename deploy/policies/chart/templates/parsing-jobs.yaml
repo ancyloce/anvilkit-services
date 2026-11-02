@@ -18,7 +18,7 @@
 # runtime's default syscall profile, and the Job's deadline has a ceiling. Kyverno 1.19
 # ValidatingPolicy (CEL); the Pod policy matches pods and autogen applies
 # it to the Job template at Job admission. The registry allowlist is the
-# environment's policy (anvilkit-parsing-registries.dev.yaml).
+# environment's policy (anvilkit-parsing-registries, templates/registries.yaml).
 apiVersion: policies.kyverno.io/v1
 kind: ValidatingPolicy
 metadata:

@@ -52,8 +52,8 @@ def image(service):
 valuesdir=ROOT/'deploy/verification/values';valuesdir.mkdir(exist_ok=True)
 for service in ['control','api','workflow','model-proxy','knowledge','mcp','background-worker']:
  if len(sys.argv)>1 and service not in sys.argv[1:]:continue
- # P2.3: what the deleted post-renderer patched in is plain values now:
- # one replica, no HPA, the application node pool and no injected sidecars.
+ # P2.3: plain chart values, no post-renderer: one replica, no HPA, the
+ # application node pool and no injected sidecars.
  v={'replicaCount':1,'autoscaling':{'enabled':False},'image':image(service),'podDisruptionBudget':{'enabled':False},'podLabels':labels,
     'nodeSelector':{'anvilkit.io/workload':'application'},
     'podAnnotations':{'sidecar.istio.io/inject':'false','linkerd.io/inject':'disabled','vault.hashicorp.com/agent-inject':'false'},

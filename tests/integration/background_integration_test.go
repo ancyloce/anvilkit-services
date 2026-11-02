@@ -22,19 +22,6 @@ import (
 	mcpv1 "github.com/ancyloce/anvilkit-agent-contracts/go/anvilkit/mcp/v1"
 )
 
-// The P14 background lane on the development foundation (real PostgreSQL,
-// NATS JetStream and the queue Valkey of deploy/dev): the Knowledge owner
-// (Node) and the MCP owner (Go) commit requests with their outbox events,
-// the Knowledge forwarder sidecar and MCP's forwarder module publish them to
-// JetStream, one owner queue relay per owner turns them into BullMQ entries,
-// the Background Worker claims, computes the local-check fixture and
-// submits, and the owners accept. Then the failures: a worker killed
-// mid-lease (expiry, reschedule, reconstruction, one accepted result), a
-// lost queue projection (owned disposable Valkey) rebuilt from the durable requests, a relay
-// killed before its consumer catches up, a forwarder killed and restarted
-// (offsets resume), cancellation and revocation fencing a running handler,
-// SIGTERM draining the worker, and the owners' readiness withdrawn on stop.
-
 type laneProcess struct {
 	t         *testing.T
 	name      string
@@ -464,6 +451,19 @@ func (l *lane) metric(health, name string) string {
 	return ""
 }
 
+// TestBackgroundLane runs the P14 background lane on the run's own
+// disposable dependencies (real PostgreSQL, NATS JetStream and queue Valkey,
+// laneDependencies): the Knowledge owner (Node) and the MCP owner (Go)
+// commit requests with their outbox events, the Knowledge forwarder sidecar
+// and MCP's forwarder module publish them to JetStream, one owner queue
+// relay per owner turns them into BullMQ entries, the Background Worker
+// claims, computes the local-check fixture and submits, and the owners
+// accept. Then the failures: a worker killed mid-lease (expiry, reschedule,
+// reconstruction, one accepted result), a lost queue projection (owned
+// disposable Valkey) rebuilt from the durable requests, a relay killed
+// before its consumer catches up, a forwarder killed and restarted (offsets
+// resume), cancellation and revocation fencing a running handler, SIGTERM
+// draining the worker, and the owners' readiness withdrawn on stop.
 func TestBackgroundLane(t *testing.T) {
 	l := setupLane(t)
 	kDSN := os.Getenv("ANVILKIT_DEV_KNOWLEDGE_MIGRATOR_DSN")
@@ -494,7 +494,7 @@ func TestBackgroundLane(t *testing.T) {
 		require.NotEmpty(t, l.query(kDSN, "SELECT 1 FROM inbox WHERE consumer = 'anvilkit-agent-knowledge-background-relay' AND outcome = 'enqueue'"))
 		require.NotEmpty(t, l.query(mDSN, "SELECT 1 FROM inbox WHERE consumer = 'anvilkit-agent-mcp-background-relay' AND outcome = 'enqueue'"))
 		// Both forwarders acknowledge every outbox row (the requested events;
-		// background.completed left the catalog in P2.8).
+		// the event catalog has no background.completed, P2.8).
 		l.eventually(10*time.Second, "knowledge forwarder offsets", func() bool {
 			return len(l.query(kDSN, `SELECT 1 FROM outbox_offsets WHERE consumer_group = 'anvilkit-agent-knowledge-forwarder' AND offset_acked >= (SELECT max("offset") FROM outbox)`)) > 0
 		})

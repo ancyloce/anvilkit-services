@@ -21,8 +21,9 @@ import (
 	"github.com/testcontainers/testcontainers-go/wait"
 )
 
-// Every invocation owns its database server, queue and JetStream. No environment
-// DSN is accepted; a namespace or queue prefix alone is not dependency isolation.
+// laneDependencies starts the database server, queue and JetStream that every
+// invocation owns. No environment DSN is accepted; a namespace or queue prefix
+// alone is not dependency isolation.
 // P0.6: all three serve TLS from the run's CA and admit only authenticated
 // clients (laneDataPlane).
 func laneDependencies(t *testing.T, root string) (map[string]string, func(), *laneDataPlane) {

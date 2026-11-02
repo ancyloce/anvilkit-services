@@ -82,7 +82,7 @@ func unresolvedCreateWorkerConfig(t *testing.T, root, dir string) string {
 		text = strings.Replace(text, r[0], r[1], 1)
 	}
 	// As in faultWorkerConfig: the checked-in file enables development mode
-	// or not (enabled since P0.1); the scenario extends it with its faults.
+	// or not; the scenario extends it with its faults.
 	const faults = "development:\n  enabled: true\n  lose_receipt_once: [ObserveLaunch, RegisterInstance, DeleteJob]\n  hold_until_canceled_once: [CreateJob]"
 	switch {
 	case strings.Contains(text, "development:\n  enabled: false"):
@@ -124,8 +124,9 @@ const createRequestAnnotation = "anvilkit.io/create-request"
 // duplicateJob is the controlled simulation of a duplicate physical Pod on
 // the real backend: a second Job in the namespace whose Pod carries the
 // launch-key label and the fixture's identities. The launcher identity can
-// create Jobs only (the launcher identity rendered from the Workflow chart by deploy/dev/up.sh), which is why
-// the duplicate arrives through a Job rather than a bare Pod. The duplicate
+// create Jobs only (the launcher identity rendered from the Workflow chart by
+// deploy/dev/up.sh), which is why the duplicate arrives through a Job rather
+// than a bare Pod. The duplicate
 // is the trusted original's own launcher labels, create-request marker and
 // Pod template under another name — what the admission policy requires of
 // every Job in the namespace — and none of the server-assigned identity

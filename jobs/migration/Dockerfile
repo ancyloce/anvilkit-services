@@ -3,7 +3,8 @@
 # directory alone, without the workspace:
 #   docker build -t anvilkit-migration .
 # One run applies one domain's goose migrations under its migrator identity:
-#   anvilkit-migration -domain knowledge|mcp (the DSN from ANVILKIT_MIGRATION_DSN).
+#   anvilkit-migration -domain knowledge|mcp (the DSN from ANVILKIT_MIGRATION_DSN
+#   or the mounted file ANVILKIT_MIGRATION_DSN_FILE names).
 FROM golang:1.27.3-alpine@sha256:b8c9b82affbbb82a020bbcf998dad2ba9516944ac7e883524642a481a9505e9c AS build
 ARG GOPROXY=https://proxy.golang.org,direct
 WORKDIR /src

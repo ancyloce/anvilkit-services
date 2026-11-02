@@ -5,8 +5,9 @@
 // input schema, which is what a server's release does to its descriptor.
 //
 // Variants 3 and 4 (P19) add the method "inspect", whose result is hostile
-// content, and make create_issue with the title "drop" close the connection
-// after receiving the call. With -as-listen the fixture also runs its own
+// content, and the oversized results "big" and "html" (P1.2), and make
+// create_issue with the title "drop" close the connection after receiving
+// the call. With -as-listen the fixture also runs its own
 // authorization server: the MCP endpoint publishes protected-resource
 // metadata naming it, tools/call requires a bearer token it issued for this
 // resource (client credentials, resource indicator), and every

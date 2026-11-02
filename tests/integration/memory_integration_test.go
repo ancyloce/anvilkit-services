@@ -25,22 +25,6 @@ import (
 	knowledgev1 "github.com/ancyloce/anvilkit-agent-contracts/go/anvilkit/knowledge/v1"
 )
 
-// P17 on the development foundation: MemoryFact through the real lane —
-// MemoryService on Knowledge, the decision and its memory-project requests
-// committed with their outbox events, the forwarder, JetStream, the owner
-// queue relay, the Background Worker's memory-project handler, the
-// PostgresStore projection (its vendor schema migrated by its own identity)
-// and memory points in the accepted Qdrant generation embedded by the real
-// BGE-M3 Inference service — and RecallFacts under the current authority.
-// Asserted: zero false confirmations over the adversarial decisions, zero
-// tenant contamination or unauthorized disclosure over every recall trial,
-// zero stale revival (no content in the Store and no point for any removed
-// fact) and exactly one point per live fact, the deletion purge marker, the
-// reviewed expiry rule, and a Store rebuild through memoryctl that never
-// revives a removal. Reported, never asserted: hit rate, no-answer behavior,
-// latency, projection lag and purge time on the DEVELOPMENT_ONLY cases of
-// tests/evals/memory.
-
 type memFact struct {
 	ID          string `json:"id"`
 	Tenant      string `json:"tenant"`
@@ -119,6 +103,22 @@ func grpcCode(err error) string {
 	return status.Code(err).String()
 }
 
+// TestMemory runs P17 on the development foundation: MemoryFact
+// through the real lane — MemoryService on Knowledge, the decision and
+// its memory-project requests committed with their outbox events, the
+// forwarder, JetStream, the owner queue relay, the Background Worker's
+// memory-project handler, the PostgresStore projection (its vendor
+// schema migrated by its own identity) and memory points in the
+// accepted Qdrant generation embedded by the real BGE-M3 Inference
+// service — and RecallFacts under the current authority. Asserted:
+// zero false confirmations over the adversarial decisions, zero tenant
+// contamination or unauthorized disclosure over every recall trial,
+// zero stale revival (no content in the Store and no point for any
+// removed fact) and exactly one point per live fact, the deletion
+// purge marker, the reviewed expiry rule, and a Store rebuild through
+// memoryctl that never revives a removal. Reported, never asserted:
+// hit rate, no-answer behavior, latency, projection lag and purge time
+// on the DEVELOPMENT_ONLY cases of tests/evals/memory.
 func TestMemory(t *testing.T) {
 	laneEnv(t, "ANVILKIT_KNOWLEDGE_OBJECTS_ENDPOINT", "ANVILKIT_KNOWLEDGE_OBJECTS_STAGE_ENDPOINT", "ANVILKIT_KNOWLEDGE_OBJECTS_CREDENTIALS_FILE",
 		"ANVILKIT_KNOWLEDGE_KUBECONFIG", "ANVILKIT_KNOWLEDGE_IMAGE_REGISTRY", "ANVILKIT_DEV_KNOWLEDGE_MIGRATOR_DSN", "ANVILKIT_DEV_INFERENCE_URL",

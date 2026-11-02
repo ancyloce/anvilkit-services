@@ -1,9 +1,10 @@
-// Package migrate applies the owned domain schemas that have no service
-// repository yet with goose/v3 (A07): it is the migration-version authority
-// for anvilkit_knowledge and anvilkit_mcp until Knowledge and MCP own their
-// migrations. anvilkit_control is migrated by Control's own migration Job
-// (the anvilkit-agent-control repository, internal/migrate and
-// cmd/anvilkit-migration). Runtime services never run DDL.
+// Package migrate applies, with goose/v3 (A07), the owned domain schemas
+// whose service repositories do not own their migrations yet: it is the
+// migration-version authority for anvilkit_knowledge and anvilkit_mcp until
+// Knowledge and MCP own their migrations. anvilkit_control is migrated by
+// Control's own migration Job (the anvilkit-agent-control repository,
+// internal/migrate and cmd/anvilkit-migration). Runtime services never run
+// DDL.
 package migrate
 
 import (
@@ -28,7 +29,7 @@ var sqlFS embed.FS
 // Domains lists the owned databases this Job migrates, in stable order.
 var Domains = []string{"knowledge", "mcp"}
 
-// Safety bounds of a migration run (P3.7, plan 0004).
+// Options are the safety bounds of a migration run (P3.7, plan 0004).
 type Options struct {
 	// LockTimeout bounds every statement's wait for a table lock: a DDL
 	// behind a long transaction fails (SQLSTATE 55P03) instead of queueing

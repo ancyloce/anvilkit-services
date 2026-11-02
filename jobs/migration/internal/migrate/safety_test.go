@@ -61,9 +61,10 @@ func safetyDBs(t *testing.T) (context.Context, map[string]string) {
 	return ctx, dsns
 }
 
-// P3.7 AC4: per domain, two runners started at once serialize on the
-// domain's advisory lock - both end at one version, every migration
-// recorded once - and a held lock is waited on only for LockWait.
+// TestConcurrentRunnersSerializeOnTheAdvisoryLock (P3.7 AC4): per domain, two
+// runners started at once serialize on the domain's advisory lock - both end
+// at one version, every migration recorded once - and a held lock is waited
+// on only for LockWait.
 func TestConcurrentRunnersSerializeOnTheAdvisoryLock(t *testing.T) {
 	ctx, dsns := safetyDBs(t)
 	for _, domain := range Domains {
@@ -112,9 +113,10 @@ func TestConcurrentRunnersSerializeOnTheAdvisoryLock(t *testing.T) {
 	}
 }
 
-// P3.7 AC4: a migration blocked by a long transaction fails at lock_timeout
-// and is retried; readers never queue behind its pending exclusive lock for
-// longer than the timeout; once the transaction ends it applies.
+// TestALockTimeoutIsRetriedNotStacked (P3.7 AC4): a migration blocked by a
+// long transaction fails at lock_timeout and is retried; readers never queue
+// behind its pending exclusive lock for longer than the timeout; once the
+// transaction ends it applies.
 func TestALockTimeoutIsRetriedNotStacked(t *testing.T) {
 	ctx, dsns := safetyDBs(t)
 	dsn := dsns["mcp"]

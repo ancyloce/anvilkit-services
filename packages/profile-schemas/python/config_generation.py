@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Executable Python consumer of the shared configuration schemas (DD-09 §4/§5)
-for the Inference service (P15 integrates it): immutable configuration
-generations built from defaults < a reviewed YAML file < a validated,
-unexpired Apollo snapshot (non-secret keys) < the allowlisted environment,
-validated as a whole with jsonschema and pydantic, with the secret taken from
-the environment or a mounted file and never placed in a digest or a log.
+"""Executable Python consumer of the shared configuration schemas (DD-09 §4/§5),
+shaped for the Inference service (whose own configuration module,
+services/agent/inference/src/anvilkit_inference/config.py, follows this
+pattern): immutable configuration generations built from defaults < a
+reviewed YAML file < a validated, unexpired Apollo snapshot (non-secret keys)
+< the allowlisted environment, validated as a whole with jsonschema and
+pydantic, with the secret taken from the environment or a mounted file and
+never placed in a digest or a log.
 
     python3 config_generation.py --fixtures ../fixtures.json      # the shared cases
     python3 config_generation.py --config config.yaml --snapshot snapshot.json --env-prefix ANVILKIT_INFERENCE_
@@ -59,7 +61,7 @@ def validate_generation_record(instance: Any) -> dict[str, Any]:
 
 
 class Inference(BaseModel):
-    """The reviewed bounds of the Inference service (an example shape for P15)."""
+    """The reviewed bounds of the Inference service (an example shape; the service's own model lives in its repository)."""
 
     model_config = ConfigDict(extra="forbid", strict=True)
     listen: str = Field(default="127.0.0.1:9108", pattern=r"^[^:\s]+:\d{1,5}$")

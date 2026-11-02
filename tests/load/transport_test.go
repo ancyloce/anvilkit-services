@@ -10,8 +10,9 @@ import (
 	"time"
 )
 
-// A transport failure stays one "transport" failure; its class is a counter
-// beside it, never another failure.
+// TestTransportErrorsAreClassifiedAndCountedOnce: a transport failure stays
+// one "transport" failure; its class is a counter beside it, never another
+// failure.
 func TestTransportErrorsAreClassifiedAndCountedOnce(t *testing.T) {
 	cases := map[string]error{
 		"dial:refused":      &net.OpError{Op: "dial", Net: "tcp", Err: os.NewSyscallError("connect", syscall.ECONNREFUSED)},
@@ -38,7 +39,8 @@ func TestTransportErrorsAreClassifiedAndCountedOnce(t *testing.T) {
 	}
 }
 
-// The stream's advertised reconnect interval is kept; frames still arrive.
+// TestTheAdvertisedRetryIntervalIsKept: the stream's advertised reconnect
+// interval is kept; frames still arrive.
 func TestTheAdvertisedRetryIntervalIsKept(t *testing.T) {
 	retry := 500 * time.Millisecond
 	var events []string

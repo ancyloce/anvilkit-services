@@ -14,8 +14,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// This gate targets the actual digest-pinned Helm services and their exclusively
-// owned data namespace. It deliberately starts no host-side substitute services.
+// TestDeployedRepairChain targets the actual digest-pinned Helm services and their
+// exclusively owned data namespace. It deliberately starts no host-side substitutes.
 func TestDeployedRepairChain(t *testing.T) {
 	if os.Getenv("ANVILKIT_REPAIR_KUBERNETES") != "1" {
 		skipMissing(t, "ANVILKIT_REPAIR_KUBERNETES", "an explicitly owned repair environment is required")
