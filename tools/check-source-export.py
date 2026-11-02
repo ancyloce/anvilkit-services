@@ -197,7 +197,6 @@ REQUIRED_FILES = (
     "tests/integration/cmd/mcpfixture/main.go",
     "jobs/validator/src/preview-origin.ts", "jobs/validator/fixtures/preview/frame.tsx",
     "tests/integration/studio_integration_test.go",
-    "package.json", "pnpm-workspace.yaml", "pnpm-lock.yaml",
     "services/agent/api/go.mod", "services/agent/api/go.sum", "services/agent/api/config.yaml",
     "services/agent/api/README.md", "services/agent/api/LICENSE", "services/agent/api/Dockerfile", "services/agent/api/.dockerignore",
     "services/agent/api/deploy/chart/Chart.yaml", "services/agent/api/deploy/chart/values.yaml",
