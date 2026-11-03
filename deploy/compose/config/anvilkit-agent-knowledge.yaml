@@ -59,6 +59,12 @@ parser:
 reload:
   drain_limit: 30s
   interval: 2s
+retrieval:
+  # Owner direction 2026-11-03 (step 3 of four): enable search on this placement.
+  # The profile the integration tests use (tests/integration/*_integration_test.go);
+  # without it every search answers PROFILE_UNQUALIFIED (src/application/retrieval.ts).
+  # The other retrieval keys keep their built-in bounds (src/config.ts).
+  profile_id: hybrid-bge-m3-dev-v1
 sources:
   max_bytes: 33554432
 tasks:
