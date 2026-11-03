@@ -27,7 +27,7 @@
 // for the facades, to the Studio checkout's public/host/<hostProfileId>/facades directory. This tool builds
 // and records; it publishes nothing and qualifies nothing.
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
