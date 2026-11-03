@@ -18,7 +18,7 @@ RUN go mod edit -replace github.com/ancyloce/anvilkit-agent-contracts/go=/src/co
 
 FROM alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
 RUN addgroup -g 10002 sidecar && adduser -D -H -u 10002 -G sidecar -s /sbin/nologin sidecar \
- && mkdir -p /etc/anvilkit/anvilkit-job-access-sidecar /run/anvilkit
+ && mkdir -p /etc/anvilkit/anvilkit-job-access-sidecar
 COPY --from=build /out/anvilkit-job-access-sidecar /usr/local/bin/anvilkit-job-access-sidecar
 COPY --chmod=0644 jobs/shared/access-sidecar/config.yaml /etc/anvilkit/anvilkit-job-access-sidecar/config.yaml
 ENV ANVILKIT_SIDECAR_CONFIG=/etc/anvilkit/anvilkit-job-access-sidecar/config.yaml

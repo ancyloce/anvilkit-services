@@ -151,7 +151,21 @@ def cases(resources: pathlib.Path):
     add("env-removed", harness, lambda o: sup(o)["env"].pop())
     add("envfrom-added", harness, lambda o: sup(o).__setitem__("envFrom", [{"secretRef": {"name": "s"}}]))
     add("pod-uid-forged", harness, lambda o: [e.update({"value": "forged"}) or e.pop("valueFrom", None) for e in side(o)["env"] if e["name"] == "ANVILKIT_SIDECAR_POD_UID"])
-    add("sidecar-env-added", harness, lambda o: side(o)["env"].append({"name": "ANVILKIT_SIDECAR_SOCKETS_DIR", "value": "/tmp"}))
+    add("sidecar-env-added", harness, lambda o: side(o)["env"].append({"name": "ANVILKIT_SIDECAR_DEBUG", "value": "1"}))
+    # DEC-045: the launch secret reaches both containers only by reference to
+    # the launch's own Secret (named after the launch key, key launch-secret).
+    def secret_holder(o, var):
+        return sup(o) if var == "ANVILKIT_LAUNCH_SECRET" else side(o)
+
+    def secret_var(o, var):
+        return next(e for e in secret_holder(o, var)["env"] if e["name"] == var)
+    for cname, var in [("launch", "ANVILKIT_LAUNCH_SECRET"), ("sidecar", "ANVILKIT_SIDECAR_LAUNCH_SECRET")]:
+        add(cname + "-secret-literal", harness, lambda o, var=var: secret_var(o, var).update({"value": "0" * 64}) or secret_var(o, var).pop("valueFrom"))
+        add(cname + "-secret-other-name", harness, lambda o, var=var: secret_var(o, var)["valueFrom"]["secretKeyRef"].__setitem__("name", "anvilkit-job-access-sidecar-identity"))
+        add(cname + "-secret-other-key", harness, lambda o, var=var: secret_var(o, var)["valueFrom"]["secretKeyRef"].__setitem__("key", "tls.key"))
+        add(cname + "-secret-optional", harness, lambda o, var=var: secret_var(o, var)["valueFrom"]["secretKeyRef"].__setitem__("optional", True))
+        add(cname + "-secret-dropped", harness, lambda o, var=var: secret_holder(o, var).__setitem__("env", [e for e in secret_holder(o, var)["env"] if e["name"] != var]))
+    add("launch-secret-in-fixture", fixture, lambda o: container(o, "fixture")["env"].append({"name": "ANVILKIT_LAUNCH_SECRET", "valueFrom": {"secretKeyRef": {"name": o["metadata"]["labels"]["anvilkit.io/launch-key"], "key": "launch-secret"}}}))
     add("volume-hostpath", harness, lambda o: o["spec"]["volumes"].append({"name": "host", "hostPath": {"path": "/"}}))
     add("volume-secret", harness, lambda o: o["spec"]["volumes"].__setitem__(0, {"name": "workspace", "secret": {"secretName": "s"}}))
     add("volume-csi", harness, lambda o: o["spec"]["volumes"].append({"name": "csi", "csi": {"driver": "secrets-store.csi.k8s.io"}}))
@@ -164,7 +178,11 @@ def cases(resources: pathlib.Path):
     add("identity-missing", harness, lambda o: (o["spec"].__setitem__("volumes", [v for v in o["spec"]["volumes"] if v["name"] != "identity"]), side(o).__setitem__("volumeMounts", [m for m in side(o)["volumeMounts"] if m["name"] != "identity"])))
     add("identity-optional", harness, lambda o: next(v for v in o["spec"]["volumes"] if v["name"] == "identity")["secret"].__setitem__("optional", True))
     add("identity-in-fixture", fixture, lambda o: (o["spec"].__setitem__("volumes", [{"name": "identity", "secret": {"secretName": "anvilkit-job-access-sidecar-identity"}}]), container(o, "fixture").__setitem__("volumeMounts", [{"name": "identity", "mountPath": "/etc/anvilkit/identity", "readOnly": True}])))
-    add("sockets-writable-in-supervisor", harness, lambda o: [m.__setitem__("readOnly", False) for m in sup(o)["volumeMounts"] if m["name"] == "sockets"])
+    def reintroduce_sockets(o):
+        o["spec"]["volumes"].insert(2, {"name": "sockets", "emptyDir": {"medium": "Memory", "sizeLimit": "1Mi"}})
+        sup(o)["volumeMounts"].append({"name": "sockets", "mountPath": "/run/anvilkit", "readOnly": True})
+        side(o)["volumeMounts"].insert(0, {"name": "sockets", "mountPath": "/run/anvilkit"})
+    add("sockets-volume-reintroduced", harness, reintroduce_sockets)
     add("capability-added", harness, lambda o: sup(o)["securityContext"]["capabilities"]["add"].append("NET_ADMIN"))
     add("capability-sidecar", harness, lambda o: side(o)["securityContext"]["capabilities"].__setitem__("add", ["SETUID"]))
     add("capabilities-not-dropped", harness, lambda o: sup(o)["securityContext"]["capabilities"].__setitem__("drop", []))
@@ -197,13 +215,12 @@ def cases(resources: pathlib.Path):
                 for resource, value in [("cpu", "10m" if field == "requests" else "2"), ("memory", "16Mi" if field == "requests" else "8Gi")]:
                     add(prefix + "-" + name + "-" + field + "-" + resource, base,
                         lambda o: container(spec(o), name)["resources"][field].__setitem__(resource, value))
-        for name in ["workspace", "verdict", "sockets"]:
+        for name in ["workspace", "verdict"]:
             def volume(o):
                 return next(v["emptyDir"] for v in spec(o)["spec"]["volumes"] if v["name"] == name)
             add(prefix + "-" + name + "-size-removed", base, lambda o: volume(o).pop("sizeLimit"))
             add(prefix + "-" + name + "-size-changed", base, lambda o: volume(o).__setitem__("sizeLimit", "8Gi"))
-            add(prefix + "-" + name + "-medium-changed", base, lambda o: volume(o).__setitem__("medium", "" if name == "sockets" else "Memory"))
-        add(prefix + "-sockets-medium-removed", base, lambda o: next(v["emptyDir"] for v in spec(o)["spec"]["volumes"] if v["name"] == "sockets").pop("medium"))
+            add(prefix + "-" + name + "-medium-changed", base, lambda o: volume(o).__setitem__("medium", "Memory"))
     add("extra-container", harness, lambda o: o["spec"]["containers"].append(copy.deepcopy(sup(o)) | {"name": "extra"}))
     add("init-container", harness, lambda o: o["spec"]["initContainers"].append({"name": "init", "image": sup(o)["image"], "command": ["true"]}))
     add("sidecar-not-native", harness, lambda o: side(o).pop("restartPolicy"))

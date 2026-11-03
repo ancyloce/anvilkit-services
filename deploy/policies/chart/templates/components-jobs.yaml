@@ -9,7 +9,10 @@
 # environment variable, a lifecycle hook, a probe, a volume that is not an
 # emptyDir (the access sidecar's own identity Secret, read-only in the
 # sidecar alone, is the one exception of the harness layout; P0.1), a mount
-# with a subPath or propagation, a token, a capability,
+# with a subPath or propagation, a literal or foreign launch secret (DEC-045:
+# both harness containers receive the launch's own Secret, named after the
+# launch key, by reference only; the sidecar's sockets are abstract-namespace
+# sockets inside the Pod, so no sockets volume exists), a token, a capability,
 # or a container the layout does not have, is denied. Kyverno 1.19
 # ValidatingPolicy (CEL). The Pod policy matches pods only so that Kyverno
 # autogen (podControllers: jobs) evaluates the same rules against a Job's
@@ -51,10 +54,10 @@ spec:
     - name: sidecarDigests
       expression: "['sha256:90976a8cf4935e72d0da3031c3f3bc61e75af435759488a6a7c615ff74203374']"
     - name: supervisorEnv
-      expression: "['ANVILKIT_LAUNCH_ID', 'ANVILKIT_ATTEMPT_ID', 'ANVILKIT_LAUNCH_ENVELOPE']"
+      expression: "['ANVILKIT_LAUNCH_ID', 'ANVILKIT_ATTEMPT_ID', 'ANVILKIT_LAUNCH_ENVELOPE', 'ANVILKIT_LAUNCH_SECRET']"
     - name: sidecarEnv
-      expression: "['ANVILKIT_SIDECAR_CONTROL_ADDRESS', 'ANVILKIT_SIDECAR_IDENTITY_MODE', 'ANVILKIT_SIDECAR_BACKEND', 'ANVILKIT_SIDECAR_LAUNCH_KEY', 'ANVILKIT_SIDECAR_POD_UID', 'ANVILKIT_SIDECAR_LAUNCH_ENVELOPE']"
-    # P2.4 (B-32): the sidecar's relay placements, after the six launch
+      expression: "['ANVILKIT_SIDECAR_CONTROL_ADDRESS', 'ANVILKIT_SIDECAR_IDENTITY_MODE', 'ANVILKIT_SIDECAR_BACKEND', 'ANVILKIT_SIDECAR_LAUNCH_KEY', 'ANVILKIT_SIDECAR_POD_UID', 'ANVILKIT_SIDECAR_LAUNCH_ENVELOPE', 'ANVILKIT_SIDECAR_LAUNCH_SECRET']"
+    # P2.4 (B-32): the sidecar's relay placements, after the seven launch
     # variables in this order; each only with the value this environment
     # declares (sidecarPlacements), so a launcher can point the sidecar at
     # nothing else.
@@ -131,6 +134,13 @@ spec:
       expression: "'anvilkit.io/profile-id' in variables.labels ? variables.labels['anvilkit.io/profile-id'] : ''"
     - name: runtimeClass
       expression: "has(object.spec.runtimeClassName) ? object.spec.runtimeClassName : ''"
+    # DEC-045: the launch secret is the per-launch Secret named after the
+    # launch key, key launch-secret, referenced (never written) by exactly
+    # the two secret variables.
+    - name: launchKey
+      expression: "'anvilkit.io/launch-key' in variables.labels ? variables.labels['anvilkit.io/launch-key'] : ''"
+    - name: launchSecretVars
+      expression: "['ANVILKIT_LAUNCH_SECRET', 'ANVILKIT_SIDECAR_LAUNCH_SECRET']"
   validations:
     # nodeName is assigned by scheduler binding, not by the launcher. Job
     # UPDATE is also checked unconditionally in the Job policy below;
@@ -216,10 +226,10 @@ spec:
           && (!has(c.env) || c.env.all(e, e.name in variables.fixtureEnv && !has(e.valueFrom))))
     - message: "a fixture Pod runs no candidate code and has no volume"
       expression: "!variables.isFixture || (!variables.candidateCode && (!has(object.spec.volumes) || size(object.spec.volumes) == 0))"
-    - message: "the harness Pod has exactly the workspace, verdict and sockets emptyDirs and the sidecar identity Secret, supplementary groups 0 and 10001, and the components node pool"
+    - message: "the harness Pod has exactly the workspace and verdict emptyDirs and the sidecar identity Secret (no sockets volume: the sidecar's sockets are abstract-namespace sockets inside the Pod), supplementary groups 0 and 10001, and the components node pool"
       expression: >-
         !variables.isHarness || (
-          has(object.spec.volumes) && object.spec.volumes.map(v, v.name) == ['workspace', 'verdict', 'sockets', 'identity']
+          has(object.spec.volumes) && object.spec.volumes.map(v, v.name) == ['workspace', 'verdict', 'identity']
           && has(object.spec.securityContext) && has(object.spec.securityContext.supplementalGroups) && object.spec.securityContext.supplementalGroups == [0, 10001]
           && has(object.spec.nodeSelector) && 'anvilkit.io/pool' in object.spec.nodeSelector && object.spec.nodeSelector['anvilkit.io/pool'] == 'components')
     - message: "harness requests and limits match the reviewed profile and native sidecar exactly"
@@ -233,14 +243,13 @@ spec:
               : variables.profileID in variables.teamProfiles
               ? {'cpu': '2', 'memory': '3Gi'} : {'cpu': '500m', 'memory': '256Mi'})
           && c.resources.limits == c.resources.requests)
-    - message: "harness emptyDir size limits and media match the reviewed template"
+    - message: "harness emptyDir size limits and media match the reviewed template (workspace 1Gi, verdict 256Mi, on disk)"
       expression: >-
         !variables.isHarness || object.spec.volumes.all(v, v.name == 'identity' ||
           has(v.emptyDir) && has(v.emptyDir.sizeLimit)
-          && v.emptyDir.sizeLimit == (v.name == 'workspace' ? '1Gi' : v.name == 'verdict' ? '256Mi' : '1Mi')
-          && (v.name == 'sockets' ? (has(v.emptyDir.medium) && v.emptyDir.medium == 'Memory')
-              : (!has(v.emptyDir.medium) || v.emptyDir.medium == '')))
-    - message: "the supervisor is the qualified entrypoint as UID 0 with SETUID, SETGID and SETPCAP only, the candidate syscall profile, the launch environment only, and the workspace, verdict and read-only sockets mounts"
+          && v.emptyDir.sizeLimit == (v.name == 'workspace' ? '1Gi' : '256Mi')
+          && (!has(v.emptyDir.medium) || v.emptyDir.medium == ''))
+    - message: "the supervisor is the qualified entrypoint as UID 0 with SETUID, SETGID and SETPCAP only, the candidate syscall profile, the launch environment only (the launch secret by reference to the launch's own Secret, key launch-secret, never a value), and the workspace and verdict mounts"
       expression: >-
         !variables.isHarness || variables.containers.exists(c, c.name == 'supervisor'
           && has(c.command)
@@ -253,9 +262,14 @@ spec:
           && has(c.securityContext.runAsGroup) && c.securityContext.runAsGroup == 0
           && has(c.securityContext.capabilities.add) && c.securityContext.capabilities.add == ['SETUID', 'SETGID', 'SETPCAP']
           && c.securityContext.seccompProfile.type == 'Localhost' && has(c.securityContext.seccompProfile.localhostProfile) && c.securityContext.seccompProfile.localhostProfile == 'anvilkit/candidate.json'
-          && has(c.env) && c.env.all(e, e.name in variables.supervisorEnv && !has(e.valueFrom)) && c.env.map(e, e.name) == variables.supervisorEnv
-          && has(c.volumeMounts) && c.volumeMounts.map(m, m.name + ':' + m.mountPath + ':' + string(has(m.readOnly) && m.readOnly)) == ['workspace:/workspace:false', 'verdict:/anvilkit/verdict:false', 'sockets:/run/anvilkit:true'])
-    - message: "the access sidecar runs as UID 10002 without capabilities, RuntimeDefault seccomp, the sidecar environment only (the six launch variables, then only the relay placements this environment declares, with exactly their values) with the Pod UID from the downward API, and the sockets mount plus its read-only identity mount alone"
+          && has(c.env) && c.env.map(e, e.name) == variables.supervisorEnv
+          && c.env.all(e, e.name in variables.launchSecretVars
+              ? (!has(e.value) && has(e.valueFrom) && has(e.valueFrom.secretKeyRef) && !has(e.valueFrom.fieldRef) && !has(e.valueFrom.configMapKeyRef) && !has(e.valueFrom.resourceFieldRef)
+                  && e.valueFrom.secretKeyRef.name == variables.launchKey && e.valueFrom.secretKeyRef.key == 'launch-secret'
+                  && (!has(e.valueFrom.secretKeyRef.optional) || !e.valueFrom.secretKeyRef.optional))
+              : !has(e.valueFrom))
+          && has(c.volumeMounts) && c.volumeMounts.map(m, m.name + ':' + m.mountPath + ':' + string(has(m.readOnly) && m.readOnly)) == ['workspace:/workspace:false', 'verdict:/anvilkit/verdict:false'])
+    - message: "the access sidecar runs as UID 10002 without capabilities, RuntimeDefault seccomp, the sidecar environment only (the seven launch variables, then only the relay placements this environment declares, with exactly their values) with the Pod UID from the downward API and the launch secret by reference to the launch's own Secret, and its read-only identity mount alone"
       expression: >-
         !variables.isHarness || variables.inits.exists(c, c.name == 'access-sidecar'
           && !has(c.command)
@@ -270,8 +284,12 @@ spec:
               || (e.name in variables.sidecarPlacements && has(e.value) && e.value == variables.sidecarPlacements[e.name]))
           && c.env.all(e, e.name == 'ANVILKIT_SIDECAR_POD_UID'
               ? (has(e.valueFrom) && has(e.valueFrom.fieldRef) && e.valueFrom.fieldRef.fieldPath == 'metadata.uid')
+              : e.name in variables.launchSecretVars
+              ? (!has(e.value) && has(e.valueFrom) && has(e.valueFrom.secretKeyRef) && !has(e.valueFrom.fieldRef) && !has(e.valueFrom.configMapKeyRef) && !has(e.valueFrom.resourceFieldRef)
+                  && e.valueFrom.secretKeyRef.name == variables.launchKey && e.valueFrom.secretKeyRef.key == 'launch-secret'
+                  && (!has(e.valueFrom.secretKeyRef.optional) || !e.valueFrom.secretKeyRef.optional))
               : !has(e.valueFrom))
-          && has(c.volumeMounts) && c.volumeMounts.map(m, m.name + ':' + m.mountPath + ':' + string(has(m.readOnly) && m.readOnly)) == ['sockets:/run/anvilkit:false', 'identity:/etc/anvilkit/identity:true'])
+          && has(c.volumeMounts) && c.volumeMounts.map(m, m.name + ':' + m.mountPath + ':' + string(has(m.readOnly) && m.readOnly)) == ['identity:/etc/anvilkit/identity:true'])
     - message: "a Pod that runs candidate code needs the gVisor RuntimeClass (an unqualified candidate profile is denied; only a development profile this environment lists runs without it)"
       expression: "!variables.candidateCode || variables.runtimeClass == 'gvisor' || variables.profileID in variables.developmentProfiles"
     - message: "a harness Pod without candidate code is the development wiring fixture: it must not name a RuntimeClass it does not qualify"
