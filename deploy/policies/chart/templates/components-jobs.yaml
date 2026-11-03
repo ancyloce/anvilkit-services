@@ -91,9 +91,10 @@ spec:
     - name: teamCommand
       expression: "['/usr/local/bin/anvilkit-codegen-supervisor', 'team']"
     # One digest per team profile (contracts/jobs/profiles.json): the
-    # production profile codegen-team-v1 (disabled) and its development twin
-    # codegen-team-dev-v1 currently pin the same CI-published image; they may
-    # diverge again, so each keeps its own variable.
+    # production profile codegen-team-v1 (enabled since 2026-11-03, DEC-044,
+    # for the Compose Jobs node's gVisor RuntimeClass) and its development
+    # twin codegen-team-dev-v1 currently pin the same CI-published image; they
+    # may diverge again, so each keeps its own variable.
     - name: teamDigest
       expression: "'sha256:50c8a48ba030d24e11faecd46c26ddc939f117cf277c94f22784cba25c9a51e3'"
     - name: teamDevDigest

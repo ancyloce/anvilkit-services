@@ -83,7 +83,11 @@ profiles:
     funding:
       amount: '3000000'
       currency: USD
-    validator_profile: validator-source-dev-v1
+    # DEC-044: the production candidate profiles under the gVisor RuntimeClass
+    # of the Jobs node (the development twins stay enabled in the Workflow as
+    # the fallback pair).
+    codegen_profile: codegen-team-v1
+    validator_profile: validator-source-v1
   local_check_deadline: 15m
   preparation:
     funding:
