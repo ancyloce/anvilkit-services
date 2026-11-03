@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """A disposable CSI fixture, never a substitute DeepSeek credential."""
-import json,subprocess,time,yaml
+import json,subprocess,yaml
 from bootstrap import ROOT,STATE,request
 K=[str(ROOT/'.local/bin/kubectl'),'--context','kind-anvilkit-dev','-n','anvilkit-verification']
 root=json.loads((STATE/'init.json').read_text())['root_token']

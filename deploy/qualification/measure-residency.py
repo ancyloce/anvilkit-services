@@ -25,7 +25,6 @@ import argparse
 import hashlib
 import json
 import pathlib
-import statistics
 import subprocess
 import sys
 import threading

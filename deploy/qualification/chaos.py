@@ -36,7 +36,6 @@ import json
 import pathlib
 import sys
 import tempfile
-import threading
 import time
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
