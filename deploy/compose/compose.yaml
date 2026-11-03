@@ -491,6 +491,9 @@ services:
       ANVILKIT_KNOWLEDGE_IDENTITY_CA_FILE: /etc/anvilkit/identity/ca.crt
       ANVILKIT_KNOWLEDGE_CONTROL_ADDRESS: anvilkit-agent-control:9101
       ANVILKIT_KNOWLEDGE_KUBECONFIG: /run/secrets/knowledge-launcher-kubeconfig
+      # Parser Job images are rendered as <registry>/<repository>@<digest>; the node's
+      # anvilkit-parsing-registries policy admits ghcr.io/ancyloce/ only (placement key, environment only).
+      ANVILKIT_KNOWLEDGE_IMAGE_REGISTRY: ${ANVILKIT_IMAGE_REGISTRY:?images.env}
       ANVILKIT_KNOWLEDGE_OBJECTS_ENDPOINT: http://minio:9000
       ANVILKIT_KNOWLEDGE_OBJECTS_STAGE_ENDPOINT: http://minio:9000
       ANVILKIT_KNOWLEDGE_OBJECTS_CREDENTIALS_FILE: /run/secrets/knowledge-objects-credentials
