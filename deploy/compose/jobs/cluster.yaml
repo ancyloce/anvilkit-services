@@ -24,6 +24,17 @@ apiVersion: v1
 kind: Namespace
 metadata: {name: anvilkit-gateway}
 ---
+# gVisor (plan 0006 D-4, B-003): the RuntimeClass the production candidate
+# profiles pin (contracts/jobs/profiles.json, runtimeClass gvisor). The handler
+# runsc is registered with RKE2's containerd through
+# /var/lib/rancher/rke2/agent/etc/containerd/config-v3.toml.tmpl
+# (docs/operations/compose/gvisor-jobs-node.md). One node, one pool: no
+# scheduling block, unlike deploy/verification/sandbox.yaml.
+apiVersion: node.k8s.io/v1
+kind: RuntimeClass
+metadata: {name: gvisor}
+handler: runsc
+---
 apiVersion: v1
 kind: ResourceQuota
 metadata: {name: one-job-pod, namespace: anvilkit-components}
