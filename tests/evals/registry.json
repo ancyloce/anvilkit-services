@@ -1884,7 +1884,7 @@
       "missing": [
         "ENV-06"
       ],
-      "reason": "Credits versus actual spend is untested: the cost-entry kind credit is declared (services/agent/control/internal/domain/budget.go:425, migrate/sql/00001_init.sql:238) but nothing writes or asserts it; real prices/caps need ENV-06.",
+      "reason": "Credits versus actual spend is untested: the cost-entry kind credit is declared (services/agent/control/internal/domain/budget.go:420, migrate/sql/00001_init.sql:238) but nothing writes or asserts it; real prices/caps need ENV-06.",
       "gates": [
         "G-02",
         "G-03"
@@ -2051,7 +2051,7 @@
     "M1-08": "Activation against the real Pagix catalog/receipts needs ENV-07.",
     "M1-09": "Qualified Studio host/page API and resource origin (ENV-08, NR-STUDIO-HOST).",
     "M1-10": "Old-page round trip on the real Studio host (ENV-08) and page-lock handover (G-13).",
-    "M1-11": "Credits versus actual spend is untested: the cost-entry kind credit is declared (services/agent/control/internal/domain/budget.go:425, migrate/sql/00001_init.sql:238) but nothing writes or asserts it; real prices/caps need ENV-06.",
+    "M1-11": "Credits versus actual spend is untested: the cost-entry kind credit is declared (services/agent/control/internal/domain/budget.go:420, migrate/sql/00001_init.sql:238) but nothing writes or asserts it; real prices/caps need ENV-06.",
     "M1-12": "CNPG PITR with an independent DR inventory needs ENV-02/ENV-09 (G-14); TestPointInTimeRecovery (IT-PITR) uses a local Docker PostgreSQL with host-directory WAL (DEVELOPMENT_ONLY).",
     "M1-13": "Two Control replicas behind a Service on the S3 inventory and two Proxies on the S3 store under 2-way/8-way races (P3.4 AC3), and failure-domain recovery, need ENV-01/ENV-02 (G-14, NR-HA-DR).",
     "M1-14": "Hold/resume/definition change through the public API on a running Generation needs the candidate profiles enabled (ENV-01); Temporal SDK upgrade replay on a qualified environment (G-12, NR-FAILOVER).",
@@ -2397,7 +2397,7 @@
         "case": "LOAD-CHAOS",
         "name": "chaos/noUnresolvedPastDeadline",
         "title": "\"noUnresolvedPastDeadline\":",
-        "file": "deploy/qualification/chaos.py:76",
+        "file": "deploy/qualification/chaos.py:75",
         "checks": "After each fault, no dispatch of the window is past its deadline without observation or disposition (UNKNOWN then reconciled)."
       }
     ],
@@ -2424,14 +2424,14 @@
         "case": "LOAD-CHAOS",
         "name": "chaos/control-pod",
         "title": "\"control-pod\": \"anvilkit-agent-control\"",
-        "file": "deploy/qualification/chaos.py:47",
+        "file": "deploy/qualification/chaos.py:46",
         "checks": "One of two Control Pods force-deleted under load: readiness drops and returns, every accepted operation exists once and ends, no duplicate charge."
       },
       {
         "case": "LOAD-CHAOS",
         "name": "chaos/postgresql",
         "title": "\"postgresql\": \"db-primary\"",
-        "file": "deploy/qualification/chaos.py:48",
+        "file": "deploy/qualification/chaos.py:47",
         "checks": "The business PostgreSQL primary lost under load (CloudNativePG failover): no lost accepted operation, no operation with two Jobs, no duplicate charge."
       },
       {
@@ -2731,14 +2731,14 @@
         "case": "LOAD-CHAOS",
         "name": "chaos/nats",
         "title": "\"nats\": \"broker\"",
-        "file": "deploy/qualification/chaos.py:48",
+        "file": "deploy/qualification/chaos.py:47",
         "checks": "JetStream loses quorum under load; the outbox drains after the servers return."
       },
       {
         "case": "LOAD-CHAOS",
         "name": "chaos/valkey",
         "title": "\"valkey\": \"queue-writes\"",
-        "file": "deploy/qualification/chaos.py:48",
+        "file": "deploy/qualification/chaos.py:47",
         "checks": "The queue primary lost; owners rebuild lost queue entries from durable requests."
       }
     ],

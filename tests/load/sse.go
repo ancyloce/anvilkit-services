@@ -33,15 +33,11 @@ func (f frame) terminal() bool {
 	return false
 }
 
-// readFrames calls each frame of the stream until fn returns false or the
-// stream ends. The SSE field rule: the value after the first colon minus one
-// optional leading space; comment lines are skipped.
-func readFrames(body io.Reader, fn func(frame) bool) error {
-	return readFramesRetry(body, nil, fn)
-}
-
-// readFramesRetry is readFrames that also keeps the stream's advertised
-// reconnect interval (an SSE `retry:` line, milliseconds) in retry when set.
+// readFramesRetry calls each frame of the stream until fn returns false or
+// the stream ends, and keeps the stream's advertised reconnect interval (an
+// SSE `retry:` line, milliseconds) in retry when set. The SSE field rule: the
+// value after the first colon minus one optional leading space; comment
+// lines are skipped.
 func readFramesRetry(body io.Reader, retry *time.Duration, fn func(frame) bool) error {
 	r := bufio.NewReader(body)
 	cur := frame{}
