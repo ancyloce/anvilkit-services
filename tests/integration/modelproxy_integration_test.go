@@ -614,12 +614,14 @@ func TestModelProxyControlledCalls(t *testing.T) {
 		dir := filepath.Join(bin, "run")
 		require.NoError(t, os.Mkdir(dir, 0o777))
 		require.NoError(t, os.Chmod(dir, 0o777))
+		trustedName, candidateName := abstractNames("modelproxy-" + run)
+		secret := newLaunchSecret(t)
 		cfg := filepath.Join(bin, "sidecar.yaml")
-		require.NoError(t, os.WriteFile(cfg, sidecarConfig(t, dir), 0o644))
+		require.NoError(t, os.WriteFile(cfg, sidecarConfig(t, dir, trustedName, candidateName), 0o644))
 		logf, err := os.Create(filepath.Join(bin, "sidecar.log"))
 		require.NoError(t, err)
 		cmd := exec.Command(sidecar)
-		cmd.Env = []string{"ANVILKIT_SIDECAR_CONFIG=" + cfg, "ANVILKIT_SIDECAR_CONTROL_ADDRESS=" + e.controlAddr, "ANVILKIT_SIDECAR_SOCKETS_DIR=" + filepath.Join(dir, "sockets"),
+		cmd.Env = []string{"ANVILKIT_SIDECAR_CONFIG=" + cfg, "ANVILKIT_SIDECAR_CONTROL_ADDRESS=" + e.controlAddr, "ANVILKIT_SIDECAR_LAUNCH_SECRET=" + secret,
 			"ANVILKIT_SIDECAR_BACKEND=host-process", "ANVILKIT_SIDECAR_LAUNCH_KEY=" + launchKey, "ANVILKIT_SIDECAR_POD_UID=pod-" + run, "ANVILKIT_SIDECAR_LAUNCH_ENVELOPE=" + envelope,
 			"ANVILKIT_SIDECAR_MODEL_PROXY_URL=" + proxyURLB, "ANVILKIT_SIDECAR_MODEL_PROXY_TOKEN=" + proxyTokenSidecar}
 		cmd.SysProcAttr = &syscall.SysProcAttr{Credential: &syscall.Credential{Uid: 10002, Gid: 10002, Groups: []uint32{0, 10001}}}
@@ -643,11 +645,8 @@ func TestModelProxyControlledCalls(t *testing.T) {
 				t.Logf("sidecar log:\n%s", raw)
 			}
 		})
-		socket := filepath.Join(dir, "sockets", "trusted.sock")
-		require.Eventually(t, func() bool {
-			st, err := os.Lstat(socket)
-			return err == nil && st.Mode()&os.ModeSocket != 0
-		}, 20*time.Second, 100*time.Millisecond)
+		socket := peerSocket{Name: trustedName, Token: peerToken(secret, "trusted")}
+		require.Eventually(t, func() bool { return sidecarUp(trustedName) }, 20*time.Second, 100*time.Millisecond)
 		require.Eventually(t, func() bool {
 			code, _ := trustedCall(t, socket, "GET", "/v1/scope", nil, nil)
 			return code == 200
@@ -1182,20 +1181,22 @@ func readLog(t *testing.T, p *proxyProcess) []byte {
 	return raw
 }
 
-// relayCall posts one model relay over trusted.sock and returns the status and the raw answer.
-func relayCall(t *testing.T, socket, body string) (int, []byte) {
+// relayCall posts one model relay over the trusted name, bound by the trusted token, and returns the status and the raw answer after checking the sidecar's proof.
+func relayCall(t *testing.T, socket peerSocket, body string) (int, []byte) {
 	t.Helper()
 	tr := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-		return (&net.Dialer{}).DialContext(ctx, "unix", socket)
+		return (&net.Dialer{}).DialContext(ctx, "unix", socket.Name)
 	}, DisableKeepAlives: true}
 	c := &http.Client{Transport: tr, Timeout: 2 * time.Minute}
 	req, err := http.NewRequest("POST", "http://sidecar/v1/model/relay", strings.NewReader(body))
 	require.NoError(t, err)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer candidate-supplied-never-forwarded")
+	nonce := bindPeer(t, req, socket)
 	resp, err := c.Do(req)
 	require.NoError(t, err)
 	defer resp.Body.Close()
+	requirePeerProof(t, resp, socket, nonce)
 	raw, _ := io.ReadAll(resp.Body)
 	return resp.StatusCode, raw
 }

@@ -136,7 +136,7 @@ func runValidator(t *testing.T, root, pkg string, l harnessLayout, cfgPath, laun
 	cmd.Dir = pkg
 	cmd.Env = []string{
 		"ANVILKIT_VALIDATOR_CONFIG=" + cfgPath, "ANVILKIT_VALIDATOR_CONTRACTS_DIR=" + filepath.Join(root, "contracts"),
-		"ANVILKIT_LAUNCH_ID=" + launchID, "ANVILKIT_ATTEMPT_ID=" + attemptID, "ANVILKIT_LAUNCH_ENVELOPE=" + envelope,
+		"ANVILKIT_LAUNCH_ID=" + launchID, "ANVILKIT_ATTEMPT_ID=" + attemptID, "ANVILKIT_LAUNCH_ENVELOPE=" + envelope, "ANVILKIT_LAUNCH_SECRET=" + l.secret,
 		"PATH=" + os.Getenv("PATH"), "HOME=" + l.root, "PLAYWRIGHT_BROWSERS_PATH=" + filepath.Join(pkg, "ms-playwright"),
 	}
 	out, err := cmd.CombinedOutput()
@@ -157,16 +157,17 @@ func validatorDirs(t *testing.T, pkg string, b harnessBinaries, name string) (ha
 	t.Helper()
 	base := filepath.Join(b.dir, name)
 	l := harnessLayout{root: base, workspace: filepath.Join(base, "workspace"), verdict: filepath.Join(base, "verdict"), run: filepath.Join(base, "run"), termination: filepath.Join(base, "termination-log"), sidecarCfg: filepath.Join(base, "sidecar.yaml")}
-	l.sockets = filepath.Join(l.run, "sockets")
+	l.trusted, l.candidate = abstractNames(name)
+	l.secret = newLaunchSecret(t)
 	require.NoError(t, os.MkdirAll(base, 0o755))
 	for _, d := range []string{l.workspace, l.verdict, l.run} {
 		require.NoError(t, os.Mkdir(d, 0o777))
 		require.NoError(t, os.Chmod(d, 0o777))
 	}
-	require.NoError(t, os.WriteFile(l.sidecarCfg, sidecarConfig(t, base), 0o644))
+	require.NoError(t, os.WriteFile(l.sidecarCfg, sidecarConfig(t, base, l.trusted, l.candidate), 0o644))
 	cfg := filepath.Join(base, "validator.yaml")
-	require.NoError(t, os.WriteFile(cfg, []byte(fmt.Sprintf("paths:\n  workspace: %s\n  verdict: %s\n  sockets: %s\n  termination_log: %s\n  fixed_source: %s\ncandidate:\n  identity: setpriv\n  uid: 10001\n  gid: 10001\nsidecar:\n  wait_ms: 30000\nhost_checks:\n  ssr: true\n  browser: true\n",
-		l.workspace, l.verdict, l.sockets, l.termination, filepath.Join(pkg, "fixtures", "component", "hero"))), 0o644))
+	require.NoError(t, os.WriteFile(cfg, []byte(fmt.Sprintf("paths:\n  workspace: %s\n  verdict: %s\n  termination_log: %s\n  fixed_source: %s\ncandidate:\n  identity: setpriv\n  uid: 10001\n  gid: 10001\nsidecar:\n  wait_ms: 30000\n  socket: %s\nhost_checks:\n  ssr: true\n  browser: true\n",
+		l.workspace, l.verdict, l.termination, filepath.Join(pkg, "fixtures", "component", "hero"), l.trusted)), 0o644))
 	return l, cfg
 }
 
@@ -251,7 +252,7 @@ func TestComponentCertificationFlow(t *testing.T) {
 	t.Run("a forged certification never creates an accepted stage", func(t *testing.T) {
 		l, _ := validatorDirs(t, pkg, b, "forged")
 		startSidecar(t, b, l, e.controlAddr, backend, launchKey, "pod-"+run+"-owner", envelope)
-		socket := filepath.Join(l.sockets, "trusted.sock")
+		socket := l.trustedPeer()
 		bogus := "sha256:6666666666666666666666666666666666666666666666666666666666666666"
 		forge := func(outputs string) (int, map[string]any) {
 			manifest := fmt.Sprintf(`{"schemaVersion":1,"launchId":%q,"attemptId":%q,"jobKind":"validator","profileId":"validator-fixture-v1","verdict":"certified","outputs":[%s],"completedAt":"2026-09-16T12:00:00Z"}`, launch.GetLaunchId(), attempt.GetAttemptId(), outputs)

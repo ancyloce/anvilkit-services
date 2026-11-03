@@ -145,8 +145,8 @@ func teamDirs(t *testing.T, root string, b harnessBinaries, teamPkg, validatorPk
 	teamCfg := filepath.Join(l.root, "team.yaml")
 	require.NoError(t, os.WriteFile(teamCfg, []byte(text), 0o600))
 	node := filepath.Join(validatorPkg, "bin", "node")
-	require.NoError(t, os.WriteFile(l.supervisorCfg, []byte(fmt.Sprintf("paths:\n  workspace: %s\n  verdict: %s\n  sockets: %s\n  agent_dir: %s\n  fixtures: %s\n  termination_log: %s\ncandidate:\n  program: %s\n  timeout: 600s\nsidecar:\n  wait: 30s\nteam:\n  coordinator: [%s, %s]\n  coder: [%s, %s]\n  config: %s\n  contracts_dir: %s\n  timeout: 20m\n",
-		l.workspace, l.verdict, l.sockets, l.agent, l.fixtures, l.termination, b.candidate, node, filepath.Join(teamPkg, "dist", "coordinator.js"), node, filepath.Join(teamPkg, "dist", "coder.js"), teamCfg, filepath.Join(root, "contracts"))), 0o600))
+	require.NoError(t, os.WriteFile(l.supervisorCfg, []byte(fmt.Sprintf("paths:\n  workspace: %s\n  verdict: %s\n  agent_dir: %s\n  fixtures: %s\n  termination_log: %s\ncandidate:\n  program: %s\n  timeout: 600s\nsidecar:\n  wait: 30s\n  trusted_socket: %s\n  candidate_socket: %s\nteam:\n  coordinator: [%s, %s]\n  coder: [%s, %s]\n  config: %s\n  contracts_dir: %s\n  timeout: 20m\n",
+		l.workspace, l.verdict, l.agent, l.fixtures, l.termination, b.candidate, l.trusted, l.candidate, node, filepath.Join(teamPkg, "dist", "coordinator.js"), node, filepath.Join(teamPkg, "dist", "coder.js"), teamCfg, filepath.Join(root, "contracts"))), 0o600))
 	return l
 }
 
@@ -157,7 +157,7 @@ func teamDirs(t *testing.T, root string, b harnessBinaries, teamPkg, validatorPk
 func runTeamSupervisor(t *testing.T, b harnessBinaries, l harnessLayout, validatorPkg, launchID, attemptID, envelope string) (int, teamSummary, string) {
 	t.Helper()
 	cmd := exec.Command("unshare", "--pid", "--fork", "--mount-proc", "--", b.supervisor, "supervisor-exec", "--", b.supervisor, "team")
-	cmd.Env = []string{"ANVILKIT_CODEGEN_CONFIG=" + l.supervisorCfg, "ANVILKIT_LAUNCH_ID=" + launchID, "ANVILKIT_ATTEMPT_ID=" + attemptID, "ANVILKIT_LAUNCH_ENVELOPE=" + envelope, "PATH=/usr/bin:/bin", "PLAYWRIGHT_BROWSERS_PATH=" + filepath.Join(validatorPkg, "ms-playwright")}
+	cmd.Env = []string{"ANVILKIT_CODEGEN_CONFIG=" + l.supervisorCfg, "ANVILKIT_LAUNCH_ID=" + launchID, "ANVILKIT_ATTEMPT_ID=" + attemptID, "ANVILKIT_LAUNCH_ENVELOPE=" + envelope, "ANVILKIT_LAUNCH_SECRET=" + l.secret, "PATH=/usr/bin:/bin", "PLAYWRIGHT_BROWSERS_PATH=" + filepath.Join(validatorPkg, "ms-playwright")}
 	out, err := cmd.CombinedOutput()
 	code := 0
 	if err != nil {
@@ -177,7 +177,7 @@ func startTeamSidecar(t *testing.T, b harnessBinaries, l harnessLayout, controlA
 	logf, err := os.Create(filepath.Join(l.root, "sidecar.log"))
 	require.NoError(t, err)
 	cmd := exec.Command(b.sidecar)
-	cmd.Env = []string{"ANVILKIT_SIDECAR_CONFIG=" + l.sidecarCfg, "ANVILKIT_SIDECAR_CONTROL_ADDRESS=" + controlAddr, "ANVILKIT_SIDECAR_SOCKETS_DIR=" + l.sockets,
+	cmd.Env = []string{"ANVILKIT_SIDECAR_CONFIG=" + l.sidecarCfg, "ANVILKIT_SIDECAR_CONTROL_ADDRESS=" + controlAddr, "ANVILKIT_SIDECAR_LAUNCH_SECRET=" + l.secret,
 		"ANVILKIT_SIDECAR_BACKEND=" + backend, "ANVILKIT_SIDECAR_LAUNCH_KEY=" + launchKey, "ANVILKIT_SIDECAR_POD_UID=" + podUID, "ANVILKIT_SIDECAR_LAUNCH_ENVELOPE=" + envelope,
 		"ANVILKIT_SIDECAR_MODEL_PROXY_URL=" + proxyURL, "ANVILKIT_SIDECAR_MODEL_PROXY_TOKEN=" + proxyTokenSidecar}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Credential: &syscall.Credential{Uid: 10002, Gid: 10002, Groups: []uint32{0, 10001}}}
@@ -202,8 +202,7 @@ func startTeamSidecar(t *testing.T, b harnessBinaries, l harnessLayout, controlA
 		}
 	})
 	require.Eventually(t, func() bool {
-		st, err := os.Lstat(filepath.Join(l.sockets, "trusted.sock"))
-		return err == nil && st.Mode()&os.ModeSocket != 0
+		return sidecarUp(l.trusted)
 	}, 20*time.Second, 100*time.Millisecond, "the sidecar did not open its sockets")
 	return p
 }
@@ -509,8 +508,7 @@ func TestCodegenTeamFlow(t *testing.T) {
 		require.Equal(t, 1, stages())
 		// Control's accepted stage is readable under the result authority (the recovery's first question) and binds
 		// exactly the objects the local result manifest names.
-		socket := filepath.Join(l.sockets, "trusted.sock")
-		status, accepted := trustedCall(t, socket, "GET", "/v1/results", nil, nil)
+		status, accepted := trustedCall(t, l.trustedPeer(), "GET", "/v1/results", nil, nil)
 		require.Equal(t, 200, status, "%v", accepted)
 		require.Equal(t, summary.StageID, accepted["stageId"])
 		require.Len(t, accepted["artifacts"], 3)
@@ -527,9 +525,9 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { StageStore } from "./dist/stage/store.js";
 import { SidecarClient } from "./dist/adapters/sidecar.js";
-const [dir, socket] = process.argv.slice(2);
+const [dir, socket, token] = process.argv.slice(2);
 const manifest = JSON.parse(readFileSync(path.join(dir, "manifest.json"), "utf8"));
-const sidecar = new SidecarClient(socket);
+const sidecar = new SidecarClient(socket, token);
 const accepted = await sidecar.acceptedStage();
 const store = new StageStore({ dir, sidecar, identity: manifest.identity, teamProfileDigest: manifest.teamProfileDigest, observerIdentity: "anvilkit-codegen-team", sourceLimits: { maxFiles: 256, maxFileBytes: 1048576, maxTotalBytes: 16777216 } });
 const scope = { ...manifest.identity, current: true };
@@ -541,7 +539,8 @@ try {
 }
 `), 0o644))
 		runProve := func() string {
-			cmd := exec.Command("node", prove, stageDir, socket)
+			peer := l.trustedPeer()
+			cmd := exec.Command("node", prove, stageDir, peer.Name, peer.Token)
 			cmd.Dir = teamPkg
 			out, err := cmd.CombinedOutput()
 			require.NoError(t, err, string(out))

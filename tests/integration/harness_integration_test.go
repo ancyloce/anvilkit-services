@@ -64,14 +64,17 @@ func buildHarness(t *testing.T, root string) harnessBinaries {
 // emptyDir-like directories, the sidecar's socket volume, the protected
 // fixtures and the explicit agent directory of the trusted resources.
 type harnessLayout struct {
-	root, workspace, verdict, run, sockets, agent, fixtures, termination, supervisorCfg, sidecarCfg string
+	root, workspace, verdict, run, agent, fixtures, termination, supervisorCfg, sidecarCfg string
+	// The sidecar's two abstract socket names and the launch secret of this layout (DEC-045 B2).
+	trusted, candidate, secret string
 }
 
 func harnessDirs(t *testing.T, root string, b harnessBinaries, name string) harnessLayout {
 	t.Helper()
 	base := filepath.Join(b.dir, name)
 	l := harnessLayout{root: base, workspace: filepath.Join(base, "workspace"), verdict: filepath.Join(base, "verdict"), run: filepath.Join(base, "run"), agent: filepath.Join(base, "agent"), fixtures: filepath.Join(base, "fixtures"), termination: filepath.Join(base, "termination-log"), supervisorCfg: filepath.Join(base, "codegen.yaml"), sidecarCfg: filepath.Join(base, "sidecar.yaml")}
-	l.sockets = filepath.Join(l.run, "sockets")
+	l.trusted, l.candidate = abstractNames(name)
+	l.secret = newLaunchSecret(t)
 	require.NoError(t, os.MkdirAll(base, 0o755))
 	for _, d := range []string{l.workspace, l.verdict, l.run} {
 		require.NoError(t, os.Mkdir(d, 0o777))
@@ -85,8 +88,8 @@ func harnessDirs(t *testing.T, root string, b harnessBinaries, name string) harn
 	fixture, err := os.ReadFile(filepath.Join(supervisorRepo(root), "fixtures", "fixed-input.txt"))
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(l.fixtures, "fixed-input.txt"), fixture, 0o600))
-	require.NoError(t, os.WriteFile(l.supervisorCfg, []byte(fmt.Sprintf("paths:\n  workspace: %s\n  verdict: %s\n  sockets: %s\n  agent_dir: %s\n  fixtures: %s\n  termination_log: %s\ncandidate:\n  program: %s\n  timeout: 120s\nsidecar:\n  wait: 30s\n", l.workspace, l.verdict, l.sockets, l.agent, l.fixtures, l.termination, b.candidate)), 0o600))
-	require.NoError(t, os.WriteFile(l.sidecarCfg, sidecarConfig(t, base), 0o644))
+	require.NoError(t, os.WriteFile(l.supervisorCfg, []byte(fmt.Sprintf("paths:\n  workspace: %s\n  verdict: %s\n  agent_dir: %s\n  fixtures: %s\n  termination_log: %s\ncandidate:\n  program: %s\n  timeout: 120s\nsidecar:\n  wait: 30s\n  trusted_socket: %s\n  candidate_socket: %s\n", l.workspace, l.verdict, l.agent, l.fixtures, l.termination, b.candidate, l.trusted, l.candidate)), 0o600))
+	require.NoError(t, os.WriteFile(l.sidecarCfg, sidecarConfig(t, base, l.trusted, l.candidate), 0o644))
 	return l
 }
 
@@ -95,7 +98,7 @@ func harnessDirs(t *testing.T, root string, b harnessBinaries, name string) harn
 // UID (the Job template mounts it into that container only), the Model
 // Proxy connection on the DEVELOPMENT_ONLY bearer of the harness's proxy,
 // admitted by the file's own development guard.
-func sidecarConfig(t *testing.T, dir string) []byte {
+func sidecarConfig(t *testing.T, dir, trustedName, candidateName string) []byte {
 	t.Helper()
 	certFile, keyFile, caFile := identityFiles(t, principalSidecar)
 	id := filepath.Join(dir, "identity")
@@ -107,8 +110,8 @@ func sidecarConfig(t *testing.T, dir string) []byte {
 		require.NoError(t, os.Chown(filepath.Join(id, name), 10002, 10002))
 	}
 	require.NoError(t, os.Chown(id, 10002, 10002))
-	return []byte(fmt.Sprintf("development:\n  enabled: true\ncontrol:\n  timeout: 15s\nidentity:\n  mode: mtls\n  mtls:\n    cert_file: %s\n    key_file: %s\n    ca_file: %s\n    server_name: anvilkit-agent-control\nmodel_proxy:\n  identity_mode: development\nmcp:\n  server_name: anvilkit-agent-mcp\n",
-		filepath.Join(id, "tls.crt"), filepath.Join(id, "tls.key"), filepath.Join(id, "ca.crt")))
+	return []byte(fmt.Sprintf("sockets:\n  trusted_name: %s\n  candidate_name: %s\ndevelopment:\n  enabled: true\ncontrol:\n  timeout: 15s\nidentity:\n  mode: mtls\n  mtls:\n    cert_file: %s\n    key_file: %s\n    ca_file: %s\n    server_name: anvilkit-agent-control\nmodel_proxy:\n  identity_mode: development\nmcp:\n  server_name: anvilkit-agent-mcp\n",
+		trustedName, candidateName, filepath.Join(id, "tls.crt"), filepath.Join(id, "tls.key"), filepath.Join(id, "ca.crt")))
 }
 
 type sidecarProcess struct {
@@ -122,7 +125,7 @@ func startSidecar(t *testing.T, b harnessBinaries, l harnessLayout, controlAddr,
 	logf, err := os.Create(filepath.Join(l.root, "sidecar.log"))
 	require.NoError(t, err)
 	cmd := exec.Command(b.sidecar)
-	cmd.Env = []string{"ANVILKIT_SIDECAR_CONFIG=" + l.sidecarCfg, "ANVILKIT_SIDECAR_CONTROL_ADDRESS=" + controlAddr, "ANVILKIT_SIDECAR_SOCKETS_DIR=" + l.sockets,
+	cmd.Env = []string{"ANVILKIT_SIDECAR_CONFIG=" + l.sidecarCfg, "ANVILKIT_SIDECAR_CONTROL_ADDRESS=" + controlAddr, "ANVILKIT_SIDECAR_LAUNCH_SECRET=" + l.secret,
 		"ANVILKIT_SIDECAR_BACKEND=" + backend, "ANVILKIT_SIDECAR_LAUNCH_KEY=" + launchKey, "ANVILKIT_SIDECAR_POD_UID=" + podUID, "ANVILKIT_SIDECAR_LAUNCH_ENVELOPE=" + envelope}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Credential: &syscall.Credential{Uid: 10002, Gid: 10002, Groups: []uint32{0, 10001}}}
 	stdin, err := cmd.StdinPipe()
@@ -146,8 +149,7 @@ func startSidecar(t *testing.T, b harnessBinaries, l harnessLayout, controlAddr,
 		}
 	})
 	require.Eventually(t, func() bool {
-		st, err := os.Lstat(filepath.Join(l.sockets, "trusted.sock"))
-		return err == nil && st.Mode()&os.ModeSocket != 0
+		return sidecarUp(l.trusted)
 	}, 20*time.Second, 100*time.Millisecond, "the sidecar did not open its sockets")
 	return p
 }
@@ -174,7 +176,7 @@ type harnessSummary struct {
 func runSupervisor(t *testing.T, b harnessBinaries, l harnessLayout, launchID, attemptID, envelope string) (int, harnessSummary, string) {
 	t.Helper()
 	cmd := exec.Command(b.supervisor, "supervisor-exec", "--", b.supervisor)
-	cmd.Env = []string{"ANVILKIT_CODEGEN_CONFIG=" + l.supervisorCfg, "ANVILKIT_LAUNCH_ID=" + launchID, "ANVILKIT_ATTEMPT_ID=" + attemptID, "ANVILKIT_LAUNCH_ENVELOPE=" + envelope, "PATH=/usr/bin:/bin"}
+	cmd.Env = []string{"ANVILKIT_CODEGEN_CONFIG=" + l.supervisorCfg, "ANVILKIT_LAUNCH_ID=" + launchID, "ANVILKIT_ATTEMPT_ID=" + attemptID, "ANVILKIT_LAUNCH_ENVELOPE=" + envelope, "ANVILKIT_LAUNCH_SECRET=" + l.secret, "PATH=/usr/bin:/bin"}
 	out, err := cmd.CombinedOutput()
 	code := 0
 	if err != nil {
@@ -195,11 +197,17 @@ func harnessEnvelope(launchID, launchKey, opID, attemptID, executionEpoch, launc
 		launchID, launchKey, opID, attemptID, revision, executionEpoch, launchEpoch, deadline.UTC().Format(time.RFC3339), inputDigest)
 }
 
-// trustedCall sends one request over trusted.sock as the root test process.
-func trustedCall(t *testing.T, socket, method, path string, headers map[string]string, body []byte) (int, map[string]any) {
+// trustedPeer is the trusted socket of the layout as the root test process reaches it.
+func (l harnessLayout) trustedPeer() peerSocket {
+	return peerSocket{Name: l.trusted, Token: peerToken(l.secret, "trusted")}
+}
+
+// trustedCall sends one request over the trusted name as the root test
+// process, bound by the trusted token, and checks the sidecar's proof.
+func trustedCall(t *testing.T, s peerSocket, method, path string, headers map[string]string, body []byte) (int, map[string]any) {
 	t.Helper()
 	tr := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-		return (&net.Dialer{}).DialContext(ctx, "unix", socket)
+		return (&net.Dialer{}).DialContext(ctx, "unix", s.Name)
 	}, DisableKeepAlives: true}
 	c := &http.Client{Transport: tr, Timeout: 30 * time.Second}
 	req, err := http.NewRequest(method, "http://sidecar"+path, strings.NewReader(string(body)))
@@ -207,9 +215,11 @@ func trustedCall(t *testing.T, socket, method, path string, headers map[string]s
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
+	nonce := bindPeer(t, req, s)
 	resp, err := c.Do(req)
 	require.NoError(t, err)
 	defer resp.Body.Close()
+	requirePeerProof(t, resp, s, nonce)
 	raw, _ := io.ReadAll(resp.Body)
 	var out map[string]any
 	_ = json.Unmarshal(raw, &out)
@@ -280,10 +290,10 @@ func TestTrustedHarnessProcessFlow(t *testing.T) {
 	t.Run("the sidecar has no scope before the launcher registered the Pod", func(t *testing.T) {
 		l := harnessDirs(t, root, b, "unregistered")
 		startSidecar(t, b, l, e.controlAddr, backend, launchKey, "pod-"+run+"-unregistered", envelope)
-		code, out := trustedCall(t, filepath.Join(l.sockets, "trusted.sock"), "GET", "/v1/scope", nil, nil)
+		code, out := trustedCall(t, l.trustedPeer(), "GET", "/v1/scope", nil, nil)
 		require.Equal(t, 503, code)
 		require.Equal(t, "SCOPE_UNAVAILABLE", out["code"])
-		code, _ = trustedCall(t, filepath.Join(l.sockets, "trusted.sock"), "POST", "/v1/transfers", map[string]string{"X-Anvilkit-Class": "result"}, []byte("x"))
+		code, _ = trustedCall(t, l.trustedPeer(), "POST", "/v1/transfers", map[string]string{"X-Anvilkit-Class": "result"}, []byte("x"))
 		require.Equal(t, 503, code, "nothing is transferred without a registered scope")
 	})
 
@@ -331,7 +341,9 @@ func TestTrustedHarnessProcessFlow(t *testing.T) {
 		require.Equal(t, "EACCES", p["read:fixed-input.txt"])
 		require.Equal(t, "EACCES", p["read:environ"])
 		require.Equal(t, "EACCES", p["write:manifest.json"])
-		require.Equal(t, "EACCES", p["connect:trusted.sock"])
+		// The trusted name accepts the connect (an abstract name has no file mode); the sidecar closes a UID 10001 peer at accept, unanswered.
+		require.Equal(t, "CONNECTED", p["connect:trusted"])
+		require.Equal(t, "CLOSED", p["trusted:scope"])
 		require.Equal(t, "200 ", p["candidate:inputs-permitted"])
 		require.Equal(t, "403 ROUTE_FORBIDDEN", p["candidate:results"])
 		require.Equal(t, "403 ROUTE_FORBIDDEN", p["candidate:scope"])
@@ -380,18 +392,18 @@ func TestTrustedHarnessProcessFlow(t *testing.T) {
 		var code int
 		var out map[string]any
 		require.Eventually(t, func() bool {
-			code, out = trustedCall(t, filepath.Join(l.sockets, "trusted.sock"), "GET", "/v1/scope", nil, nil)
+			code, out = trustedCall(t, l.trustedPeer(), "GET", "/v1/scope", nil, nil)
 			return code != 503
 		}, 20*time.Second, 200*time.Millisecond, "the sidecar reached Control")
 		require.Equal(t, 403, code, "%v", out)
 		require.Equal(t, "STALE_EXECUTION", out["code"], "a closed attempt grants no scope: %v", out)
-		code, out = trustedCall(t, filepath.Join(l.sockets, "trusted.sock"), "PUT", "/v1/inputs/fixed-input", nil, fixture)
+		code, out = trustedCall(t, l.trustedPeer(), "PUT", "/v1/inputs/fixed-input", nil, fixture)
 		require.Equal(t, 403, code, "%v", out)
 		require.Equal(t, "STALE_EXECUTION", out["code"], "nothing is staged for a closed attempt")
-		code, out = trustedCall(t, filepath.Join(l.sockets, "trusted.sock"), "POST", "/v1/transfers", map[string]string{"X-Anvilkit-Class": "evidence", "Content-Type": "text/plain"}, []byte("late evidence\n"))
+		code, out = trustedCall(t, l.trustedPeer(), "POST", "/v1/transfers", map[string]string{"X-Anvilkit-Class": "evidence", "Content-Type": "text/plain"}, []byte("late evidence\n"))
 		require.Equal(t, 403, code, "%v", out)
 		require.Equal(t, "STALE_EXECUTION", out["code"], "no transfer begins for a closed attempt: %v", out)
-		code, out = trustedCall(t, filepath.Join(l.sockets, "trusted.sock"), "POST", "/v1/results", map[string]string{"Content-Type": "application/json"}, []byte(`{"verdict":"certified","observerIdentity":"late","manifest":{"schemaVersion":1,"launchId":"`+launch.GetLaunchId()+`","attemptId":"`+attempt.GetAttemptId()+`","jobKind":"codegen","profileId":"harness-wiring-dev-v1","verdict":"certified","outputs":[],"completedAt":"2026-09-16T00:00:00Z"}}`))
+		code, out = trustedCall(t, l.trustedPeer(), "POST", "/v1/results", map[string]string{"Content-Type": "application/json"}, []byte(`{"verdict":"certified","observerIdentity":"late","manifest":{"schemaVersion":1,"launchId":"`+launch.GetLaunchId()+`","attemptId":"`+attempt.GetAttemptId()+`","jobKind":"codegen","profileId":"harness-wiring-dev-v1","verdict":"certified","outputs":[],"completedAt":"2026-09-16T00:00:00Z"}}`))
 		require.Equal(t, 403, code, "%v", out)
 		require.Equal(t, "STALE_EXECUTION", out["code"], "another result for the closed attempt never reaches acceptance")
 		var transfersAfter, stages int
