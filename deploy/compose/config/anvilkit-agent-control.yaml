@@ -24,6 +24,13 @@ dispatch:
     authorized_routes:
     - route_id: controlled-openai-v1
       tenant_id: tenant_a
+    # Retrieval S2 (outputs/retrieval-enable-20261103/RECORD.md, 2026-11-03): the
+    # development fixture answers every question that is not a model-route
+    # execution (a disclosure such as knowledge-snapshot for a search) only for a
+    # tenant listed with the route "*" (Control adapters/development/fixtures.go
+    # Authority.Check). DEVELOPMENT_ONLY, fixture prices; the owner's decision.
+    - route_id: '*'
+      tenant_id: tenant_a
     enabled: true
     prices:
     - currency: USD
