@@ -2106,13 +2106,13 @@
       {
         "case": "IT-TEAM",
         "name": "TestCodegenTeamFlow/the_team_produces_the_complete_source_through_controlled_calls,_validates_it_independently_and_Control_accepts_the_joint_stage",
-        "file": "tests/integration/team_integration_test.go:413",
+        "file": "tests/integration/team_integration_test.go:412",
         "checks": "Verdict certified, 8 source files, one upstream receive and one observed dispatch per call, accepted joint stage binds source/stage/evidence."
       },
       {
         "case": "IT-TEAM",
         "name": "TestCodegenTeamFlow/an_operation_funded_for_one_send:_Control_denies_the_coder's_first_send_and_the_run_ends_model_denied,_never_as_a_candidate_defect",
-        "file": "tests/integration/team_integration_test.go:734",
+        "file": "tests/integration/team_integration_test.go:733",
         "checks": "With one per-send allocation only the planner send reaches the upstream; the run ends model_denied/BUDGET_EXHAUSTED with nothing validated."
       },
       {
@@ -2154,7 +2154,7 @@
       {
         "case": "IT-TEAM",
         "name": "TestCodegenTeamFlow/a_repairable_defect_of_the_independent_validator_sends_the_team_back_to_the_coder_once;_the_repaired_source_is_certified",
-        "file": "tests/integration/team_integration_test.go:558",
+        "file": "tests/integration/team_integration_test.go:557",
         "checks": "A left-pad dependency the coder writes is refused by the independent validator (CANDIDATE_BUILD_FAILED) before the repaired round is certified."
       }
     ],
@@ -2211,7 +2211,7 @@
       {
         "case": "IT-CERTIFICATION",
         "name": "TestComponentCertificationFlow/a_forged_certification_never_creates_an_accepted_stage",
-        "file": "tests/integration/component_integration_test.go:251",
+        "file": "tests/integration/component_integration_test.go:252",
         "checks": "Forged certified manifests (no object, foreign handle, wrong class/digest) are refused and no stage is accepted."
       }
     ],
@@ -2390,7 +2390,7 @@
       {
         "case": "IT-MODEL-PROXY",
         "name": "TestModelProxyControlledCalls/recovery_queries_the_Proxy_about_the_lost_send_under_its_original_identity_and_keeps_it_unknown",
-        "file": "tests/integration/modelproxy_integration_test.go:1054",
+        "file": "tests/integration/modelproxy_integration_test.go:1053",
         "checks": "Recovery queries the Proxy under the original identity and keeps the send unknown."
       },
       {
@@ -2417,7 +2417,7 @@
       {
         "case": "IT-MODEL-PROXY",
         "name": "TestModelProxyControlledCalls/the_same_call_on_both_Proxies_through_both_Controls_is_sent_once",
-        "file": "tests/integration/modelproxy_integration_test.go:714",
+        "file": "tests/integration/modelproxy_integration_test.go:713",
         "checks": "The same call through two Proxies and two Controls reaches the upstream once."
       },
       {
@@ -2584,13 +2584,13 @@
       {
         "case": "IT-TEAM",
         "name": "TestCodegenTeamFlow/restart_after_acceptance:_the_attempt_admits_no_new_scope,_nothing_runs_or_is_sent;_the_accepted_stage_is_readable_and_the_local_objects_prove_against_it,_an_altered_one_is_refused",
-        "file": "tests/integration/team_integration_test.go:492",
+        "file": "tests/integration/team_integration_test.go:491",
         "checks": "A restarted attempt gets STALE_EXECUTION, sends nothing, and an altered local stage is refused STALE_STAGE."
       },
       {
         "case": "IT-TEAM",
         "name": "TestCodegenTeamFlow/a_repairable_defect_of_the_independent_validator_sends_the_team_back_to_the_coder_once;_the_repaired_source_is_certified",
-        "file": "tests/integration/team_integration_test.go:558",
+        "file": "tests/integration/team_integration_test.go:557",
         "checks": "One bounded repair after an independent validator verdict, then certification."
       }
     ],
@@ -2907,7 +2907,7 @@
       {
         "case": "IT-HARNESS",
         "name": "TestTrustedHarnessProcessFlow/the_current_instance_completes_the_trusted_flow_and_acceptance_is_idempotent",
-        "file": "tests/integration/harness_integration_test.go:294",
+        "file": "tests/integration/harness_integration_test.go:304",
         "checks": "UID 10001 gets EACCES on verdict/resources/input/environ/manifest and trusted.sock, EPERM on setuid, fd delegation CLOSED (host processes)."
       },
       {
@@ -2919,13 +2919,13 @@
       {
         "case": "IT-CERTIFICATION",
         "name": "TestComponentCertificationFlow/a_forged_certification_never_creates_an_accepted_stage",
-        "file": "tests/integration/component_integration_test.go:251",
+        "file": "tests/integration/component_integration_test.go:252",
         "checks": "Forged verdict manifests are refused."
       },
       {
         "case": "U-SIDECAR",
         "name": "TestPeerCredentialsAndDelegation",
-        "file": "jobs/shared/access-sidecar/internal/app/app_test.go:662",
+        "file": "jobs/shared/access-sidecar/internal/app/app_test.go:740",
         "checks": "Wrong peer UID on candidate.sock is closed; an SCM_RIGHTS descriptor closes the connection."
       }
     ],
@@ -2953,7 +2953,7 @@
       {
         "case": "U-SIDECAR",
         "name": "TestCandidateBoundary",
-        "file": "jobs/shared/access-sidecar/internal/app/app_test.go:688",
+        "file": "jobs/shared/access-sidecar/internal/app/app_test.go:766",
         "checks": "UID 10001 reaches only its own socket and permitted routes."
       }
     ],
@@ -3098,7 +3098,7 @@
         "case": "U-POLICIES",
         "name": "offline/service-account",
         "title": "\"service-account\"",
-        "file": "deploy/policies/tests/mutate.py:180",
+        "file": "deploy/policies/tests/mutate.py:198",
         "checks": "Kyverno CLI evaluation refuses each substituted template (not admission)."
       },
       {
@@ -3112,20 +3112,20 @@
         "case": "U-POLICIES",
         "name": "offline/volume-csi",
         "title": "\"volume-csi\"",
-        "file": "deploy/policies/tests/mutate.py:157",
+        "file": "deploy/policies/tests/mutate.py:171",
         "checks": "Kyverno CLI evaluation refuses each substituted template (not admission)."
       },
       {
         "case": "U-POLICIES",
         "name": "offline/capability-added",
         "title": "\"capability-added\"",
-        "file": "deploy/policies/tests/mutate.py:168",
+        "file": "deploy/policies/tests/mutate.py:186",
         "checks": "Kyverno CLI evaluation refuses each substituted template (not admission)."
       },
       {
         "case": "WF-CLUSTER",
         "name": "TestHarnessOnTheDevelopmentCluster/template_substitutions_are_refused_by_the_cluster's_admission",
-        "file": "services/agent/workflow/internal/adapters/kubernetes/harness_integration_test.go:442",
+        "file": "services/agent/workflow/internal/adapters/kubernetes/harness_integration_test.go:446",
         "checks": "The development cluster's admission refuses substituted Jobs from the launcher."
       },
       {
@@ -3138,14 +3138,14 @@
         "case": "SEC09-POLICIES-CLUSTER",
         "name": "cluster ephemeralcontainers UPDATE launcher: RBAC rejection",
         "title": "ephemeralcontainers UPDATE launcher: RBAC rejection",
-        "file": "deploy/policies/tests/mutate.py:351",
+        "file": "deploy/policies/tests/mutate.py:368",
         "checks": "The launcher's ephemeral-container injection is refused by RBAC on the cluster."
       },
       {
         "case": "SEC09-POLICIES-CLUSTER",
         "name": "cluster ephemeralcontainers UPDATE admin: policy rejection",
         "title": "ephemeralcontainers UPDATE admin: policy rejection",
-        "file": "deploy/policies/tests/mutate.py:355",
+        "file": "deploy/policies/tests/mutate.py:372",
         "checks": "An administrator's ephemeral-container injection is refused by policy."
       }
     ],
@@ -3165,7 +3165,7 @@
       {
         "case": "U-TEAM",
         "name": "Pi's grep tool runs the image's ripgrep, offline (AC5) without any ripgrep the coder's grep fails offline: nothing is downloaded, nothing is fetched",
-        "file": "jobs/codegen/team/test/pi-offline.test.ts:217",
+        "file": "jobs/codegen/team/test/pi-offline.test.ts:223",
         "checks": "No tool/plugin download.",
         "title": "without any ripgrep the coder's grep fails offline: nothing is downloaded, nothing is fetched"
       },
