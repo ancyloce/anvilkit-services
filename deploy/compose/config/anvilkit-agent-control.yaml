@@ -90,14 +90,15 @@ profiles:
     funding:
       amount: '3000000'
       currency: USD
-    # Plan 0006 §9.44 (2026-11-03): back to the development pair on runc. The
-    # production pair (DEC-044, enabled in the contracts and in the Workflow's
-    # enabled_profiles) failed three Generations under the gVisor RuntimeClass:
-    # the access sidecar's SO_PEERCRED peer binding does not work there in
-    # either runsc host-uds setting. A design decision (DEC-045) precedes any
-    # return to codegen-team-v1 / validator-source-v1 here.
-    codegen_profile: codegen-team-dev-v1
-    validator_profile: validator-source-dev-v1
+    # DEC-044 and DEC-045: the production candidate profiles under the gVisor
+    # RuntimeClass of the Jobs node. Their three Generations of 2026-11-03
+    # failed on the access sidecar's shared-volume socket boundary; since
+    # v0.1.21 the boundary runs on abstract-namespace sockets with a per-launch
+    # secret (DEC-045), and the development pair passed a Generation on it
+    # (plan 0006 §9.56). The development twins stay enabled in the Workflow as
+    # the fallback pair.
+    codegen_profile: codegen-team-v1
+    validator_profile: validator-source-v1
   local_check_deadline: 15m
   preparation:
     funding:
