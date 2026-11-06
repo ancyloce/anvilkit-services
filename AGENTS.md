@@ -112,11 +112,14 @@ Use the pinned CPython 3.12 interpreter `.local/verification-venv/bin/python` fo
 | Dependency or Dockerfile pin change | `tools/check-dependencies.py --pins` locally; the release gate's vulnerability policy runs in CI (`supply-chain.yml`, push and daily) |
 | Deploying a Compose image pin commit | its `pin` workflow run, or `tools/check-image-pin.py <commit>` locally (read-only); a push that changes only the pin runs no `ci` |
 | Release path after a Job image change (tags, re-pins, consumer bumps, release, pin) | `tools/release-train.py plan` (read-only) prepares it and the owner starts `run` (DEC-035); `--replay` and `--self-test` after changing its re-pin or bump rules |
+| Edit to a file that `tests/evals/registry.json` cites by `file:line` (comment lines count) | `tools/run-evaluation.py --check` with the pinned interpreter; it fails when a cited line no longer defines its test. `grep` the registry for the file before editing; keep edits above cited lines line-neutral or update the citations |
 | Go modules | `go build ./...`, `go vet ./...`, `go test ./...` per module; Testcontainers requires Docker. Report tests skipped with `ANVILKIT_SKIP_DOCKER_TESTS=1` |
 | API, Control, Workflow | Apply `GOWORK=off GOFLAGS=-mod=readonly` to each build/vet/test command; also `docker build .` and `helm lint deploy/chart` in each repository |
 | Race checks | `go test -race` for API transport, Control application, and Workflow packages |
 | Control SQL | `sh tools/sqlc.sh --check` in Control |
 | End-to-end | `go test -tags integration ./...` in `tests/integration`; `ANVILKIT_INTEGRATION_API_URL` targets an API deployed elsewhere |
+
+**Test timing:** a test synchronizes on an observable condition, polled with a deadline, and measures durations with a monotonic or CPU-time clock. A fixed sleep or wall-clock threshold passes on an idle machine and flakes under CI load.
 
 **Environment actions require task authorization:** `sh deploy/dev/up.sh` starts development; source `.local/dev/env.sh` for tests. `sh deploy/dev/api-chart.sh install`, `sh deploy/dev/control-chart.sh install`, and `sh deploy/dev/workflow-chart.sh install` deploy to kind; Control/Workflow use two replicas.
 
@@ -237,13 +240,13 @@ Each fact has one owner; other files use brief descriptions, IDs and links. Accu
 
 Apply section 3's edit precautions; re-read a memory file before writing it. Update changed facts at their owner, then affected summary fields and references. **Replace snapshots, never append.** `Last Updated` is one line, `Last Updated: <UTC minute>` with at most a short parenthesis, and the previous value is not kept. Preserve IDs, anchors, history records and unrelated content; leave accurate files and timestamps unchanged.
 
-State claims identify revision, environment, observation time and evidence. Distinguish planned, implemented, committed, pushed, built, published, deployed, verified and qualified; distinguish parent gitlinks, submodule `HEAD`s, local commits and uncommitted work. Attribute unverified prior claims to their source and date. A reusable check result is recorded with its inputs and what invalidates it (the Verified state table); a changed input means the check is re-run, not reused.
+State claims identify revision, environment, observation time and evidence. Every time a record states (`Last Updated`, observation and status times) is read from `date -u` when it is written or observed; `date -u +%Y-%m-%dT%H:%MZ` gives the `Last Updated` minute, and a time nobody observed is recorded as unknown. Distinguish planned, implemented, committed, pushed, built, published, deployed, verified and qualified; distinguish parent gitlinks, submodule `HEAD`s, local commits and uncommitted work, as `git -C <repo> status --short` and `git -C <repo> log -1` show them when the claim is written. Attribute unverified prior claims to their source and date. A reusable check result is recorded with its inputs and what invalidates it (the Verified state table); a changed input means the check is re-run, not reused.
 
 At any stopping point the Resume block must let a new context continue: the last completed step with its evidence, uncommitted work per repository, running or uncertain external operations under their identities, pending checks, and the inputs the next action depends on.
 
 Use [verification reporting](#verification-results) and section 6's data rules. Link detailed evidence instead of copying output into memory. Inaccessible evidence remains a limitation or, when it prevents continuation, a blocker.
 
-A budget failure from `tools/check-memory.py` is a maintenance signal: condense at the owner, or move history to its evidence record or `docs/archive/memory/`. Never drop a constraint, an open task or an unresolved blocker to fit, and never edit the archive.
+Run `tools/check-memory.py` after each memory-file edit, not only at a checkpoint. A budget failure is a maintenance signal: condense at the owner, or move history to its evidence record or `docs/archive/memory/`. Never drop a constraint, an open task or an unresolved blocker to fit, and never edit the archive.
 
 Health scoring requires a user request. Store it only in SESSION_SUMMARY with date, agreed rubric, evidence, and limitations. Unsupported categories are `NOT_ASSESSED`; incomplete assessments have no complete total. Scores do not qualify releases.
 
