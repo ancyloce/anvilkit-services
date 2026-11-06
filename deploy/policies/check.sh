@@ -244,6 +244,20 @@ if [ "${1:-}" = "--cluster" ]; then
     fi
   done
   KUBECONFIG="$ADMIN_KUBECONFIG" "$PY" "$POLICIES/tests/mutate.py" --cluster-lifecycle "$WORK/resources" "$CTX" "$LAUNCHER" || failures=$((failures+1))
+  # RB-A18: the parser launcher creates its per-launch stage Secret and reads
+  # no Secret of anvilkit-parsing (a namespace-wide get would admit them all).
+  for check in "create yes" "get no" "list no" "watch no"; do
+    verb=${check% *}
+    want=${check#* }
+    total=$((total+1))
+    got=$(kubectl --kubeconfig "$PARSER_LAUNCHER" -n anvilkit-parsing auth can-i "$verb" secrets 2>/dev/null || true)
+    if [ "$got" = "$want" ]; then
+      printf 'PASS cluster/%-8s %-36s %s\n' parser "secrets-$verb" "$want"
+    else
+      printf 'FAIL cluster/%-8s %-36s expected %s, got %s\n' parser "secrets-$verb" "$want" "${got:-no answer}"
+      failures=$((failures+1))
+    fi
+  done
 fi
 echo "policy checks: $total cases, $failures failures"
 [ "$failures" -eq 0 ]
