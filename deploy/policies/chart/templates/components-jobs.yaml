@@ -52,7 +52,7 @@ spec:
     - name: supervisorDigests
       expression: "['sha256:67b6cad1e532224b75996b6c1687e3b506994848d801987d06f9bedae2680c90', 'sha256:3df93c75dfceb827d3902708fd2a083b411e77e96d0cc68c160758c7b0866abf', 'sha256:4e05525d716e11e74a3866009af7e42971a383427a6a39255f63a00c3616bdc7']"
     - name: sidecarDigests
-      expression: "['sha256:2f0e499e11bed135b508525bf35d63d29e5b8943777e204de0a1627ed3fabdd5']"
+      expression: "['sha256:ffb0f0a55615d9012a2de05bc16a62aeee420ab41e437947a5a1511b582ef023']"
     - name: supervisorEnv
       expression: "['ANVILKIT_LAUNCH_ID', 'ANVILKIT_ATTEMPT_ID', 'ANVILKIT_LAUNCH_ENVELOPE', 'ANVILKIT_LAUNCH_SECRET']"
     - name: sidecarEnv
