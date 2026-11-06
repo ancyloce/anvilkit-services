@@ -50,9 +50,9 @@ spec:
     - name: fixtureDigests
       expression: "['sha256:9db7b59979c38555a39def84a31fb98b5296952f9e3afd4f6f11f05b07adfab0']"
     - name: supervisorDigests
-      expression: "['sha256:d0e9c5b484f5e4639ed36ac0275ed638e24f9716837f191d28b89f64d959fee7', 'sha256:3df93c75dfceb827d3902708fd2a083b411e77e96d0cc68c160758c7b0866abf', 'sha256:4e05525d716e11e74a3866009af7e42971a383427a6a39255f63a00c3616bdc7']"
+      expression: "['sha256:67b6cad1e532224b75996b6c1687e3b506994848d801987d06f9bedae2680c90', 'sha256:3df93c75dfceb827d3902708fd2a083b411e77e96d0cc68c160758c7b0866abf', 'sha256:4e05525d716e11e74a3866009af7e42971a383427a6a39255f63a00c3616bdc7']"
     - name: sidecarDigests
-      expression: "['sha256:e633170b489b9a99b23d6b35dce9db25aa4d8bd1a33cdbc590f329fd05c6b3e4']"
+      expression: "['sha256:2f0e499e11bed135b508525bf35d63d29e5b8943777e204de0a1627ed3fabdd5']"
     - name: supervisorEnv
       expression: "['ANVILKIT_LAUNCH_ID', 'ANVILKIT_ATTEMPT_ID', 'ANVILKIT_LAUNCH_ENVELOPE', 'ANVILKIT_LAUNCH_SECRET']"
     - name: sidecarEnv
