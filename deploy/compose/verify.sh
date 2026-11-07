@@ -79,10 +79,10 @@ echo "== PKI and mTLS"
 sh "$HERE/pki.sh" verify | sed 's/^/            /' | head -12
 for ep in anvilkit-agent-control:9101 anvilkit-agent-knowledge:9105 anvilkit-agent-mcp:9106; do
   name=${ep%%:*}
-  out=$(docker run --rm --network anvilkit_default -v "$CERTS/anvilkit-agent-api:/id:ro" -v "$CERTS/ca:/ca:ro" --entrypoint sh alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6 -c "apk add -q openssl >/dev/null 2>&1; echo | openssl s_client -connect $ep -servername $name -CAfile /ca/ca.crt -cert /id/tls.crt -key /id/tls.key -alpn h2 2>/dev/null | grep -E 'Verify return code|Protocol  :'" 2>/dev/null | tr '\n' ' ')
+  out=$(docker run --rm --network anvilkit_default -v "$CERTS/anvilkit-agent-api:/id:ro" -v "$CERTS/ca:/ca:ro" --entrypoint sh alpine:3.24@sha256:3f4d6b32e26703c6082839234f43769d5046b3ac7c910033911d1e71d8cd630a -c "apk add -q openssl >/dev/null 2>&1; echo | openssl s_client -connect $ep -servername $name -CAfile /ca/ca.crt -cert /id/tls.crt -key /id/tls.key -alpn h2 2>/dev/null | grep -E 'Verify return code|Protocol  :'" 2>/dev/null | tr '\n' ' ')
   case "$out" in *"Verify return code: 0"*) pass "mTLS handshake to $ep as anvilkit-agent-api: $out" ;; *) fail "mTLS handshake to $ep: ${out:-no answer}" ;; esac
 done
-out=$(docker run --rm --network anvilkit_default --entrypoint sh alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6 -c "apk add -q openssl >/dev/null 2>&1; echo | openssl s_client -connect anvilkit-agent-control:9101 2>&1 | grep -ciE 'alert|handshake failure|certificate required'" 2>/dev/null)
+out=$(docker run --rm --network anvilkit_default --entrypoint sh alpine:3.24@sha256:3f4d6b32e26703c6082839234f43769d5046b3ac7c910033911d1e71d8cd630a -c "apk add -q openssl >/dev/null 2>&1; echo | openssl s_client -connect anvilkit-agent-control:9101 2>&1 | grep -ciE 'alert|handshake failure|certificate required'" 2>/dev/null)
 [ "${out:-0}" -gt 0 ] && pass "Control refuses a client without a certificate" || unex "Control without client certificate: no refusal observed in the handshake transcript (service-level authorization still applies)"
 
 echo "== API"

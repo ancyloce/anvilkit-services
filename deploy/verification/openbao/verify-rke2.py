@@ -75,7 +75,7 @@ def main():
                 'restartPolicy': 'Never', 'serviceAccountName': 'anvilkit-agent-model-proxy', 'automountServiceAccountToken': False,
                 'nodeSelector': {'anvilkit.io/workload': 'application'},
                 'securityContext': {'runAsUser': 65532, 'runAsGroup': 65532, 'fsGroup': 65532},
-                'containers': [{'name': 'probe', 'image': 'alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b',
+                'containers': [{'name': 'probe', 'image': 'alpine:3.24@sha256:3f4d6b32e26703c6082839234f43769d5046b3ac7c910033911d1e71d8cd630a',
                     'command': ['sh', '-c', 'test "$(cat /credential/probe)" = non-provider-fixture && ! touch /credential/write 2>/dev/null && echo CSI_READ_ONLY_PASS'],
                     'securityContext': {'allowPrivilegeEscalation': False, 'readOnlyRootFilesystem': True, 'capabilities': {'drop': ['ALL']}},
                     'resources': {'requests': {'cpu': '10m', 'memory': '8Mi'}, 'limits': {'cpu': '100m', 'memory': '32Mi'}},

@@ -369,7 +369,7 @@ services:
   # Docker creates a named volume root-owned when the image has no directory at
   # its mount point; the Workflow (65532) must own the Pagix double's directory.
   pagix-double-init:
-    image: alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
+    image: alpine:3.24@sha256:3f4d6b32e26703c6082839234f43769d5046b3ac7c910033911d1e71d8cd630a
     logging: *logging
     restart: "no"
     command: ["sh", "-c", "chown 65532:65532 /data && chmod 700 /data"]
