@@ -3,9 +3,23 @@
 # Jobs) and one Job that proves, from a pod on the Jobs node, that DNS, the
 # relay and the Compose ports answer, and that every other destination (the
 # internet, the Kubernetes API, the host-only address directly) is refused.
+#
+# RB-S09: baseline, like anvilkit-components. The path probe Job meets restricted, but the
+# namespace also hosts the diagnostic Pods that reproduce the Job layout (DEC-044's team smoke,
+# DEC-045's socket probe: UID 0, the supervisor's capabilities).
 apiVersion: v1
 kind: Namespace
-metadata: {name: anvilkit-probe}
+metadata:
+  name: anvilkit-probe
+  labels:
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/enforce-version: v1.36
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/audit-version: v1.36
+    pod-security.kubernetes.io/warn: baseline
+    pod-security.kubernetes.io/warn-version: v1.36
+  annotations:
+    anvilkit.io/pod-security-exemption: "restricted is not met by the diagnostic Pods that reproduce the Job layout (DEC-044 team smoke, DEC-045 socket probe: UID 0 and the supervisor's SETUID, SETGID and SETPCAP); the path probe Job meets restricted (RB-S09)"
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

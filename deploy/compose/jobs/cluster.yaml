@@ -12,17 +12,48 @@
 # anvilkit-agent-model-proxy, minio), so server names and URL hosts match.
 #
 # D-5 (one generation at a time): each Job namespace admits one non-terminal pod.
+#
+# RB-S09: Pod Security Admission at the v1.36 standards, as in deploy/dev/k8s/namespaces.yaml:
+# anvilkit-parsing and anvilkit-gateway enforce restricted, anvilkit-components
+# enforces baseline with its named exemption (deploy/policies/check.sh checks
+# every workload placed here against the level).
 apiVersion: v1
 kind: Namespace
-metadata: {name: anvilkit-components}
+metadata:
+  name: anvilkit-components
+  labels:
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/enforce-version: v1.36
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/audit-version: v1.36
+    pod-security.kubernetes.io/warn: baseline
+    pod-security.kubernetes.io/warn-version: v1.36
+  annotations:
+    anvilkit.io/pod-security-exemption: "restricted is not met: the supervisor starts as UID 0 with SETUID, SETGID and SETPCAP to run the candidate under its own UID, and the local-check fixture runs as root; the anvilkit-components-pods ValidatingPolicy admits only the launcher's exact layouts (RB-S09)"
 ---
 apiVersion: v1
 kind: Namespace
-metadata: {name: anvilkit-parsing}
+metadata:
+  name: anvilkit-parsing
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: v1.36
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/audit-version: v1.36
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/warn-version: v1.36
 ---
 apiVersion: v1
 kind: Namespace
-metadata: {name: anvilkit-gateway}
+metadata:
+  name: anvilkit-gateway
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: v1.36
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/audit-version: v1.36
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/warn-version: v1.36
 ---
 # gVisor (plan 0006 D-4, B-003): the RuntimeClass the production candidate
 # profiles pin (contracts/jobs/profiles.json, runtimeClass gvisor). The handler

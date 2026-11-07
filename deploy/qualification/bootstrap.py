@@ -128,7 +128,8 @@ OPENBAO_ROLES = [
 ]
 # Capabilities a role holds beyond reading its own KV path.
 OPENBAO_EXTRA = {"anvilkit-backups": 'path "sys/storage/raft/snapshot" { capabilities = ["read"] }\n'}
-NAMESPACES = ["anvilkit-apps", "anvilkit-components", "anvilkit-parsing", "anvilkit-data", "anvilkit-platform", "anvilkit-observability"]
+# The six namespaces with their labels (RB-S09: Pod Security levels); checked by deploy/policies/check.sh.
+NAMESPACES_FILE = ROOT / "deploy/qualification/namespaces.yaml"
 ROLES = ["anvilkit_control_app", "anvilkit_control_migrator", "anvilkit_knowledge_app", "anvilkit_knowledge_migrator",
          "anvilkit_knowledge_relay", "anvilkit_knowledge_forwarder", "anvilkit_knowledge_cleanup", "anvilkit_knowledge_store_migrator", "anvilkit_knowledge_store",
          "anvilkit_mcp_app", "anvilkit_mcp_migrator", "anvilkit_mcp_relay", "anvilkit_contextforge", "temporal"]
@@ -767,9 +768,8 @@ def main() -> int:
     c = credentials()
     for node in kubectl("get", "nodes", "-l", "!node-role.kubernetes.io/control-plane", "-o", "name").split():
         kubectl("label", "--overwrite", node, "anvilkit.io/pool=components")
-    for ns in NAMESPACES:
-        kubectl("apply", "-f", "-", stdin=json.dumps({"apiVersion": "v1", "kind": "Namespace",
-                                                      "metadata": {"name": ns, "labels": {"app.kubernetes.io/part-of": "anvilkit"}}}))
+    # RB-S09: the namespaces with their Pod Security labels, from one reviewed file.
+    kubectl("apply", "-f", str(NAMESPACES_FILE))
     mcp_roles()
     retire_bootstrap_secrets()
     nats_auth(c)
