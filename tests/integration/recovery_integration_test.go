@@ -230,8 +230,9 @@ func TestRecoveryReconciliation(t *testing.T) {
 	code, out = e.call("POST", "/api/v1/recoveries/"+runID+"/dispositions", tokenA, dispose)
 	require.Equal(t, 403, code, "a disposition needs the operator role: %v", out)
 	code, out = e.call("POST", "/api/v1/recoveries/"+runID+"/dispositions", tokenOperator, dispose)
-	require.Equal(t, 503, code, "%v", out)
+	require.Equal(t, 409, code, "an accepted business outcome, not a retryable 503 (RB-A24): %v", out)
 	require.Equal(t, "EFFECT_UNCERTAIN", out["error"].(map[string]any)["code"], "evidence that does not verify is refused")
+	require.Equal(t, false, out["error"].(map[string]any)["retryable"])
 	var state, currency string
 	var reserved int64
 	require.NoError(t, conn.QueryRow(ctx, "SELECT state, reserved_currency, reserved_amount FROM dispatches WHERE dispatch_id = $1", dispatchID).Scan(&state, &currency, &reserved))
