@@ -203,7 +203,9 @@ flows:
   - {fromExternal: nodes, to: mcp, ports: [9116, 9126]}
   - {fromExternal: nodes, to: contextforge, ports: [4444]}
   - {fromExternal: nodes, to: backgroundWorker, ports: [9127]}
-  - {fromExternal: nodes, to: inference, ports: [9108]}
+  # RB-A17: Inference's plaintext probe listener (listen.probePort); its
+  # compute port 9108 admits Knowledge only (and requires its certificate).
+  - {fromExternal: nodes, to: inference, ports: [9129]}
 
 # P2.5: host-level egress scoping of the reviewed MCP upstreams. A
 # NetworkPolicy admits CIDRs only; on a Cilium cluster (the target platform)

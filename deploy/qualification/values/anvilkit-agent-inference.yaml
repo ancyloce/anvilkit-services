@@ -34,9 +34,16 @@ topologySpreadConstraints:
         app.kubernetes.io/name: anvilkit-agent-inference
 # P0.6 (F-P0.1-2): the listener serves HTTPS with a certificate the
 # qualification PKI issues (anvilkit-pki); Knowledge verifies it by the
-# Service name against the same CA.
+# Service name against the same CA. RB-A17: mtls also requires a client
+# certificate from that CA and admits only Knowledge's workload identity; the
+# kubelet's probes, which present none, go to the plaintext probe listener
+# (the only port the NetworkPolicy opens to the nodes).
+listen:
+  probePort: 9129
 tls:
-  mode: tls
+  mode: mtls
+  allowedPeers:
+    - spiffe://anvilkit.qualification/ns/anvilkit-apps/sa/anvilkit-agent-knowledge
   trustDomain: anvilkit.qualification
   certificate:
     issuerRef:

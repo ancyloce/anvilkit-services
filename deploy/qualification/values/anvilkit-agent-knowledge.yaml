@@ -56,9 +56,11 @@ control:
 objects:
   endpoint: https://anvilkit-objects.anvilkit-data.svc.cluster.local:9000
   stageEndpoint: https://anvilkit-objects.anvilkit-data.svc.cluster.local:9000
+# RB-A17: Inference admits only this workload identity (its tls.mode mtls), so
+# the client presents the workload certificate (identity.mode mtls).
 inference:
   tls:
-    mode: tls
+    mode: mtls
     caSecret:
       name: anvilkit-agent-knowledge-identity
       key: ca.crt
