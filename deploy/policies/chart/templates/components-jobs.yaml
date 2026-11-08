@@ -50,9 +50,9 @@ spec:
     - name: fixtureDigests
       expression: "['sha256:9db7b59979c38555a39def84a31fb98b5296952f9e3afd4f6f11f05b07adfab0']"
     - name: supervisorDigests
-      expression: "['sha256:67b6cad1e532224b75996b6c1687e3b506994848d801987d06f9bedae2680c90', 'sha256:3df93c75dfceb827d3902708fd2a083b411e77e96d0cc68c160758c7b0866abf', 'sha256:4e05525d716e11e74a3866009af7e42971a383427a6a39255f63a00c3616bdc7']"
+      expression: "['sha256:d7b3821e89c9f02f8779cbe97ba823e8c810660462db26cf34eddf545ef7a56e', 'sha256:b1cba7037941f24dacc5970982f707592ef1c083e1668dbd0776866f297d3391', 'sha256:cda6345f6b117aaef85bb3b0b806dce6501a2ab586a2f9f1cf105989b8f2a7ef']"
     - name: sidecarDigests
-      expression: "['sha256:ffb0f0a55615d9012a2de05bc16a62aeee420ab41e437947a5a1511b582ef023']"
+      expression: "['sha256:e43ed27ab2fae4d865067d09b1c07043288d79ac1d73fc75400025a3be52c044']"
     - name: supervisorEnv
       expression: "['ANVILKIT_LAUNCH_ID', 'ANVILKIT_ATTEMPT_ID', 'ANVILKIT_LAUNCH_ENVELOPE', 'ANVILKIT_LAUNCH_SECRET']"
     - name: sidecarEnv
@@ -94,14 +94,14 @@ spec:
     - name: teamCommand
       expression: "['/usr/local/bin/anvilkit-codegen-supervisor', 'team']"
     # One digest per team profile (contracts/jobs/profiles.json): the
-    # production profile codegen-team-v1 (enabled since 2026-11-05, DEC-044,
+    # production profile codegen-team-v1 (enabled since 2026-11-08, DEC-044,
     # for the Compose Jobs node's gVisor RuntimeClass) and its development
     # twin codegen-team-dev-v1 currently pin the same CI-published image; they
     # may diverge again, so each keeps its own variable.
     - name: teamDigest
-      expression: "'sha256:4e05525d716e11e74a3866009af7e42971a383427a6a39255f63a00c3616bdc7'"
+      expression: "'sha256:cda6345f6b117aaef85bb3b0b806dce6501a2ab586a2f9f1cf105989b8f2a7ef'"
     - name: teamDevDigest
-      expression: "'sha256:4e05525d716e11e74a3866009af7e42971a383427a6a39255f63a00c3616bdc7'"
+      expression: "'sha256:cda6345f6b117aaef85bb3b0b806dce6501a2ab586a2f9f1cf105989b8f2a7ef'"
     # P0.8: the development-state candidate profiles this environment admits
     # without the gVisor RuntimeClass (DEVELOPMENT_ONLY; empty elsewhere).
     - name: developmentProfiles
@@ -109,7 +109,7 @@ spec:
     - name: validatorCommand
       expression: "['/usr/local/bin/node', '/anvilkit/validator/dist/job.js']"
     - name: validatorDigest
-      expression: "'sha256:3df93c75dfceb827d3902708fd2a083b411e77e96d0cc68c160758c7b0866abf'"
+      expression: "'sha256:b1cba7037941f24dacc5970982f707592ef1c083e1668dbd0776866f297d3391'"
     # The access sidecar's workload certificate (P0.1): the one Secret volume
     # a harness Pod carries, mounted read-only into the sidecar alone.
     - name: sidecarIdentitySecret
