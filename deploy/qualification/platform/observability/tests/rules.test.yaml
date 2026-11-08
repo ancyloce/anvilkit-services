@@ -428,3 +428,104 @@ tests:
       value: 8
     - labels: 'anvilkit:grant_revocation_seconds:p95_1d{stage="converged"}'
       value: 600
+# RB-A26: the incident alerts.
+- name: no instance of the business PostgreSQL cluster up
+  interval: 1m
+  input_series:
+  - series: cnpg_collector_up{cluster="anvilkit-business",pod="anvilkit-business-1"}
+    values: 1x5 0x20
+  - series: cnpg_collector_up{cluster="anvilkit-temporal",pod="anvilkit-temporal-1"}
+    values: 1x25
+  alert_rule_test:
+  - eval_time: 12m
+    alertname: AnvilKitBusinessDatabaseDown
+    exp_alerts:
+    - exp_labels:
+        severity: critical
+      exp_annotations:
+        summary: "No instance of the business PostgreSQL cluster (anvilkit-business) is up: Control can neither admit nor record."
+        runbook_url: https://github.com/ancyloce/anvilkit-services/blob/main/docs/operations/runbooks/control-pg.md
+  - eval_time: 12m
+    alertname: AnvilKitTemporalDatabaseDown
+    exp_alerts: []
+- name: a database cluster whose metrics vanished counts as down
+  interval: 1m
+  input_series:
+  - series: cnpg_collector_up{cluster="anvilkit-business",pod="anvilkit-business-1"}
+    values: 1x25
+  alert_rule_test:
+  - eval_time: 5m
+    alertname: AnvilKitTemporalDatabaseDown
+    exp_alerts:
+    - exp_labels:
+        severity: critical
+      exp_annotations:
+        summary: "No instance of Temporal's PostgreSQL cluster (anvilkit-temporal) is up: no workflow advances."
+        runbook_url: https://github.com/ancyloce/anvilkit-services/blob/main/docs/operations/runbooks/temporal.md
+  - eval_time: 5m
+    alertname: AnvilKitBusinessDatabaseDown
+    exp_alerts: []
+- name: Temporal client requests failing
+  interval: 1m
+  input_series:
+  - series: temporal_request_total{operation="PollWorkflowTaskQueue"}
+    values: 0+10x30
+  - series: temporal_request_failure_total{operation="PollWorkflowTaskQueue"}
+    values: 0+5x30
+  alert_rule_test:
+  - eval_time: 15m
+    alertname: AnvilKitTemporalRequestsFailing
+    exp_alerts:
+    - exp_labels:
+        severity: critical
+      exp_annotations:
+        summary: "More than 0.1 of the Temporal client requests fail."
+        runbook_url: https://github.com/ancyloce/anvilkit-services/blob/main/docs/operations/runbooks/temporal.md
+- name: healthy Temporal requests and reconciled memory raise nothing
+  interval: 1m
+  input_series:
+  - series: temporal_request_total{operation="PollWorkflowTaskQueue"}
+    values: 0+10x30
+  - series: temporal_request_failure_total{operation="PollWorkflowTaskQueue"}
+    values: 0+0x30
+  - series: anvilkit_knowledge_memory_removals_reconciled{pod="anvilkit-agent-knowledge-0"}
+    values: 1x30
+  alert_rule_test:
+  - eval_time: 20m
+    alertname: AnvilKitTemporalRequestsFailing
+    exp_alerts: []
+  - eval_time: 20m
+    alertname: AnvilKitMemoryRemovalUnreconciled
+    exp_alerts: []
+- name: memory recall closed by an unreconciled removal
+  interval: 1m
+  input_series:
+  - series: anvilkit_knowledge_memory_removals_reconciled{pod="anvilkit-agent-knowledge-0"}
+    values: 0x30
+  alert_rule_test:
+  - eval_time: 20m
+    alertname: AnvilKitMemoryRemovalUnreconciled
+    exp_alerts:
+    - exp_labels:
+        severity: critical
+      exp_annotations:
+        summary: "Knowledge's memory recall is closed: a removal or revocation is not reconciled with its inventory."
+        runbook_url: https://github.com/ancyloce/anvilkit-services/blob/main/docs/operations/runbooks/source-memory-revoked.md
+- name: grant revocations slow to converge
+  interval: 1m
+  input_series:
+  - series: anvilkit_mcp_grant_revocation_seconds_bucket{stage="converged",le="60"}
+    values: 0x60
+  - series: anvilkit_mcp_grant_revocation_seconds_bucket{stage="converged",le="600"}
+    values: 0+1x60
+  - series: anvilkit_mcp_grant_revocation_seconds_bucket{stage="converged",le="+Inf"}
+    values: 0+1x60
+  alert_rule_test:
+  - eval_time: 40m
+    alertname: AnvilKitMCPRevocationSlow
+    exp_alerts:
+    - exp_labels:
+        severity: warning
+      exp_annotations:
+        summary: "The p95 from a grant revocation to its senders' convergence exceeds 300 s."
+        runbook_url: https://github.com/ancyloce/anvilkit-services/blob/main/docs/operations/runbooks/mcp-revocation-ssrf.md

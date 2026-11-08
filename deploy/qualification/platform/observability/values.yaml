@@ -32,6 +32,8 @@ thresholds:
   queueAgeSeconds: 600           # oldest waiting BullMQ job
   projectionLagSeconds: 900      # oldest memory projection not yet accepted
   backupMaxAgeSeconds: 93600     # 26 h: a daily backup missed (ENV-09)
+  temporalRequestFailureRatio: 0.1   # share of failed Temporal client requests over 5m
+  revocationConvergedSeconds: 300     # p95 from a grant revocation to sender convergence over 1h (DD-08)
 
 # Which endpoint of each service is scraped: the container port name and the
 # path (the services serve /metrics on their probe listener, Control and the

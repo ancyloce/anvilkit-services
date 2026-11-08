@@ -220,3 +220,47 @@ spec:
           annotations:
             summary: "The newest successful backup of {{ "{{" }} $labels.cronjob {{ "}}" }} is older than {{ $t.backupMaxAgeSeconds }} s, or it never succeeded."
             runbook_url: {{ printf "%s/recovery-epoch.md" $rb }}
+        # RB-A26: the incident entry points of platform.md ("Incident runbook
+        # entry points") that a metric can show. No alert exists yet for an
+        # SSRF refusal (MCP counts call states, not EGRESS_REFUSED), a partial
+        # publication (Control exposes no release states) or an isolation
+        # failure (Kyverno is not scraped); their runbooks name the signals.
+        {{- if and .Values.scrape.postgres.enabled (has "anvilkit-business" .Values.scrape.postgres.clusters) }}
+        - alert: AnvilKitBusinessDatabaseDown
+          expr: (sum(cnpg_collector_up{cluster="anvilkit-business"}) or on() vector(0)) == 0
+          for: 2m
+          labels: {severity: critical}
+          annotations:
+            summary: "No instance of the business PostgreSQL cluster (anvilkit-business) is up: Control can neither admit nor record."
+            runbook_url: {{ printf "%s/control-pg.md" $rb }}
+        {{- end }}
+        {{- if and .Values.scrape.postgres.enabled (has "anvilkit-temporal" .Values.scrape.postgres.clusters) }}
+        - alert: AnvilKitTemporalDatabaseDown
+          expr: (sum(cnpg_collector_up{cluster="anvilkit-temporal"}) or on() vector(0)) == 0
+          for: 2m
+          labels: {severity: critical}
+          annotations:
+            summary: "No instance of Temporal's PostgreSQL cluster (anvilkit-temporal) is up: no workflow advances."
+            runbook_url: {{ printf "%s/temporal.md" $rb }}
+        {{- end }}
+        - alert: AnvilKitTemporalRequestsFailing
+          expr: sum(rate(temporal_request_failure_total[5m])) / sum(rate(temporal_request_total[5m])) > {{ $t.temporalRequestFailureRatio }}
+          for: 5m
+          labels: {severity: critical}
+          annotations:
+            summary: "More than {{ $t.temporalRequestFailureRatio }} of the Temporal client requests fail."
+            runbook_url: {{ printf "%s/temporal.md" $rb }}
+        - alert: AnvilKitMemoryRemovalUnreconciled
+          expr: min(anvilkit_knowledge_memory_removals_reconciled) == 0
+          for: 15m
+          labels: {severity: critical}
+          annotations:
+            summary: "Knowledge's memory recall is closed: a removal or revocation is not reconciled with its inventory."
+            runbook_url: {{ printf "%s/source-memory-revoked.md" $rb }}
+        - alert: AnvilKitMCPRevocationSlow
+          expr: histogram_quantile(0.95, sum by (le) (rate(anvilkit_mcp_grant_revocation_seconds_bucket{stage="converged"}[1h]))) > {{ $t.revocationConvergedSeconds }}
+          for: 15m
+          labels: {severity: warning}
+          annotations:
+            summary: "The p95 from a grant revocation to its senders' convergence exceeds {{ $t.revocationConvergedSeconds }} s."
+            runbook_url: {{ printf "%s/mcp-revocation-ssrf.md" $rb }}
