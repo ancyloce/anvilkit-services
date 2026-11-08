@@ -42,6 +42,11 @@ evaluators' own reports: pass@k (a case passed in at least one of its k trials) 
 (in all of them), failure classes and latency percentiles over every trial, none selected or
 dropped. Monetary cost is reported only where a priced route exists (none does: ENV-06).
 
+A NOT_RUN entry states its cause (RB-A06): `environment` when only ENV inputs are missing
+(`missing` names them), `test` when the test does not exist and `code` when the behavior is
+not implemented; a test or code cause names what to write in `todo`, and `missing` then
+lists the ENV inputs still needed once it exists (possibly none).
+
 --self-test proves those rules on synthetic inputs; --reclassify RUN_DIR applies
 them to the raw logs of an earlier run and lists every status that changes.
 
@@ -73,6 +78,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 REGISTRY = ROOT / "tests" / "evals" / "registry.json"
 GATES = {f"G-{i:02d}" for i in range(1, 15)}
 ENVS = {f"ENV-{i:02d}" for i in range(1, 11)}
+CAUSES = {"environment", "test", "code"}
 RUNNERS = {"go", "pnpm", "command"}
 REPORTS = {"vitest-json", "exit-code"}
 # Environments a suite may require; a missing one makes its cases NOT_RUN with the reason.
@@ -187,10 +193,7 @@ def check(reg: dict) -> list[str]:
             errs.append(f"notRun {nid}: maps no known requirement or gate")
         if not set(n.get("gates", [])) <= GATES:
             errs.append(f"notRun {nid}: unknown gates")
-        if not n.get("missing") or not set(n["missing"]) <= ENVS:
-            errs.append(f"notRun {nid}: names the missing ENV inputs")
-        if not n.get("reason"):
-            errs.append(f"notRun {nid}: states its reason")
+        errs += notrun_errors(n)
         covered_nr |= m
     for r in sorted(expected - covered_exec - covered_nr):
         errs.append(f"requirement {r}: neither an executable case nor a NOT_RUN entry")
@@ -202,6 +205,22 @@ def check(reg: dict) -> list[str]:
     for r, gs in trace.items():
         if not gs or not set(gs) <= GATES:
             errs.append(f"traceability {r}: names no or unknown gates {gs}")
+    return errs
+
+
+def notrun_errors(n: dict) -> list[str]:
+    """RB-A06: a NOT_RUN entry's true cause, its reason and what it still misses."""
+    nid, cause, errs = n.get("id", "?"), n.get("cause"), []
+    if cause not in CAUSES:
+        errs.append(f"notRun {nid}: states its cause ({', '.join(sorted(CAUSES))})")
+    if not isinstance(n.get("missing"), list) or not set(n["missing"]) <= ENVS:
+        errs.append(f"notRun {nid}: `missing` lists ENV inputs only")
+    elif cause == "environment" and not n["missing"]:
+        errs.append(f"notRun {nid}: an environment cause names the missing ENV inputs")
+    if cause in ("test", "code") and not str(n.get("todo") or "").strip():
+        errs.append(f"notRun {nid}: a {cause} cause names the {cause} to write in `todo`")
+    if not n.get("reason"):
+        errs.append(f"notRun {nid}: states its reason")
     return errs
 
 
@@ -271,7 +290,8 @@ def trace_table(reg: dict) -> int:
                 print(f"    {a['case']:<22} {a['name']}  ({a.get('file', '')})")
             for n in nrs:
                 if r in mapped(n):
-                    print(f"    NOT_RUN {n['id']}: missing {', '.join(n['missing'])}")
+                    todo = f"; to write: {n['todo']}" if n.get("todo") else ""
+                    print(f"    NOT_RUN {n['id']} ({n.get('cause')}): missing {', '.join(n['missing']) or 'no ENV input'}{todo}")
             if gap := reg.get("gaps", {}).get(r):
                 print(f"    GAP {gap}")
     for c in reg.get("cases", []):
@@ -768,6 +788,15 @@ def self_test() -> int:
     cases.append(("command: exit 2 is NOT_RUN", classify_text(b"UNEXECUTED kyverno missing", 2)["status"] == "NOT_RUN"))
     cases.append(("command: exit 0 and no skip marker is PASS", classify_text(b"      Tests  5 passed (5)\npytest: 3 passed, 0 skipped\n", 0)["status"] == "PASS"))
     cases.append(("command: exit 1 is FAIL", classify_text(b"", 1)["status"] == "FAIL"))
+    # RB-A06: a NOT_RUN entry's cause.
+    nr = {"id": "NR-X", "reason": "r", "cause": "environment", "missing": ["ENV-01"]}
+    cases.append(("notRun: an environment cause with its ENV inputs is accepted", notrun_errors(nr) == []))
+    cases.append(("notRun: an entry without a cause is refused", any("states its cause" in e for e in notrun_errors({**nr, "cause": None}))))
+    cases.append(("notRun: an environment cause without ENV inputs is refused", any("environment cause" in e for e in notrun_errors({**nr, "missing": []}))))
+    cases.append(("notRun: a missing test needs no ENV input but names its todo", notrun_errors({**nr, "cause": "test", "missing": [], "todo": "the case"}) == []
+                  and any("todo" in e for e in notrun_errors({**nr, "cause": "test", "missing": []}))))
+    cases.append(("notRun: missing code names its todo", any("todo" in e for e in notrun_errors({**nr, "cause": "code"}))))
+    cases.append(("notRun: a missing entry that is not an ENV input is refused", any("ENV inputs only" in e for e in notrun_errors({**nr, "missing": ["a test"]}))))
     with tempfile.TemporaryDirectory(prefix="evaluation-selftest-") as tmp:
         blocked = pathlib.Path(tmp) / "release-manifest.json"
         blocked.write_text(json.dumps({"status": "BLOCKED", "findings": [{"id": "CVE-0000-0001"}]}))
