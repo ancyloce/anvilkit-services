@@ -14,9 +14,12 @@ records the restore's duration and what it proved in outputs/qualification/<RUN>
                      ContextForge's exist
   postgres-temporal  the same for anvilkit-temporal: Temporal's persistence and visibility
                      databases and the anvilkit namespace row at the target
-  qdrant             a collection with replication factor 3 is snapshotted, the snapshot is
+  qdrant             a collection with replication factor 3 and an alias is snapshotted, the
+                     snapshot and the alias list (as the backup CronJob exports them) are
                      copied to the DR store, the collection is deleted and recovered by
-                     uploading the DR copy (checksum-verified); its points and payloads are back
+                     uploading the DR copy (checksum-verified), and its alias is re-created
+                     from the DR copy of the list (RB-A30); its points and payloads are back,
+                     also through the alias
   etcd               an etcd snapshot of the control plane goes to the DR store and is
                      restored into an isolated etcd, which serves the cluster's namespaces
   openbao            (run it with no other unsealer active: bootstrap.py's wait loop unseals too)
@@ -330,15 +333,24 @@ def drill_qdrant() -> dict:
 
 def _drill_qdrant() -> dict:
     name = f"drill_{secrets.token_hex(4)}"
+    alias = f"{name}_current"
     qdrant("PUT", f"/collections/{name}", {"vectors": {"size": 4, "distance": "Cosine"}, "replication_factor": 3, "write_consistency_factor": 2})
+    # Knowledge reads its generations through an alias (RB-A30); a snapshot carries none.
+    qdrant("POST", "/collections/aliases", {"actions": [{"create_alias": {"collection_name": name, "alias_name": alias}}]})
     points = [{"id": i, "vector": [i, 1, 0, 1], "payload": {"n": i}} for i in range(1, 101)]
     qdrant("PUT", f"/collections/{name}/points?wait=true&ordering=strong", {"points": points})
     snap = qdrant("POST", f"/collections/{name}/snapshots?wait=true")["result"]["name"]
     raw = qdrant_http("GET", f"/collections/{name}/snapshots/{snap}")
     digest = hashlib.sha256(raw).hexdigest()
-    dr(f"mc cp /work/{snap} dr/anvilkit-snapshots/qdrant/{snap} >/dev/null\n", {snap: raw})
+    aliases_file = f"{name}--aliases.json"
+    dr(f"mc cp /work/{snap} dr/anvilkit-snapshots/qdrant/{snap} >/dev/null\n"
+       f"mc cp /work/{aliases_file} dr/anvilkit-snapshots/qdrant/{aliases_file} >/dev/null\n", {snap: raw, aliases_file: qdrant_http("GET", "/aliases")})
     qdrant("DELETE", f"/collections/{name}")
     gone = qdrant("GET", f"/collections/{name}").get("status") != "ok"
+
+    def aliases() -> list[dict]:
+        return qdrant("GET", "/aliases")["result"]["aliases"]
+    alias_gone = all(a["alias_name"] != alias for a in aliases())
     started = now()
     # The DR copy travels back through this host into the snapshot upload endpoint:
     # no presigned URL is handed to Qdrant (it would reach Qdrant's logs).
@@ -362,14 +374,27 @@ def _drill_qdrant() -> dict:
     active = wait_until(replicas_active, 300, 2)
     count = qdrant("POST", f"/collections/{name}/points/count?consistency=all", {"exact": True})["result"]["count"]
     sample = qdrant("POST", f"/collections/{name}/points?consistency=all", {"ids": [42], "with_payload": True})["result"]
+    # The collection's aliases come back from the DR copy of the alias list.
+    exported = [a for a in json.loads(dr_get(f"anvilkit-snapshots/qdrant/{aliases_file}"))["result"]["aliases"] if a["collection_name"] == name]
+    present = {a["alias_name"] for a in aliases()}
+    actions = [{"create_alias": {"collection_name": name, "alias_name": a["alias_name"]}} for a in exported if a["alias_name"] not in present]
+    if actions:
+        qdrant("POST", "/collections/aliases", {"actions": actions})
+    resolved = any(a["alias_name"] == alias and a["collection_name"] == name for a in aliases())
+    through_alias = qdrant("POST", f"/collections/{alias}/points/count?consistency=all", {"exact": True}).get("result", {}).get("count")
     restored = now()
     qdrant("DELETE", f"/collections/{name}")
-    return {"collection": name, "snapshot": snap, "snapshotSha256": digest, "collectionGoneBeforeRecover": gone,
+    if not all(a["alias_name"] != alias for a in aliases()):
+        qdrant("POST", "/collections/aliases", {"actions": [{"delete_alias": {"alias_name": alias}}]})
+    return {"collection": name, "alias": alias, "aliasesExported": [a["alias_name"] for a in exported], "aliasGoneWithCollection": alias_gone,
+            "aliasesRecreated": len(actions), "pointsThroughAlias": through_alias,
+            "snapshot": snap, "snapshotSha256": digest, "collectionGoneBeforeRecover": gone,
             "restoreSeconds": round(restored - started, 1), "pointsAfter": count, "payload42": sample[0]["payload"] if sample else None,
             "note": "recovered on the peer that received the upload; Qdrant replicates the recovered shard to the collection's other replicas",
             "replicasActiveAfter": round(active - started, 1) if active else None,
             "checks": {"collectionGoneBeforeRecover": gone, "replicasActive": active is not None, "allPointsBack": count == 100,
-                       "payloadBack": bool(sample) and sample[0]["payload"] == {"n": 42}}}
+                       "payloadBack": bool(sample) and sample[0]["payload"] == {"n": 42},
+                       "aliasExported": alias in [a["alias_name"] for a in exported], "aliasBack": resolved, "aliasServesPoints": through_alias == 100}}
 
 
 def drill_etcd() -> dict:

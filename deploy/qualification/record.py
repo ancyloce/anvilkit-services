@@ -29,6 +29,14 @@ development placement, every ENV-01..10 input is SUPPLIED and every gate G-01..G
 PASS; NOT_QUALIFIED with the failing or missing items otherwise (DEVELOPMENT_ONLY for a
 development placement). --self-test proves the binding and the derivation on synthetic
 runs.
+
+Qualification lock (RB-A11, platform.md "Qualification lock"): the record's `bindings` name,
+for every released image, the lockfiles, base images (its toolchains), model locks and SQL
+extensions as they stood at the commit it was built from (git show <head>), the release
+tools, the platform charts the run published (operators and CRDs, by digest), and the
+PostgreSQL image. The target's OS/kernel/runtime/K8s/CNI/RuntimeClass (ENV-01) and the
+external API revisions (ENV-07, ENV-08) stay REQUIRED until their inputs exist. A record
+with an incomplete binding is never QUALIFIED.
 """
 from __future__ import annotations
 
@@ -37,6 +45,7 @@ import datetime
 import hashlib
 import json
 import pathlib
+import re
 import subprocess
 import sys
 
@@ -216,6 +225,109 @@ def memory_pitr(runs: list[str]) -> dict:
     return {"status": latest["status"], "passed": latest["passed"], "runs": latest["runs"], "current": latest["directory"], "groups": groups}
 
 
+LOCKFILE_NAMES = {"go.sum", "pnpm-lock.yaml", "package-lock.json", "uv.lock", "poetry.lock", "requirements.txt", "requirements.lock"}
+DATA_PATH = re.compile(r"(^|/)(fixtures|testdata|test|tests|node_modules)/")
+MODEL_LINE = re.compile(r"^(?:model\s+)?([\w.-]+/[\w.-]+)\s+([0-9a-f]{40})\s+(\S+)\s*$")
+FROM_LINE = re.compile(r"^\s*FROM\s+(?:--platform=\S+\s+)?(\S+)(?:\s+AS\s+(\S+))?", re.I)
+ARG_LINE = re.compile(r"^\s*ARG\s+([A-Za-z_][A-Za-z0-9_]*)=(\S+)", re.I)
+EXTENSION = re.compile(r"create\s+extension\s+(?:if\s+not\s+exists\s+)?\"?([\w-]+)", re.I)
+
+
+def git_tree(repo: pathlib.Path, head: str) -> list[str] | None:
+    p = subprocess.run(["git", "-C", str(repo), "ls-tree", "-r", "--name-only", head], capture_output=True, text=True)
+    return p.stdout.splitlines() if p.returncode == 0 else None
+
+
+def git_blob(repo: pathlib.Path, head: str, path: str) -> bytes | None:
+    p = subprocess.run(["git", "-C", str(repo), "show", f"{head}:{path}"], capture_output=True)
+    return p.stdout if p.returncode == 0 else None
+
+
+def base_images(dockerfile: str) -> list[str]:
+    """The images a Dockerfile builds from: ARG defaults resolved, its own stages skipped."""
+    args, stages, out = {}, set(), []
+    for line in dockerfile.splitlines():
+        if m := ARG_LINE.match(line):
+            args[m[1]] = m[2]
+        elif m := FROM_LINE.match(line):
+            image = re.sub(r"\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?", lambda v: args.get(v[1], v[0]), m[1])
+            if image not in stages and image not in out:
+                out.append(image)
+            if m[2]:
+                stages.add(m[2])
+    return out
+
+
+def image_binding(img: dict, root: pathlib.Path) -> dict:
+    """One released image's lockfiles, base images, model locks and SQL extensions at the
+    commit it was built from; an image this release did not build is PINNED."""
+    src = img.get("source")
+    if not isinstance(src, dict):
+        return {"status": "PINNED", "digest": img.get("digest"), "profiles": img.get("profiles"),
+                "note": "not rebuilt by this release: its own SIGNED job-images release binds its source, lockfiles and base images"}
+    repository, head = src.get("repository"), src.get("head")
+    if not repository or not head:
+        return {"status": "UNAVAILABLE", "reason": "the manifest names no source repository and commit"}
+    repo = root if repository == "." else root / repository
+    sub = "" if src.get("context") in (None, ".") else src["context"].strip("/")
+    files = git_tree(repo, head)
+    if files is None:
+        return {"status": "UNAVAILABLE", "reason": f"commit {head[:12]} is not in {repository}"}
+    inside = [f for f in files if not sub or f.startswith(sub + "/")]
+    lockfiles, models, extensions = {}, [], set()
+    for f in inside:
+        name, local = f.rsplit("/", 1)[-1], f[len(sub) + 1:] if sub else f
+        if name in LOCKFILE_NAMES and not DATA_PATH.search(local):
+            lockfiles[local] = "sha256:" + hashlib.sha256(git_blob(repo, head, f) or b"").hexdigest()
+        elif name == "models.lock" and not DATA_PATH.search(local):
+            for line in (git_blob(repo, head, f) or b"").decode(errors="replace").splitlines():
+                if m := MODEL_LINE.match(line):
+                    models.append({"lock": local, "repository": m[1], "revision": m[2], "license": m[3]})
+        elif name.endswith(".sql"):
+            extensions |= {e.lower() for e in EXTENSION.findall((git_blob(repo, head, f) or b"").decode(errors="replace"))}
+    dockerfile = git_blob(repo, head, f"{sub}/Dockerfile" if sub else "Dockerfile")
+    return {"status": "RECORDED", "repository": repository, "head": head, "contextDigest": src.get("contextDigest"),
+            "lockfiles": lockfiles, "baseImages": base_images(dockerfile.decode(errors="replace")) if dockerfile else [],
+            "models": models, "extensions": sorted(extensions)}
+
+
+def bindings(manifest: dict, runs: list[str], root: pathlib.Path = ROOT) -> dict:
+    """RB-A11: what this release and run consist of, beyond the digests the manifest names."""
+    images = {name: image_binding(img, root) for name, img in sorted((manifest.get("images") or {}).items())}
+    gitops, _ = evidence(runs, "gitops", "environment-manifest.json")
+    charts = [{k: c.get(k) for k in ("name", "version", "digest", "signature", "upstream") if c.get(k)}
+              for _, c in sorted(((gitops or {}).get("platformCharts") or {}).items())]
+    data_values = root / "deploy/qualification/platform/data/values.yaml"
+    postgres = None
+    if data_values.exists():
+        import yaml
+        postgres = (yaml.safe_load(data_values.read_text()) or {}).get("postgresImage")
+    recorded = [b for b in images.values() if b["status"] == "RECORDED"]
+    return {
+        "images": images,
+        "toolchains": {"status": "RECORDED" if recorded else "UNAVAILABLE", "releaseTools": manifest.get("tools"),
+                       "baseImages": sorted({i for b in recorded for i in b["baseImages"]})},
+        "platformCharts": {"status": "RECORDED" if charts else "NOT_RUN", "charts": charts,
+                           **({} if charts else {"reason": "no environment manifest of this run (deploy/gitops/publish.py)"})},
+        "database": {"status": "RECORDED" if postgres else "UNAVAILABLE", "postgresImage": postgres,
+                     "source": rel(data_values), "extensions": sorted({e for b in recorded for e in b["extensions"]})},
+        "models": {"status": "RECORDED" if recorded else "UNAVAILABLE", "models": [m for b in recorded for m in b["models"]],
+                   "production": {"status": "REQUIRED", "inputs": ["ENV-04"]}},
+        "runtime": {"status": "REQUIRED", "inputs": ["ENV-01"], "scope": "OS, kernel, containerd, Kubernetes, CNI and RuntimeClass of the target"},
+        "externalApis": {"status": "REQUIRED", "inputs": ["ENV-07", "ENV-08"], "scope": "Pagix, IdP and Studio host API revisions and support windows"},
+    }
+
+
+def incomplete_bindings(b: dict | None) -> list[str]:
+    """The bindings that keep a record from QUALIFIED: any section or image not recorded."""
+    if not b:
+        return ["bindings missing"]
+    out = [f"{k} {v['status']}" + (f" ({', '.join(v['inputs'])})" if v.get("inputs") else "")
+           for k, v in b.items() if k != "images" and v.get("status") != "RECORDED"]
+    out += [f"image {k} {v['status']}" for k, v in (b.get("images") or {}).items() if v.get("status") not in ("RECORDED", "PINNED")]
+    return out
+
+
 def lock_check() -> dict:
     p = subprocess.run([PY, str(ROOT / "tools/check-deployment-lock.py")], capture_output=True, text=True)
     return {"command": "tools/check-deployment-lock.py", "status": "PASS" if p.returncode == 0 else "FAIL",
@@ -228,9 +340,11 @@ def derive_status(record: dict, development: bool) -> str:
     gates = record.get("gates") or {}
     missing_gates = sorted(g for g in (f"G-{i:02d}" for i in range(1, 15)) if (gates.get(g) or {}).get("status") != "PASS")
     missing_env = sorted(k for k, v in (record.get("envInputs") or {}).items() if v.get("status") != "SUPPLIED")
-    if not development and not missing_gates and not missing_env and len(record.get("envInputs") or {}) == 10:
+    unbound = incomplete_bindings(record.get("bindings"))
+    if not development and not missing_gates and not missing_env and not unbound and len(record.get("envInputs") or {}) == 10:
         return "QUALIFIED"
-    reasons = ([f"gates not PASS: {', '.join(missing_gates)}"] if missing_gates else []) + ([f"ENV inputs not SUPPLIED: {', '.join(missing_env)}"] if missing_env else [])
+    reasons = ([f"gates not PASS: {', '.join(missing_gates)}"] if missing_gates else []) + ([f"ENV inputs not SUPPLIED: {', '.join(missing_env)}"] if missing_env else []) \
+        + ([f"bindings incomplete: {', '.join(unbound)}"] if unbound else [])
     return f"{'DEVELOPMENT_ONLY' if development else 'NOT_QUALIFIED'} ({'; '.join(reasons) or 'development placement'})"
 
 
@@ -265,11 +379,45 @@ def self_test() -> int:
     OUT_ROOT = saved
     all_pass = {f"G-{i:02d}": {"status": "PASS"} for i in range(1, 15)}
     supplied = {f"ENV-{i:02d}": {"status": "SUPPLIED"} for i in range(1, 11)}
-    cases.append(("every gate PASS and every input SUPPLIED on a production placement is QUALIFIED",
-                  derive_status({"gates": all_pass, "envInputs": supplied}, False) == "QUALIFIED"))
-    cases.append(("one gate NOT_RUN is NOT_QUALIFIED", derive_status({"gates": {**all_pass, "G-14": {"status": "NOT_RUN"}}, "envInputs": supplied}, False).startswith("NOT_QUALIFIED")))
-    cases.append(("one input REQUIRED is NOT_QUALIFIED", derive_status({"gates": all_pass, "envInputs": {**supplied, "ENV-10": {"status": "REQUIRED"}}}, False).startswith("NOT_QUALIFIED")))
-    cases.append(("a development placement is never QUALIFIED", derive_status({"gates": all_pass, "envInputs": supplied}, True).startswith("DEVELOPMENT_ONLY")))
+    bound_all = {k: {"status": "RECORDED"} for k in ("toolchains", "platformCharts", "database", "models", "runtime", "externalApis")}
+    bound_all["images"] = {"api": {"status": "RECORDED"}, "team": {"status": "PINNED"}}
+    cases.append(("every gate PASS, every input SUPPLIED and every binding recorded on a production placement is QUALIFIED",
+                  derive_status({"gates": all_pass, "envInputs": supplied, "bindings": bound_all}, False) == "QUALIFIED"))
+    cases.append(("one gate NOT_RUN is NOT_QUALIFIED", derive_status({"gates": {**all_pass, "G-14": {"status": "NOT_RUN"}}, "envInputs": supplied, "bindings": bound_all}, False).startswith("NOT_QUALIFIED")))
+    cases.append(("one input REQUIRED is NOT_QUALIFIED", derive_status({"gates": all_pass, "envInputs": {**supplied, "ENV-10": {"status": "REQUIRED"}}, "bindings": bound_all}, False).startswith("NOT_QUALIFIED")))
+    cases.append(("a development placement is never QUALIFIED", derive_status({"gates": all_pass, "envInputs": supplied, "bindings": bound_all}, True).startswith("DEVELOPMENT_ONLY")))
+    # RB-A11: the qualification lock's bindings.
+    cases.append(("a REQUIRED runtime binding is NOT_QUALIFIED", "runtime REQUIRED (ENV-01)" in derive_status(
+        {"gates": all_pass, "envInputs": supplied, "bindings": {**bound_all, "runtime": {"status": "REQUIRED", "inputs": ["ENV-01"]}}}, False)))
+    cases.append(("an image whose commit is unavailable is NOT_QUALIFIED", derive_status(
+        {"gates": all_pass, "envInputs": supplied, "bindings": {**bound_all, "images": {"api": {"status": "UNAVAILABLE"}}}}, False).startswith("NOT_QUALIFIED")))
+    cases.append(("a record without bindings is NOT_QUALIFIED", derive_status({"gates": all_pass, "envInputs": supplied}, False).startswith("NOT_QUALIFIED")))
+    cases.append(("base images: ARG defaults resolved, the Dockerfile's own stages skipped",
+                  base_images("ARG GO=golang:1.27.3@sha256:aa\nFROM ${GO} AS build\nFROM build AS test\nFROM gcr.io/distroless/static@sha256:bb\n")
+                  == ["golang:1.27.3@sha256:aa", "gcr.io/distroless/static@sha256:bb"]))
+    with tempfile.TemporaryDirectory(prefix="record-bindings-") as tmp:
+        root = pathlib.Path(tmp)
+        repo = root / "svc"
+        for path, body in {"go.sum": "example.com/m v1.0.0 h1:x=\n", "Dockerfile": "FROM golang:1.27.3@sha256:aa AS build\nFROM scratch\n",
+                           "models.lock": "# model <repository> <revision> <license>\nmodel BAAI/bge-m3 5617a9f61b028005a4858fdac845db406aefb181 mit\n"
+                                          "e54c164a07274f2eb45bb724f54a79d1efcc90c41573887cd9a29aeee0597352 config.json\n",
+                           "migrate/00001_init.sql": "CREATE EXTENSION IF NOT EXISTS pgcrypto;\n", "fixtures/hero/pnpm-lock.yaml": "lockfileVersion: 9\n"}.items():
+            (repo / path).parent.mkdir(parents=True, exist_ok=True)
+            (repo / path).write_text(body)
+        git = ["git", "-C", str(repo), "-c", "user.name=record-self-test", "-c", "user.email=self-test@invalid", "-c", "commit.gpgsign=false"]
+        subprocess.run(["git", "init", "-q", str(repo)], check=True)
+        subprocess.run([*git, "add", "-A"], check=True)
+        subprocess.run([*git, "commit", "-q", "-m", "fixture"], check=True)
+        head = subprocess.run(["git", "-C", str(repo), "rev-parse", "HEAD"], capture_output=True, text=True, check=True).stdout.strip()
+        b = image_binding({"source": {"repository": "svc", "context": ".", "head": head}}, root)
+        cases.append(("an image's lockfiles are read at its commit; a fixture lockfile is data, not one",
+                      b["status"] == "RECORDED" and list(b["lockfiles"]) == ["go.sum"]
+                      and b["lockfiles"]["go.sum"] == "sha256:" + hashlib.sha256(b"example.com/m v1.0.0 h1:x=\n").hexdigest()))
+        cases.append(("its base images, model license and SQL extensions come from the same commit",
+                      b["baseImages"] == ["golang:1.27.3@sha256:aa", "scratch"] and b["models"][0]["license"] == "mit" and b["extensions"] == ["pgcrypto"]))
+        cases.append(("an image this release did not build is PINNED", image_binding({"source": "the reviewed profile's pinned digest (not rebuilt)", "digest": "sha256:cc"}, root)["status"] == "PINNED"))
+        cases.append(("an unknown commit is UNAVAILABLE, never recorded",
+                      image_binding({"source": {"repository": "svc", "context": ".", "head": "0" * 40}}, root)["status"] == "UNAVAILABLE"))
     failures = [n for n, ok in cases if not ok]
     for n, ok in cases:
         print(f"{'PASS' if ok else 'FAIL':<5} self-test: {n}")
@@ -391,6 +539,7 @@ def main() -> int:
     # gates
     g = json.loads(P22_REPORT.read_text())["gates"] if P22_REPORT.exists() else {}
     record["envInputs"] = env_inputs(a.environment)
+    record["bindings"] = bindings(json.loads(manifest_path.read_text()), runs)
     record["gates"] = {
         **{k: {"status": v.get("status"), "source": "P22 report"} for k, v in g.items() if k not in ("G-13", "G-14")},
         "G-13": g13(record),
@@ -422,6 +571,11 @@ def main() -> int:
     mhistory = "; ".join(f"`{g['directory']}` {g['status']} {g['passed']}/{g['runs']}" for g in mp.get("groups", [])) or mp.get("reason", "")
     lines.append(f"| PITR, memory deletion/revocation preservation | {mp.get('status')} ({mp.get('passed', 0)}/{mp.get('runs', 0)} runs of the current code) | {mhistory} |")
     row("model residency (two replicas)", record["residency"])
+    b = record["bindings"]
+    lines.append(f"| bindings: {sum(1 for x in b['images'].values() if x['status'] == 'RECORDED')} images at their commits "
+                 f"({sum(len(x.get('lockfiles', {})) for x in b['images'].values())} lockfiles), {len(b['toolchains']['baseImages'])} base images, "
+                 f"{len(b['platformCharts']['charts'])} platform charts, {len(b['models']['models'])} models | "
+                 f"{', '.join(incomplete_bindings(b)) or 'RECORDED'} | qualification-record.json `bindings` |")
     lines += ["", "Gates: " + ", ".join(f"{k} {v['status']}" for k, v in sorted(record["gates"].items())),
               "", "ENV-01..10: " + ", ".join(f"{k} {v['status']}" for k, v in record["envInputs"].items()) + "."]
     (out / "qualification-record.md").write_text("\n".join(lines) + "\n")
