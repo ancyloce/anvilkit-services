@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "registryRevision": "16",
+  "registryRevision": "17",
   "description": "P22 requirement traceability (delivery.md P22): every M1, CAP and SEC requirement maps to executable cases and to explicit NOT_RUN entries naming what is missing. A case binds its suite, selector, the reviewed profiles it exercises, its time budget and the gates it contributes evidence to; contributing evidence never closes a gate. tools/run-evaluation.py checks, runs and reports it.",
   "requirements": {
     "M1": [
@@ -406,6 +406,12 @@
       ],
       "report": "exit-code",
       "description": "P23-03 signed-image admission of anvilkit-apps on the qualification cluster (server-side dry runs)"
+    },
+    "workflow-conformance": {
+      "runner": "go",
+      "dir": "services/agent/workflow",
+      "tags": "conformance",
+      "description": "The Pagix port conformance suite against the in-process reference: the double, and the declaration-driven HTTP adapter over the reference endpoint (DEVELOPMENT_ONLY; the real ENV-07 target is NR-PAGIX)"
     }
   },
   "cases": [
@@ -967,6 +973,22 @@
       ],
       "profiles": [],
       "budget": "20m"
+    },
+    {
+      "id": "U-PAGIX-CONFORMANCE",
+      "suite": "workflow-conformance",
+      "package": "./tests/conformance/pagix/",
+      "run": "TestPagixPortConformance|TestDeclarationRefusesUndeclaredOperations",
+      "requirements": [
+        "M1-04"
+      ],
+      "caps": [],
+      "sec": [],
+      "gates": [
+        "G-07"
+      ],
+      "profiles": [],
+      "budget": "5m"
     },
     {
       "id": "U-API",
@@ -1591,7 +1613,8 @@
       "missing": [
         "ENV-06"
       ],
-      "reason": "No qualified provider route, price, quota or cap exists; every model call runs against the countable controlled upstream, so repeated Agent trials with real models (success, all-trial success, cost, latency) cannot run and no quality figure is reported."
+      "reason": "No qualified provider route, price, quota or cap exists; every model call runs against the countable controlled upstream, so repeated Agent trials with real models (success, all-trial success, cost, latency) cannot run and no quality figure is reported.",
+      "cause": "environment"
     },
     {
       "id": "NR-CANDIDATE-ISOLATION",
@@ -1613,7 +1636,8 @@
       "missing": [
         "ENV-01"
       ],
-      "reason": "No gVisor/Cilium/kernel target runtime: the candidate profiles codegen-fixed-v1 and codegen-team-dev-v1 stay DISABLED on the development foundation."
+      "reason": "No qualified target runtime (gVisor, Cilium, kernel; ENV-01, G-04 NOT_RUN). On the DEVELOPMENT_ONLY Compose Jobs node the production pair codegen-team-v1 and validator-source-v1 runs under gVisor (DEC-045; B1 run 14 and the v0.1.29 Generation), which qualifies nothing; on the kind foundation the candidate profiles stay disabled.",
+      "cause": "environment"
     },
     {
       "id": "NR-PAGIX",
@@ -1632,7 +1656,8 @@
       "missing": [
         "ENV-07"
       ],
-      "reason": "Pagix source, lease, review, publication and activation ports are the Workflow's DEVELOPMENT_ONLY double; no real idempotency, query or receipt capability is observed."
+      "reason": "Pagix source, lease, review, publication and activation ports are the Workflow's DEVELOPMENT_ONLY double; no real idempotency, query or receipt capability is observed.",
+      "cause": "environment"
     },
     {
       "id": "NR-STUDIO-HOST",
@@ -1652,7 +1677,8 @@
       "missing": [
         "ENV-08"
       ],
-      "reason": "No qualified Studio host, preview origin or CSP; the certified host ABI (host-abi-dev-v1) is not the Studio host's (studio-host-v1)."
+      "reason": "No qualified Studio host, preview origin or CSP; the certified host ABI (host-abi-dev-v1) is not the Studio host's (studio-host-v1).",
+      "cause": "environment"
     },
     {
       "id": "NR-IDENTITY",
@@ -1670,7 +1696,8 @@
         "ENV-03",
         "ENV-07"
       ],
-      "reason": "Workload mTLS with SPIFFE URI SAN authorization (IT-IDENTITY) and the API's OIDC verification with project/role authorization (IT-USER-AUTHZ) run on the development PKI and the disposable development OIDC provider only (cert-manager self-signed root, trust domain anvilkit.local; deploy/dev/oidc): no production trust material (ENV-03) and no production IdP issuer, audience or claim schema (ENV-07), so neither is qualified."
+      "reason": "Workload mTLS with SPIFFE URI SAN authorization (IT-IDENTITY) and the API's OIDC verification with project/role authorization (IT-USER-AUTHZ) run on the development PKI and the disposable development OIDC provider only (cert-manager self-signed root, trust domain anvilkit.local; deploy/dev/oidc): no production trust material (ENV-03) and no production IdP issuer, audience or claim schema (ENV-07), so neither is qualified.",
+      "cause": "environment"
     },
     {
       "id": "NR-HA-DR",
@@ -1692,7 +1719,8 @@
         "ENV-02",
         "ENV-09"
       ],
-      "reason": "No HA topology, independent failure domain, PITR or Ceph/RGW inventory; two local processes are not failure-domain evidence."
+      "reason": "No HA topology, independent failure domain, PITR or Ceph/RGW inventory; two local processes are not failure-domain evidence.",
+      "cause": "environment"
     },
     {
       "id": "NR-BUSINESS-CORPUS",
@@ -1709,7 +1737,8 @@
       "missing": [
         "ENV-05"
       ],
-      "reason": "The RAG and memory cases are DEVELOPMENT_ONLY sets written by the implementing agent, not the approved business-labeled corpus; no quality threshold is derived from them."
+      "reason": "The RAG and memory cases are DEVELOPMENT_ONLY sets written by the implementing agent, not the approved business-labeled corpus; no quality threshold is derived from them.",
+      "cause": "environment"
     },
     {
       "id": "NR-REAL-MCP",
@@ -1726,7 +1755,8 @@
       "missing": [
         "ENV-03"
       ],
-      "reason": "Tool execution runs against the official-SDK fixture server behind a disposable ContextForge; no real paid-read or side-effecting upstream is qualified."
+      "reason": "Tool execution runs against the official-SDK fixture server behind a disposable ContextForge; no real paid-read or side-effecting upstream is qualified.",
+      "cause": "environment"
     },
     {
       "id": "NR-FAILOVER",
@@ -1744,7 +1774,8 @@
         "ENV-01",
         "ENV-02"
       ],
-      "reason": "No Valkey/NATS/PostgreSQL process-failure drills, Apollo/OpenBao control planes or Temporal SDK upgrade replay on a qualified environment."
+      "reason": "No Valkey/NATS/PostgreSQL process-failure drills, Apollo/OpenBao control planes or Temporal SDK upgrade replay on a qualified environment.",
+      "cause": "environment"
     },
     {
       "id": "NR-QUALIFIED-ENVIRONMENT",
@@ -1772,7 +1803,8 @@
         "ENV-02",
         "ENV-03"
       ],
-      "reason": "Every case runs on the DEVELOPMENT_ONLY foundation (kind, single-node Compose services, Testcontainers); a gate closes only on its entire real-environment evidence in a qualified environment (P23), never on local or synthetic results."
+      "reason": "Every case runs on the DEVELOPMENT_ONLY foundation (kind, single-node Compose services, Testcontainers); a gate closes only on its entire real-environment evidence in a qualified environment (P23), never on local or synthetic results.",
+      "cause": "environment"
     },
     {
       "id": "NR-SUPPLY-CHAIN",
@@ -1788,7 +1820,8 @@
         "ENV-01",
         "ENV-10"
       ],
-      "reason": "No signed images, SBOMs, published charts, clean install on a target cluster or replacement inventory; the working trees are uncommitted."
+      "reason": "Releases are built, scanned, keyless-signed and SBOM-attested in GitHub Actions (v0.1.29 SIGNED, 0 findings), but the release packages no charts (0 in its manifest), and the qualified registry with its signing policy (ENV-10), a clean install on a target cluster (ENV-01) and the replacement inventory are missing.",
+      "cause": "environment"
     },
     {
       "id": "NR-NETWORK",
@@ -1806,7 +1839,8 @@
         "ENV-01",
         "ENV-03"
       ],
-      "reason": "No enforcing-CNI environment runs the deployed services: the qualification cluster's kindnet does not enforce NetworkPolicy and the verification RKE2/Cilium environment is not deployed, so the integration scenarios and the LocalCheck probe Job have not run under the policies (P0.4 AC3), and the egress CIDRs of Pagix, providers, MCP upstreams, ContextForge and the inventory are ENV-03 inputs."
+      "reason": "No enforcing-CNI environment runs the deployed services: the qualification cluster's kindnet does not enforce NetworkPolicy and the verification RKE2/Cilium environment is not deployed, so the integration scenarios and the LocalCheck probe Job have not run under the policies (P0.4 AC3), and the egress CIDRs of Pagix, providers, MCP upstreams, ContextForge and the inventory are ENV-03 inputs.",
+      "cause": "environment"
     },
     {
       "id": "NR-SECRETS-LIVE",
@@ -1821,7 +1855,8 @@
         "ENV-01",
         "ENV-10"
       ],
-      "reason": "On the DEVELOPMENT_ONLY qualification cluster (run 20261010T053549Z, delivery.md P0 close-out) the CSI delivery, the Secret listing (check-secrets.py --cluster: 50 Secrets, 0 findings), drills.py secret-rotation (PASS on the second attempt) and restore-drills.py openbao ran and passed; none ran on a qualified ENV-01 environment, and seal custody (KMS unseal instead of Shamir shares on a workstation) is ENV-10. Since the 2026-10-13 host restart the qualification OpenBao is sealed and awaits an authorized unseal."
+      "reason": "On the DEVELOPMENT_ONLY qualification cluster (run 20261010T053549Z, delivery.md P0 close-out) the CSI delivery, the Secret listing (check-secrets.py --cluster: 50 Secrets, 0 findings), drills.py secret-rotation (PASS on the second attempt) and restore-drills.py openbao ran and passed; none ran on a qualified ENV-01 environment, and seal custody (KMS unseal instead of Shamir shares on a workstation) is ENV-10. Since the 2026-10-13 host restart the qualification OpenBao is sealed and awaits an authorized unseal.",
+      "cause": "environment"
     },
     {
       "id": "NR-GAP-M1-02",
@@ -1834,11 +1869,13 @@
         "ENV-01",
         "ENV-06"
       ],
-      "reason": "Public-API-only Generation reaching succeeded/candidate_ready (P3.4 AC2) does not exist; needs codegen-team-v1 and validator-source-v1 enabled under gVisor (ENV-01, G-04) and a qualified model route/price/cap (ENV-06, NR-REAL-MODELS).",
+      "reason": "No registered case drives a Generation through the public API alone to succeeded/candidate_ready (P3.4 AC2); the B1 runs on the Compose server are manual DEVELOPMENT_ONLY evidence (B-002). Qualifying it needs the production pair under a qualified gVisor runtime (ENV-01, G-04) and a qualified model route, price and cap (ENV-06, NR-REAL-MODELS).",
       "gates": [
         "G-03",
         "G-05"
-      ]
+      ],
+      "cause": "test",
+      "todo": "an integration case that drives one Generation through the public API alone to succeeded/candidate_ready (P3.4 AC2)"
     },
     {
       "id": "NR-GAP-M1-04",
@@ -1851,11 +1888,13 @@
         "ENV-07",
         "ENV-08"
       ],
-      "reason": "Conditional save on the real Pagix source port (TestPagixPortConformance/real-<apiVersion>/a_save_under_a_stale_revision_is_a_conflict_naming_the_current_one, services/agent/workflow/tests/conformance/pagix/conformance_test.go:136, build tag conformance) and the real Studio host need ENV-07 and ENV-08.",
+      "reason": "The real-target save subtest (TestPagixPortConformance/real-<apiVersion>/a_save_under_a_stale_revision_is_a_conflict_naming_the_current_one, services/agent/workflow/tests/conformance/pagix/conformance_test.go:136) skips on every real target: it needs an arranged lineage revision, so ENV-07 alone does not run it. The declaration-driven adapter's conditional save is proven against the reference endpoint (U-PAGIX-CONFORMANCE); the real Pagix target (ENV-07) and the real Studio host (ENV-08) remain.",
       "gates": [
         "G-06",
         "G-07"
-      ]
+      ],
+      "cause": "test",
+      "todo": "an arrangement step for the real target's save subtest (an upstream lineage at a known revision, the ENV-07 sandbox procedure)"
     },
     {
       "id": "NR-GAP-M1-05",
@@ -1872,7 +1911,8 @@
       "gates": [
         "G-04",
         "G-06"
-      ]
+      ],
+      "cause": "environment"
     },
     {
       "id": "NR-GAP-M1-11",
@@ -1884,11 +1924,13 @@
       "missing": [
         "ENV-06"
       ],
-      "reason": "Credits versus actual spend is untested: the cost-entry kind credit is declared (services/agent/control/internal/domain/budget.go:420, migrate/sql/00001_init.sql:238) but nothing writes or asserts it; real prices/caps need ENV-06.",
+      "reason": "Credits versus actual spend is unimplemented: the cost-entry kind credit is declared (services/agent/control/internal/domain/budget.go:420, migrate/sql/00001_init.sql:238) but nothing writes or asserts it, and the credit model (kind, defaults, limits, relation to the USD caps) is an owner decision (RB-A13). Real prices and caps need ENV-06.",
       "gates": [
         "G-02",
         "G-03"
-      ]
+      ],
+      "cause": "code",
+      "todo": "the credit ledger: credit cost entries written and asserted beside actual spend, once the credit model is decided (RB-A13)"
     },
     {
       "id": "NR-GAP-M1-14",
@@ -1904,7 +1946,8 @@
       "gates": [
         "G-02",
         "G-12"
-      ]
+      ],
+      "cause": "environment"
     },
     {
       "id": "NR-GAP-CAP-01",
@@ -1922,7 +1965,8 @@
         "G-03",
         "G-04",
         "G-05"
-      ]
+      ],
+      "cause": "environment"
     },
     {
       "id": "NR-GAP-CAP-02",
@@ -1938,7 +1982,8 @@
       "reason": "Business-labeled corpus and thresholds (ENV-05, NR-BUSINESS-CORPUS); inference profile residency (ENV-04).",
       "gates": [
         "G-08"
-      ]
+      ],
+      "cause": "environment"
     },
     {
       "id": "NR-GAP-CAP-07",
@@ -1953,12 +1998,13 @@
         "ENV-09",
         "ENV-10"
       ],
-      "reason": "HA topology, failure domains, off-cluster backups, signed CI releases and clean install need ENV-01/ENV-02/ENV-09/ENV-10 (NR-HA-DR, NR-SUPPLY-CHAIN).",
+      "reason": "HA topology, failure domains, off-cluster backups, releases in the qualified registry and a clean install need ENV-01/ENV-02/ENV-09/ENV-10 (NR-HA-DR, NR-SUPPLY-CHAIN).",
       "gates": [
         "G-01",
         "G-13",
         "G-14"
-      ]
+      ],
+      "cause": "environment"
     },
     {
       "id": "NR-GAP-SEC-02",
@@ -1970,7 +2016,7 @@
       "missing": [
         "ENV-06"
       ],
-      "reason": "Summary bypass at integration level (P3.4 new case) has no test; runs with real Pi models need ENV-06.",
+      "reason": "The summary bypass has no integration-level case (P3.4); runs with real Pi models need ENV-06.",
       "gates": [
         "G-02",
         "G-03",
@@ -1978,7 +2024,9 @@
         "G-07",
         "G-10",
         "G-14"
-      ]
+      ],
+      "cause": "test",
+      "todo": "an integration case for the summary bypass (P3.4)"
     },
     {
       "id": "NR-GAP-SEC-08",
@@ -1998,7 +2046,8 @@
         "G-10",
         "G-12",
         "G-14"
-      ]
+      ],
+      "cause": "environment"
     },
     {
       "id": "NR-GAP-SEC-09",
@@ -2011,14 +2060,16 @@
         "ENV-01",
         "ENV-10"
       ],
-      "reason": "The launchers' RBAC is checked offline for every placement (no exec, attach, ephemeral containers, token minting or escalation; launcher_rbac.py, RB-A07), but no cluster rejects a launcher's pods/exec live; gVisor RuntimeClass cases print UNEXECUTED without gVisor (check.sh); production admission needs ENV-01/ENV-10.",
+      "reason": "The launchers' RBAC is checked offline for every placement (no exec, attach, ephemeral containers, token minting or escalation; launcher_rbac.py, RB-A07), but no cluster case asserts the live refusal of a launcher's pods/exec (deploy/compose/verify.sh checks it on the Compose Jobs node, unregistered); gVisor RuntimeClass cases print UNEXECUTED without gVisor (check.sh); production admission needs ENV-01/ENV-10.",
       "gates": [
         "G-04",
         "G-07",
         "G-08",
         "G-12",
         "G-13"
-      ]
+      ],
+      "cause": "test",
+      "todo": "a check.sh --cluster case in which the launcher's pods/exec create is refused (RBAC), beside the ephemeral-container ones"
     },
     {
       "id": "NR-GAP-SEC-10",
@@ -2030,7 +2081,7 @@
       "missing": [
         "ENV-01"
       ],
-      "reason": "Symlink escape in the parser path at integration level is missing; isolation under gVisor needs ENV-01.",
+      "reason": "The parser path has no integration-level symlink-escape case; isolation under gVisor needs ENV-01.",
       "gates": [
         "G-02",
         "G-03",
@@ -2038,13 +2089,15 @@
         "G-06",
         "G-07",
         "G-08"
-      ]
+      ],
+      "cause": "test",
+      "todo": "an integration case for a symlink escape in the parser path"
     }
   ],
   "gaps": {
     "M1-02": "Public-API-only Generation reaching succeeded/candidate_ready (P3.4 AC2) does not exist; needs codegen-team-v1 and validator-source-v1 enabled under gVisor (ENV-01, G-04) and a qualified model route/price/cap (ENV-06, NR-REAL-MODELS).",
     "M1-03": "The same refusals inside a candidate Job under gVisor (validator-source-v1/codegen-team-v1 enabled) need ENV-01 (G-04).",
-    "M1-04": "Conditional save on the real Pagix source port (TestPagixPortConformance/real-<apiVersion>/a_save_under_a_stale_revision_is_a_conflict_naming_the_current_one, services/agent/workflow/tests/conformance/pagix/conformance_test.go:136, build tag conformance) and the real Studio host need ENV-07 and ENV-08.",
+    "M1-04": "The real Pagix source port's conditional save (ENV-07; its real-target subtest skips until an arrangement step exists, NR-GAP-M1-04) and the real Studio host (ENV-08). The declaration-driven adapter's conditional save is proven against the reference endpoint (U-PAGIX-CONFORMANCE).",
     "M1-05": "In-Pod certification of candidate code under gVisor needs ENV-01 (G-04); the certified host-abi-dev-v1 is not the Studio host's studio-host-v1 (ENV-08).",
     "M1-06": "Real Pagix review/approval decisions need ENV-07.",
     "M1-07": "The real-<apiVersion> conformance target is UNEXECUTED without ANVILKIT_PAGIX_URL/ANVILKIT_PAGIX_DECLARATION (ENV-07).",
@@ -2073,7 +2126,8 @@
     "SEC-09": "No pods/exec negative for the launcher; gVisor RuntimeClass cases print UNEXECUTED without gVisor (check.sh); production admission needs ENV-01/ENV-10.",
     "SEC-10": "Symlink escape in the parser path at integration level is missing; isolation under gVisor needs ENV-01.",
     "SEC-11": "Real restore in the registered suite on CNPG/DR storage (ENV-02/ENV-09).",
-    "SEC-12": "No CSP assertion anywhere (only iframe sandbox attributes); qualified Studio host/origin/CSP need ENV-08; pin the Studio commit (local HEAD cdfb685, dirty)."
+    "SEC-12": "No CSP assertion anywhere (only iframe sandbox attributes); qualified Studio host/origin/CSP need ENV-08; pin the Studio commit (local HEAD cdfb685, dirty).",
+    "M1-16": "Asserted at unit level (U-WORKFLOW, U-CONTROL: two grouped rounds, at most three questions, the expiry, a duplicate Update). IT-LIFECYCLE asks and answers one round through the public API (API-06) but is mapped to M1-15 and asserts neither the round bound nor the seven-day wait; real questions need a real model route (ENV-06, NR-REAL-MODELS)."
   },
   "assertions": {
     "M1-01": [
@@ -2184,6 +2238,12 @@
         "checks": "The second editor's save conflicts, its edits survive and save after an explicit rebase.",
         "runner": "playwright",
         "title": "concurrent editing: the second save conflicts, keeps its edits and saves after an explicit rebase"
+      },
+      {
+        "case": "U-PAGIX-CONFORMANCE",
+        "name": "TestPagixPortConformance/declared-adapter/a_save_under_a_stale_revision_is_a_conflict_naming_the_current_one",
+        "file": "services/agent/workflow/tests/conformance/pagix/conformance_test.go:136",
+        "checks": "Through the declaration-driven HTTP adapter over the reference endpoint, a save under a stale revision is a conflict naming the current revision (DEVELOPMENT_ONLY reference, not the real Pagix API)."
       }
     ],
     "M1-05": [
