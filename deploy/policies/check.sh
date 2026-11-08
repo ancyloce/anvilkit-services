@@ -197,6 +197,22 @@ for mode in check --self-test; do
     total=$((total+1)); failures=$((failures+1))
   fi
 done
+# RB-A07, SEC-09: the launchers' RBAC as each placement installs it (no exec, attach,
+# ephemeral containers, token minting, Secret reads, escalation, wildcards or cluster
+# scope; tests/launcher_rbac.py), then its self-test.
+for mode in check --self-test; do
+  rc=0
+  "$PY" "$POLICIES/tests/launcher_rbac.py" "$ROOT" "$HELM" \
+    $( [ "$mode" = check ] || echo "$mode" ) > "$WORK/launcher-rbac.txt" 2>&1 || rc=$?
+  cat "$WORK/launcher-rbac.txt"
+  n=$(grep -c '^PASS \|^FAIL ' "$WORK/launcher-rbac.txt" || true)
+  f=$(grep -c '^FAIL ' "$WORK/launcher-rbac.txt" || true)
+  total=$((total+n)); failures=$((failures+f))
+  if [ "$rc" != 0 ] && [ "$f" = 0 ]; then
+    printf 'FAIL launcher-rbac %s exited %s without a result\n' "$mode" "$rc"
+    total=$((total+1)); failures=$((failures+1))
+  fi
+done
 if [ "${1:-}" = "--cluster" ]; then
   CTX=${ANVILKIT_DEV_KUBE_CONTEXT:-kind-anvilkit-dev}
   # The administrator's context lives in the admin kubeconfig, as for the
