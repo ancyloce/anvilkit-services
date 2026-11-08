@@ -15,6 +15,9 @@ from the rendered ConfigMap, fixed pools from their source lines). Each connecti
 budget (pools x open generations x autoscaling maximum + reserves) must fit the
 cluster's max_connections. The lock must name all eight services (SERVICES) and every
 DD-10 §3 platform row (PLATFORM) with a production status of REQUIRED and its ENV inputs.
+Every combination must carry every lock application as a release chart, unless the
+lock's environment entry records an exemption naming it with its reason
+(environments.<environment>.exemptions: [{application, reason}]; RB-A12).
 
 Production fields that are REQUIRED are listed as NOT_VERIFIED; they never pass.
 Once ENV-01..ENV-10 supply them (P3.8), a production row is SUPPLIED with its source
@@ -283,7 +286,7 @@ def check_production(lock: dict, combination: dict, rendered: dict[str, list[dic
             findings.append(f"production platform {p['name']}: still {prod.get('status')} ({', '.join(prod.get('inputs', []))})")
         elif prod.get("application") not in apps:
             findings.append(f"production platform {p['name']}: its application {prod.get('application')!r} is absent from the production combination")
-    check_combination(combination, findings)
+    check_combination(combination, findings, lock, "production")
     if findings:
         return []
     view = production_view(lock)
@@ -301,18 +304,31 @@ def check_production(lock: dict, combination: dict, rendered: dict[str, list[dic
     return report
 
 
-def check_combination(combination: dict, findings: list[str]) -> None:
+def check_combination(combination: dict, findings: list[str], lock: dict, environment: str) -> None:
     sources = {(a.get("chart") or {}).get("source"): a for a in combination.get("applications", [])}
     for source, name in sorted(REQUIRED_CHARTS.items()):
         if source not in sources:
             findings.append(f"the combination lacks the {name} chart ({source})")
+    # RB-A12: every lock application is deployed, or its absence is recorded.
+    names = {a["name"] for a in lock["applications"]}
+    exempt = {}
+    for e in (lock["environments"].get(environment) or {}).get("exemptions") or []:
+        if e.get("application") not in names:
+            findings.append(f"environment {environment}: exemption for {e.get('application')!r}, which is not a lock application")
+        elif not str(e.get("reason") or "").strip():
+            findings.append(f"environment {environment}: the exemption of {e['application']} records no reason")
+        else:
+            exempt[e["application"]] = e["reason"]
+    released = {(a.get("chart") or {}).get("release") for a in combination.get("applications", [])}
+    for name in sorted(names - released - set(exempt)):
+        findings.append(f"the {environment} combination lacks the {name} application and records no exemption (lock environments.{environment}.exemptions)")
 
 
 def evaluate(lock: dict, rendered: dict[str, list[dict]], combination: dict | None = None) -> tuple[list[str], list[str], list[str]]:
     findings: list[str] = []
     not_verified = check_structure(lock, findings)
     if combination is not None:
-        check_combination(combination, findings)
+        check_combination(combination, findings, lock, "qualification")
     maxima = {}
     for app in lock["applications"]:
         if app["name"] in rendered:
@@ -364,16 +380,41 @@ def self_test(lock: dict, rendered: dict[str, list[dict]], combination: dict) ->
     def no_secret_delivery(r, lk, cb):
         cb["applications"] = [a for a in cb["applications"] if (a.get("chart") or {}).get("source") != "deploy/qualification/platform/secrets"]
 
+    # RB-A12: the qualification lock exempts Inference (host capacity); an
+    # exemption excuses only the application it names, with its reason.
+    def service_absent(r, lk, cb):
+        cb["applications"] = [a for a in cb["applications"] if (a.get("chart") or {}).get("release") != "anvilkit-agent-background-worker"]
+
+    def exemption_removed(r, lk, cb):
+        lk["environments"]["qualification"]["exemptions"] = []
+
+    def exemption_without_reason(r, lk, cb):
+        lk["environments"]["qualification"]["exemptions"] = [{"application": "anvilkit-agent-inference", "reason": " "}]
+
+    def exemption_of_unknown_application(r, lk, cb):
+        lk["environments"]["qualification"]["exemptions"] = [{"application": "anvilkit-agent-inferense", "reason": "typo"}]
+
     probes = {"PodDisruptionBudget removed": drop_pdb, "zone spread removed": drop_zone_spread,
               "grace below the drain limit": short_grace, "sidecar without limits": sidecar_without_limits,
               "connection budget exceeded": over_budget, "pool size drift": pool_drift,
               "platform row missing": missing_platform, "production maximum guessed": guessed_production,
               "PDB selects the migration Job": pdb_selects_migration, "network policies absent": no_network_policies,
-              "secret delivery absent": no_secret_delivery}
+              "secret delivery absent": no_secret_delivery, "service absent, no exemption": service_absent,
+              "exemption removed": exemption_removed, "exemption without a reason": exemption_without_reason,
+              "exemption of no lock application": exemption_of_unknown_application}
+    combination_probes = (no_network_policies, no_secret_delivery, service_absent, exemption_removed, exemption_without_reason, exemption_of_unknown_application)
     failures = production_self_test(lock, rendered, combination)
+    # A recorded exemption with its reason admits the absent service.
+    r, lk, cb = copy.deepcopy(rendered), copy.deepcopy(lock), copy.deepcopy(combination)
+    service_absent(r, lk, cb)
+    lk["environments"]["qualification"].setdefault("exemptions", []).append({"application": "anvilkit-agent-background-worker", "reason": "self-test"})
+    exempted, _, _ = evaluate(lk, r, cb)
+    print(f"  recorded exemption admits the absent service  {'yes' if not exempted else 'NO: ' + exempted[0]}")
+    if exempted:
+        failures.append("recorded exemption")
     for label, mutate in probes.items():
         r, lk, cb = copy.deepcopy(rendered), copy.deepcopy(lock), copy.deepcopy(combination)
-        if mutate in (no_network_policies, no_secret_delivery):  # combination probes
+        if mutate in combination_probes:
             mutate(r, lk, cb)
         else:
             mutate(r, lk)
@@ -390,6 +431,11 @@ def production_self_test(lock: dict, rendered: dict[str, list[dict]], combinatio
     application) passes; each known production defect is reported."""
     supplied = copy.deepcopy(lock)
     provider = combination["applications"][0]["name"]
+    # A production combination carries every lock application (no exemption
+    # applies there): the synthetic one adds the qualification's exempted ones.
+    combination = copy.deepcopy(combination)
+    released = {(a.get("chart") or {}).get("release") for a in combination["applications"]}
+    combination["applications"] += [{"name": a["name"], "chart": {"release": a["name"]}} for a in lock["applications"] if a["name"] not in released]
     for a in supplied["applications"]:
         a["autoscaling"]["production"] = {"min": a["replicas"]["min"], "max": a["autoscaling"]["qualification"]["max"], "source": "self-test"}
     for b in supplied["connectionBudgets"]:
@@ -417,12 +463,16 @@ def production_self_test(lock: dict, rendered: dict[str, list[dict]], combinatio
     def unfilled(lk):
         lk["applications"][1]["autoscaling"]["production"] = {"max": "REQUIRED", "inputs": ["ENV-05"]}
 
+    def without_inference(lk):
+        return {**combination, "applications": [a for a in combination["applications"] if (a.get("chart") or {}).get("release") != "anvilkit-agent-inference"]}
+
     for label, mutate in {"production replica floor missing": floor, "production connection budget undersized": undersized,
-                          "platform row absent from the combination": absent, "production value not filled": unfilled}.items():
+                          "platform row absent from the combination": absent, "production value not filled": unfilled,
+                          "production combination without Inference": without_inference}.items():
         lk = copy.deepcopy(supplied)
-        mutate(lk)
+        cb = mutate(lk) or combination
         found: list[str] = []
-        check_production(lk, combination, rendered, found)
+        check_production(lk, cb, rendered, found)
         print(f"  probe {label:<40} {'detected: ' + found[0] if found else 'NOT DETECTED'}")
         if not found:
             failures.append(label)
