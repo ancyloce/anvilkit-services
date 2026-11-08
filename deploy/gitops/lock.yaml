@@ -26,8 +26,16 @@ environments:
     namespace: anvilkit-apps
     values: deploy/qualification/values
     # The pinned combination; check-deployment-lock.py requires the
-    # combination charts every environment carries (the network policies).
+    # combination charts every environment carries (the network policies)
+    # and every application above, unless `exemptions` names it with its
+    # reason (RB-A12).
     combination: deploy/gitops/environments/qualification.yaml
+    exemptions:
+      - application: anvilkit-agent-inference
+        reason: >-
+          Host capacity: the 8-CPU qualification host cannot hold two Inference
+          replicas, each loading both fp32 BGE-M3 models (6.33 GB image); the
+          inference profile is ENV-04 (delivery.md, ENV-04 row).
     nodes: {controlPlane: 3, workers: 3, zones: [qa-a, qa-b, qa-c]}
 
 # Placement every application uses in a qualifying environment: one Pod per

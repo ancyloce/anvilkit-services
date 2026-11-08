@@ -1015,10 +1015,24 @@ def template_match(template: str, path: str) -> bool:
     return re.fullmatch(re.sub(r"\{[^}]+\}", "[^/]+", template), path) is not None
 
 
+# The API's answers for a route it does not register (RB-A23): a path no route serves
+# is 404 with the first fixed message (a missing resource is NOT_FOUND with another),
+# a method the path's routes do not serve is 405 with the second.
+NO_ROUTE_MESSAGE = "no route serves this path"
+NO_METHOD_MESSAGE = "this route does not serve the method"
+
+
 def route_absent(status: int, text: str, parsed: dict | None) -> bool:
-    """Gin's own answer for a route the API does not register: 404 and its plain text,
-    never the API's error envelope (which a missing resource gets)."""
-    return status == 404 and parsed is None and "404 page not found" in text
+    """The answer for a route (method and path) the API does not register: the API's
+    no-route (404) or no-method (405) envelope, or, from an API before RB-A23, Gin's own
+    404 plain text; never the envelope a missing resource gets."""
+    err = parsed.get("error") if isinstance(parsed, dict) else None
+    if status == 404 and parsed is None:
+        return "404 page not found" in text
+    if not isinstance(err, dict):
+        return False
+    return ((status, err.get("code"), err.get("message")) in
+            {(404, "NOT_FOUND", NO_ROUTE_MESSAGE), (405, "INVALID_ARGUMENT", NO_METHOD_MESSAGE)})
 
 
 def cmd_dto(a: argparse.Namespace) -> int:
@@ -1422,7 +1436,14 @@ def cmd_self_test(a: argparse.Namespace) -> int:
     for t in new:
         if any(re.search(m, t) for m in LEGACY_MARKERS):
             failures.append(f"new name matched as legacy: {t!r}")
-    if not route_absent(404, "404 page not found", None) or route_absent(404, '{"error":{}}', {"error": {}}) or route_absent(400, "", None):
+    no_route = {"error": {"code": "NOT_FOUND", "message": NO_ROUTE_MESSAGE}}
+    no_method = {"error": {"code": "INVALID_ARGUMENT", "message": NO_METHOD_MESSAGE}}
+    missing = {"error": {"code": "NOT_FOUND", "message": "not found"}}
+    if (not route_absent(404, "404 page not found", None) or not route_absent(404, json.dumps(no_route), no_route)
+            or not route_absent(405, json.dumps(no_method), no_method)
+            or route_absent(404, '{"error":{}}', {"error": {}}) or route_absent(404, json.dumps(missing), missing)
+            or route_absent(400, "", None) or route_absent(405, json.dumps(no_route), no_route)
+            or route_absent(400, json.dumps(no_method), no_method)):
         failures.append("route_absent misclassifies")
     if not template_match("/api/v1/operations/{operationId}", "/api/v1/operations/x") or template_match("/api/v1/operations/{operationId}", "/api/v1/operations/x/cancel"):
         failures.append("template_match misclassifies")
