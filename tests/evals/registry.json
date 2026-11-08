@@ -2118,7 +2118,7 @@
       {
         "case": "U-WORKFLOW",
         "name": "TestGenerationCandidateReadyAfterIndependentCertification",
-        "file": "services/agent/workflow/internal/workflows/generation_test.go:237",
+        "file": "services/agent/workflow/internal/workflows/generation_test.go:244",
         "checks": "Temporal test env with scripted Activities: the Generation reaches succeeded/candidate_ready only after codegen then the validator-source-v1 step, funded once, lease acquired and released."
       },
       {
@@ -2471,7 +2471,7 @@
       {
         "case": "U-WORKFLOW",
         "name": "TestGenerationDefinitionChange",
-        "file": "services/agent/workflow/internal/workflows/generation_test.go:454",
+        "file": "services/agent/workflow/internal/workflows/generation_test.go:461",
         "checks": "Change-definition Updates under expected revisions: unknown target rejected, known one applied, hold/resume ordered."
       },
       {
