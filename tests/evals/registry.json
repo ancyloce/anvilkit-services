@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "registryRevision": "15",
+  "registryRevision": "16",
   "description": "P22 requirement traceability (delivery.md P22): every M1, CAP and SEC requirement maps to executable cases and to explicit NOT_RUN entries naming what is missing. A case binds its suite, selector, the reviewed profiles it exercises, its time budget and the gates it contributes evidence to; contributing evidence never closes a gate. tools/run-evaluation.py checks, runs and reports it.",
   "requirements": {
     "M1": [
@@ -2011,7 +2011,7 @@
         "ENV-01",
         "ENV-10"
       ],
-      "reason": "No pods/exec negative for the launcher; gVisor RuntimeClass cases print UNEXECUTED without gVisor (check.sh); production admission needs ENV-01/ENV-10.",
+      "reason": "The launchers' RBAC is checked offline for every placement (no exec, attach, ephemeral containers, token minting or escalation; launcher_rbac.py, RB-A07), but no cluster rejects a launcher's pods/exec live; gVisor RuntimeClass cases print UNEXECUTED without gVisor (check.sh); production admission needs ENV-01/ENV-10.",
       "gates": [
         "G-04",
         "G-07",
@@ -2927,6 +2927,24 @@
         "name": "TestPeerCredentialsAndDelegation",
         "file": "jobs/shared/access-sidecar/internal/app/app_test.go:740",
         "checks": "Wrong peer UID on candidate.sock is closed; an SCM_RIGHTS descriptor closes the connection."
+      },
+      {
+        "case": "U-SIDECAR",
+        "name": "TestForgedCredentialsTransferNoIdentity/the_candidate_socket_closes_a_root_peer_that_claims_the_candidate_UID",
+        "file": "jobs/shared/access-sidecar/internal/sockets/sockets_test.go:64",
+        "checks": "A root peer whose SCM_CREDENTIALS claim PID 1 and the candidate UID is closed at accept with the kernel-reported UID 0 and its real PID (RB-A07, PID transfer)."
+      },
+      {
+        "case": "U-SIDECAR",
+        "name": "TestForgedCredentialsTransferNoIdentity/on_the_trusted_socket_the_claim_never_becomes_the_binding",
+        "file": "jobs/shared/access-sidecar/internal/sockets/sockets_test.go:79",
+        "checks": "On the trusted socket the connection keeps the SO_PEERCRED identity; the forged claim is not delivered and the request arrives as sent."
+      },
+      {
+        "case": "U-SIDECAR",
+        "name": "TestForgedCredentialsTransferNoIdentity/a_credentials_message_that_does_arrive_is_refused,_never_parsed",
+        "file": "jobs/shared/access-sidecar/internal/sockets/sockets_test.go:101",
+        "checks": "With SO_PASSCRED on, the arriving credentials message closes the connection (ErrFDDelegation); the binding is unchanged."
       }
     ],
     "SEC-04": [
@@ -3084,6 +3102,18 @@
         "name": "TestCalls/a_revocation_committed_between_admission_and_the_marker_cancels_the_send",
         "file": "services/agent/mcp/internal/application/calls_test.go:608",
         "checks": "A revoke landing between admission and marker cancels the send."
+      },
+      {
+        "case": "U-MCP",
+        "name": "TestAuthority/tokens_are_bound_to_the_resource_and_cached_per_grant_security_dimensions",
+        "file": "services/agent/mcp/internal/adapters/upstream/egress_test.go:217",
+        "checks": "Tokens are resource-bound (no cross-host use)."
+      },
+      {
+        "case": "U-MCP",
+        "name": "TestAuthority/substituted_metadata_is_refused_before_any_token_request",
+        "file": "services/agent/mcp/internal/adapters/upstream/egress_test.go:236",
+        "checks": "Substituted resource, issuer, token endpoint or JWKS metadata is refused before any token request."
       }
     ],
     "SEC-09": [
@@ -3147,6 +3177,34 @@
         "title": "ephemeralcontainers UPDATE admin: policy rejection",
         "file": "deploy/policies/tests/mutate.py:372",
         "checks": "An administrator's ephemeral-container injection is refused by policy."
+      },
+      {
+        "case": "U-POLICIES",
+        "name": "offline/no-pod-exec-attach-or-ephemeral",
+        "title": "\"no-pod-exec-attach-or-ephemeral\"",
+        "file": "deploy/policies/tests/launcher_rbac.py:49",
+        "checks": "No launcher RBAC object any placement renders (qualification, development, Compose Jobs node) grants pods/exec, attach, portforward, proxy or ephemeralcontainers; the self-test's added grants are reported (RB-A07)."
+      },
+      {
+        "case": "U-POLICIES",
+        "name": "offline/no-token-minting",
+        "title": "\"no-token-minting\"",
+        "file": "deploy/policies/tests/launcher_rbac.py:50",
+        "checks": "No launcher Role grants serviceaccounts/token or a ServiceAccount write."
+      },
+      {
+        "case": "U-POLICIES",
+        "name": "offline/no-escalate-bind-impersonate",
+        "title": "\"no-escalate-bind-impersonate\"",
+        "file": "deploy/policies/tests/launcher_rbac.py:53",
+        "checks": "No launcher Role grants escalate, bind or impersonate."
+      },
+      {
+        "case": "U-POLICIES",
+        "name": "offline/no-wildcard",
+        "title": "\"no-wildcard\"",
+        "file": "deploy/policies/tests/launcher_rbac.py:54",
+        "checks": "No launcher Role uses a wildcard group, resource or verb, or a non-resource URL."
       }
     ],
     "SEC-10": [
@@ -3251,6 +3309,20 @@
         "file": "jobs/validator/test/preview-origin.test.ts:136",
         "checks": "The sandboxed preview origin refuses unverified bytes.",
         "title": "refuses bytes that do not match their digest, then closes on disorder"
+      },
+      {
+        "case": "U-VALIDATOR",
+        "name": "preview frame CSP (SEC-12) is exactly the reviewed policy: no network, no inline code but the import map, embedded by the parent only",
+        "title": "is exactly the reviewed policy: no network, no inline code but the import map, embedded by the parent only",
+        "file": "jobs/validator/test/preview-csp.test.ts:73",
+        "checks": "The frame CSP is exactly the reviewed directive set with no wildcard or unsafe keyword; preview-csp.test.ts also binds the hash to the page's import map and checks the served header (RB-A07)."
+      },
+      {
+        "case": "U-VALIDATOR",
+        "name": "preview frame CSP (SEC-12) is the policy the preview origin serves with the frame page",
+        "title": "is the policy the preview origin serves with the frame page",
+        "file": "jobs/validator/test/preview-csp.test.ts:92",
+        "checks": "The preview origin serves /frame.html with exactly the reviewed policy, its script hash that of the served import map."
       }
     ]
   },
