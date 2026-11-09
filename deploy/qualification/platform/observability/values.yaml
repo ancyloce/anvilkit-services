@@ -36,6 +36,8 @@ thresholds:
   revocationConvergedSeconds: 300     # p95 from a grant revocation to sender convergence over 1h (DD-08)
   partialPublicationSeconds: 900      # oldest release partially published since its last transition (DD-06)
   syntheticProbeMaxAgeSeconds: 7800   # 2h10m: two hourly LocalCheck probes missed (RB-A25)
+  executionPoolSaturatedFor: 30m      # every permit of an execution pool held (RB-A25)
+  indexFreshnessSeconds: 3600         # oldest revision the accepted index generation has not indexed (RB-A25)
 
 # Which endpoint of each service is scraped: the container port name and the
 # path (the services serve /metrics on their probe listener, Control and the

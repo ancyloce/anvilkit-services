@@ -72,6 +72,10 @@ spec:
           expr: max by (pool) (anvilkit_control_grpc_pool_in_use / clamp_min(anvilkit_control_grpc_pool_limit, 1))
         - record: anvilkit:control_db_pool_utilization
           expr: max(anvilkit_control_db_pool_acquired_connections / clamp_min(anvilkit_control_db_pool_max_connections, 1))
+        # RB-A25: the database-backed execution pools (every replica reports
+        # the same shared counts, hence max).
+        - record: anvilkit:control_execution_pool_utilization
+          expr: max by (pool) (anvilkit_control_execution_pool_active_permits) / clamp_min(max by (pool) (anvilkit_control_execution_pool_limit), 1)
         # Budget/cost consistency (SLO row 4): what Control has not settled yet;
         # Prometheus is never the settlement authority.
         - record: anvilkit:unresolved_obligation_oldest_seconds
@@ -85,6 +89,9 @@ spec:
           expr: max by (queue) (anvilkit_background_queue_oldest_waiting_seconds)
         - record: anvilkit:knowledge_projection_lag_seconds
           expr: max(anvilkit_knowledge_memory_projection_lag_seconds)
+        # RB-A25: the oldest revision the accepted index generation has not indexed.
+        - record: anvilkit:knowledge_index_freshness_seconds
+          expr: max(anvilkit_knowledge_index_freshness_seconds)
         # Recovery (SLO row 6): the age of the newest successful backup per store.
         # PostgreSQL's base backups are the Barman Cloud plugin's (named anvilkit-backup-postgres-<cluster>):
         # CloudNativePG's own cnpg_collector_last_available_backup_timestamp stays 0 under the plugin.
@@ -203,6 +210,26 @@ spec:
           annotations:
             summary: "Memory projections lag or failed."
             runbook_url: {{ printf "%s/knowledge-rebuild.md" $rb }}
+        - alert: AnvilKitExecutionPoolSaturated
+          expr: anvilkit:control_execution_pool_utilization >= 1
+          for: {{ $t.executionPoolSaturatedFor }}
+          labels: {severity: warning}
+          annotations:
+            summary: "Every permit of the {{ "{{" }} $labels.pool {{ "}}" }} execution pool has been held for {{ $t.executionPoolSaturatedFor }}: new work waits for a permit."
+            runbook_url: {{ printf "%s/control-capacity.md" $rb }}
+        - alert: AnvilKitIndexStale
+          expr: anvilkit:knowledge_index_freshness_seconds > {{ $t.indexFreshnessSeconds }}
+          for: 15m
+          labels: {severity: warning}
+          annotations:
+            summary: "A revision has waited more than {{ $t.indexFreshnessSeconds }}s for the accepted index generation."
+            runbook_url: {{ printf "%s/knowledge-rebuild.md" $rb }}
+        - alert: AnvilKitEventRetentionFailing
+          expr: sum(increase(anvilkit_control_event_retention_failures_total[3h])) >= 2
+          labels: {severity: warning}
+          annotations:
+            summary: "Control's operation-event retention was refused or failed twice within 3h (RB-A27): events past the period are kept."
+            runbook_url: {{ printf "%s/control-pg.md" $rb }}
         - alert: AnvilKitConfigGenerationRejected
           expr: sum(increase({__name__=~"anvilkit_(knowledge|mcp)_config_rejections_total"}[15m])) > 0
           labels: {severity: warning}

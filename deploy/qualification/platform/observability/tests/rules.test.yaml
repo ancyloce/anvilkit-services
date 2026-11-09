@@ -275,6 +275,66 @@ tests:
       exp_annotations:
         summary: A replica's last shutdown had to force-stop in-flight work.
         runbook_url: https://github.com/ancyloce/anvilkit-services/blob/main/docs/operations/runbooks/rollback.md
+- name: a saturated execution pool, a stale index and failing event retention (RB-A25, RB-A27)
+  interval: 1m
+  input_series:
+  - series: anvilkit_control_execution_pool_active_permits{pool="generation",pod="control-a"}
+    values: 2x45
+  - series: anvilkit_control_execution_pool_active_permits{pool="generation",pod="control-b"}
+    values: 2x45
+  - series: anvilkit_control_execution_pool_limit{pool="generation",pod="control-a"}
+    values: 2x45
+  - series: anvilkit_knowledge_index_freshness_seconds
+    values: 3700+60x45
+  - series: anvilkit_control_event_retention_failures_total{reason="identity"}
+    values: 0 1 1 2x42
+  alert_rule_test:
+  - eval_time: 40m
+    alertname: AnvilKitExecutionPoolSaturated
+    exp_alerts:
+    - exp_labels:
+        severity: warning
+        pool: generation
+      exp_annotations:
+        summary: "Every permit of the generation execution pool has been held for 30m: new work waits for a permit."
+        runbook_url: https://github.com/ancyloce/anvilkit-services/blob/main/docs/operations/runbooks/control-capacity.md
+  - eval_time: 20m
+    alertname: AnvilKitIndexStale
+    exp_alerts:
+    - exp_labels:
+        severity: warning
+      exp_annotations:
+        summary: "A revision has waited more than 3600s for the accepted index generation."
+        runbook_url: https://github.com/ancyloce/anvilkit-services/blob/main/docs/operations/runbooks/knowledge-rebuild.md
+  - eval_time: 10m
+    alertname: AnvilKitEventRetentionFailing
+    exp_alerts:
+    - exp_labels:
+        severity: warning
+      exp_annotations:
+        summary: "Control's operation-event retention was refused or failed twice within 3h (RB-A27): events past the period are kept."
+        runbook_url: https://github.com/ancyloce/anvilkit-services/blob/main/docs/operations/runbooks/control-pg.md
+- name: a pool with a free permit, a fresh index and one retention failure raise nothing
+  interval: 1m
+  input_series:
+  - series: anvilkit_control_execution_pool_active_permits{pool="generation",pod="control-a"}
+    values: 1x45
+  - series: anvilkit_control_execution_pool_limit{pool="generation",pod="control-a"}
+    values: 2x45
+  - series: anvilkit_knowledge_index_freshness_seconds
+    values: 0x45
+  - series: anvilkit_control_event_retention_failures_total{reason="delete"}
+    values: 0 1x44
+  alert_rule_test:
+  - eval_time: 40m
+    alertname: AnvilKitExecutionPoolSaturated
+    exp_alerts: []
+  - eval_time: 40m
+    alertname: AnvilKitIndexStale
+    exp_alerts: []
+  - eval_time: 40m
+    alertname: AnvilKitEventRetentionFailing
+    exp_alerts: []
 - name: a target down
   interval: 1m
   input_series:
