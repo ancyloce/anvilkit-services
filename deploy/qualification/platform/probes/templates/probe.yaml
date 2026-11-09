@@ -31,6 +31,16 @@ data:
     done
     echo "probe operation $id did not finish in {{ .Values.timeoutSeconds }}s (last: $lifecycle)"
     exit 1
+  # RB-A25: the query probe. A read of an operation that does not exist is
+  # authenticated by the API and answered by Control (404): the query path is
+  # available end to end, and nothing is created.
+  query.sh: |
+    set -eu
+    api={{ .Values.api }}
+    curl -fsS "$api/readyz" >/dev/null
+    code=$(curl -sS -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $TOKEN" "$api/api/v1/operations/op_probe_missing")
+    [ "$code" = 404 ] || { echo "query probe: GET /operations/{missing} answered $code, not 404"; exit 1; }
+    echo "query probe: readyz and an authenticated operation read answered"
 ---
 apiVersion: batch/v1
 kind: Job
@@ -43,6 +53,9 @@ spec:
   backoffLimit: 2
   activeDeadlineSeconds: {{ add .Values.timeoutSeconds 120 }}
   template:
+    metadata:
+      # The network chart admits the probes' traffic to the API by this label.
+      labels: {app.kubernetes.io/name: anvilkit-probes, app.kubernetes.io/component: postsync}
     spec:
       restartPolicy: Never
       automountServiceAccountToken: false
@@ -62,3 +75,45 @@ spec:
       volumes:
         - name: probe
           configMap: {name: anvilkit-probe}
+{{- if .Values.synthetic.enabled }}
+{{- range $probe := list (dict "name" "query" "script" "query.sh" "schedule" $.Values.synthetic.querySchedule "deadline" 120)
+                         (dict "name" "localcheck" "script" "probe.sh" "schedule" $.Values.synthetic.localCheckSchedule "deadline" (add $.Values.timeoutSeconds 120)) }}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: anvilkit-probe-{{ $probe.name }}
+  labels: {app.kubernetes.io/name: anvilkit-probes, app.kubernetes.io/component: {{ $probe.name }}}
+spec:
+  schedule: {{ $probe.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: {{ $probe.deadline }}
+      template:
+        metadata:
+          labels: {app.kubernetes.io/name: anvilkit-probes, app.kubernetes.io/component: {{ $probe.name }}}
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          securityContext: {runAsNonRoot: true, runAsUser: 100, seccompProfile: {type: RuntimeDefault}}
+          containers:
+            - name: probe
+              image: {{ $.Values.image }}
+              command: ["sh", "/probe/{{ $probe.script }}"]
+              env:
+                - name: TOKEN
+                  valueFrom: {secretKeyRef: {name: {{ $.Values.tokenSecret }}, key: token}}
+              resources:
+                requests: {cpu: 10m, memory: 16Mi}
+                limits: {cpu: 100m, memory: 64Mi}
+              securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: ["ALL"]}}
+              volumeMounts: [{name: probe, mountPath: /probe}]
+          volumes:
+            - name: probe
+              configMap: {name: anvilkit-probe}
+{{- end }}
+{{- end }}

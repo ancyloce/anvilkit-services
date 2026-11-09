@@ -165,6 +165,15 @@ def uncommitted_self_test() -> bool:
         return clean and uncommitted([root / "chart"], root) == ["chart/new.yaml", "chart/values.yaml"]
 
 
+def skeleton_refusal(environment: str, combination: dict) -> str | None:
+    """RB-A01: a skeleton (deploy/gitops/environments/production.yaml: the
+    production layer's structure, its values still ENV inputs) is checked by
+    tools/check-deployment-lock.py and never published."""
+    if combination.get("skeleton"):
+        return f"REFUSED: {environment} is a skeleton (its values are ENV inputs); nothing is published"
+    return None
+
+
 def self_test() -> int:
     """P3.2 AC3: the release gate, the artifact rule, the reuse rule and the sync policy."""
     signed = {"status": "SIGNED", "findings": []}
@@ -186,6 +195,8 @@ def self_test() -> int:
         ("production with a declared rollback window automates", "automated" in sync_policy(False, {"rollbackWindow": "30m"})),
         ("development automates", "automated" in sync_policy(True, None)),
         ("a changed or new file under a published source is refused, a committed one is not", uncommitted_self_test()),
+        ("a skeleton environment is refused before anything is published",
+         skeleton_refusal("production", {"skeleton": True}) is not None and skeleton_refusal("qualification", {"development": True}) is None),
         ("the root retries a failed sync like its children, automated or not",
          root_sync_policy(True, None)["retry"] == RETRY and root_sync_policy(False, None)["retry"] == RETRY
          and "automated" not in root_sync_policy(False, None)),
@@ -292,11 +303,15 @@ def main() -> int:
     if "--self-test" in sys.argv[1:]:
         return self_test()
     a = ap.parse_args()
+    combination = yaml.safe_load((ROOT / "deploy/gitops/environments" / f"{a.environment}.yaml").read_text())
+    refusal = skeleton_refusal(a.environment, combination)
+    if refusal:
+        print(refusal)
+        return 1
     helm_bin = helm()
     if not helm_bin or not shutil.which("docker"):
         print("UNEXECUTED: helm and docker are required")
         return 2
-    combination = yaml.safe_load((ROOT / "deploy/gitops/environments" / f"{a.environment}.yaml").read_text())
     # What this publication packages from the checkout: the combination, the environment
     # chart, the platform charts' sources and the values files (an --overlay is the
     # drills' own recorded input, outside this rule).

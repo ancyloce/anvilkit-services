@@ -62,6 +62,8 @@ components:
   # P3.7: the scheduled backup Jobs (deploy/qualification/platform/backups).
   backupJobs: {namespace: anvilkit-platform, selector: {app.kubernetes.io/name: anvilkit-backups}}
   cnpgOperator: {namespace: cnpg-system, selector: {app.kubernetes.io/name: cloudnative-pg}, external: true}
+  # RB-A26: Kyverno's admission controller, scraped by Prometheus (its metrics port).
+  kyvernoAdmission: {namespace: kyverno, selector: {app.kubernetes.io/instance: kyverno, app.kubernetes.io/component: admission-controller}, external: true}
 
 # Addresses outside the cluster, by CIDR (ENV-03). Empty admits nothing.
 externals:
@@ -189,6 +191,7 @@ flows:
   # P3.7: CloudNativePG's instance metrics (backup age).
   - {from: prometheus, to: postgresBusiness, ports: [9187]}
   - {from: prometheus, to: postgresTemporal, ports: [9187]}
+  - {from: prometheus, to: kyvernoAdmission, ports: [8000]}
   - {from: prometheus, toExternal: kubernetesAPI}
   - {from: kubeStateMetrics, toExternal: kubernetesAPI}
   # P0.6: OpenBao's Kubernetes auth method reviews the CSI provider's

@@ -31,6 +31,15 @@ spec:
           expr: histogram_quantile(0.95, sum by (le, route) (rate(anvilkit_api_request_duration_seconds_bucket{route!~".*/events"}[5m])))
         - record: anvilkit:control_rpc_duration_seconds:p95_5m
           expr: histogram_quantile(0.95, sum by (le, method) (rate(anvilkit_control_rpc_duration_seconds_bucket[5m])))
+        # RB-A25: SLO row 1 records p95 and p99.
+        - record: anvilkit:api_request_duration_seconds:p99_5m
+          expr: histogram_quantile(0.99, sum by (le, route) (rate(anvilkit_api_request_duration_seconds_bucket{route!~".*/events"}[5m])))
+        - record: anvilkit:control_rpc_duration_seconds:p99_5m
+          expr: histogram_quantile(0.99, sum by (le, method) (rate(anvilkit_control_rpc_duration_seconds_bucket[5m])))
+        # RB-A25: the recurring synthetic probes (the probes chart's CronJobs):
+        # seconds since each one last succeeded (kube-state-metrics).
+        - record: anvilkit:synthetic_probe_success_age_seconds
+          expr: time() - max by (cronjob) (kube_cronjob_status_last_successful_time{cronjob=~"anvilkit-probe-.*"})
         # First progress and complete generation latency (SLO row 2): from an
         # operation's acceptance to the commit that takes it out of `accepted`
         # (a cancel of an accepted operation is no progress) and to its
@@ -221,10 +230,10 @@ spec:
             summary: "The newest successful backup of {{ "{{" }} $labels.cronjob {{ "}}" }} is older than {{ $t.backupMaxAgeSeconds }} s, or it never succeeded."
             runbook_url: {{ printf "%s/recovery-epoch.md" $rb }}
         # RB-A26: the incident entry points of platform.md ("Incident runbook
-        # entry points") that a metric can show. No alert exists yet for an
-        # SSRF refusal (MCP counts call states, not EGRESS_REFUSED), a partial
-        # publication (Control exposes no release states) or an isolation
-        # failure (Kyverno is not scraped); their runbooks name the signals.
+        # entry points") that a metric can show: an SSRF refusal is MCP's
+        # egress refusal counter, a partial publication Control's release
+        # gauges, an isolation failure Kyverno's results of the AnvilKit
+        # admission policies (below).
         {{- if and .Values.scrape.postgres.enabled (has "anvilkit-business" .Values.scrape.postgres.clusters) }}
         - alert: AnvilKitBusinessDatabaseDown
           expr: (sum(cnpg_collector_up{cluster="anvilkit-business"}) or on() vector(0)) == 0
@@ -263,4 +272,40 @@ spec:
           labels: {severity: warning}
           annotations:
             summary: "The p95 from a grant revocation to its senders' convergence exceeds {{ $t.revocationConvergedSeconds }} s."
+            runbook_url: {{ printf "%s/mcp-revocation-ssrf.md" $rb }}
+        # RB-A25: the synthetic probes. Failing: the latest scheduled run has
+        # not succeeded within 15 minutes (a LocalCheck run takes up to 7).
+        # Stale: no success within the bound (a probe no longer scheduled).
+        - alert: AnvilKitSyntheticProbeFailing
+          expr: max by (cronjob) (kube_cronjob_status_last_schedule_time{cronjob=~"anvilkit-probe-.*"}) > max by (cronjob) (kube_cronjob_status_last_successful_time{cronjob=~"anvilkit-probe-.*"})
+          for: 15m
+          labels: {severity: critical}
+          annotations:
+            summary: "The synthetic probe {{ "{{" }} $labels.cronjob {{ "}}" }} has not succeeded since its latest scheduled run: admission or query is failing end to end."
+            runbook_url: {{ printf "%s/rollback.md" $rb }}
+        - alert: AnvilKitSyntheticProbeStale
+          expr: anvilkit:synthetic_probe_success_age_seconds > {{ $t.syntheticProbeMaxAgeSeconds }}
+          labels: {severity: warning}
+          annotations:
+            summary: "The synthetic probe {{ "{{" }} $labels.cronjob {{ "}}" }} has not succeeded for more than {{ $t.syntheticProbeMaxAgeSeconds }} s."
+            runbook_url: {{ printf "%s/rollback.md" $rb }}
+        {{- if .Values.scrape.kyverno.enabled }}
+        - alert: AnvilKitIsolationAdmissionRefused
+          expr: (sum by (policy_name) (increase(kyverno_validating_policy_results_total{policy_name=~"anvilkit-.*",result=~"fail|error"}[15m])) or sum by (policy_name) (increase(kyverno_image_validating_policy_results_total{policy_name=~"anvilkit-.*",result=~"fail|error"}[15m]))) > 0
+          labels: {severity: critical}
+          annotations:
+            summary: "The AnvilKit admission policy {{ "{{" }} $labels.policy_name {{ "}}" }} refused or could not evaluate a workload in the last 15 minutes: a Job or Pod outside its reviewed template was not admitted."
+            runbook_url: {{ printf "%s/isolation-failure.md" $rb }}
+        {{- end }}
+        - alert: AnvilKitReleasePartiallyPublished
+          expr: max(anvilkit_control_release_oldest_seconds{state="partially_published"}) > {{ $t.partialPublicationSeconds }}
+          labels: {severity: critical}
+          annotations:
+            summary: "A release has stayed partially published (one target published, the other not) for more than {{ $t.partialPublicationSeconds }} s."
+            runbook_url: {{ printf "%s/partial-publication.md" $rb }}
+        - alert: AnvilKitMCPEgressRefused
+          expr: sum by (reason) (increase(anvilkit_mcp_egress_refusals_total[15m])) > 0
+          labels: {severity: warning}
+          annotations:
+            summary: "MCP's egress refused upstream hops ({{ "{{" }} $labels.reason {{ "}}" }}) in the last 15 minutes: a substituted, rebinding or unreviewed destination was not contacted."
             runbook_url: {{ printf "%s/mcp-revocation-ssrf.md" $rb }}

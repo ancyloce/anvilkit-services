@@ -9,3 +9,13 @@ subjectDigest: sha256:0dc7fa9db7237a2b5c96f70f59bb00f73bb86a0ca5554e91c312f9ada2
 timeoutSeconds: 300
 # The environment chart version, set by deploy/gitops/publish.py.
 environmentRevision: ""
+# RB-A25: the recurring synthetic probes (platform.md SLO row 1, admission and
+# query availability), each a CronJob of the same probe identity. The query
+# probe reads a missing operation through the API (authenticated, answered by
+# Control, nothing created); the LocalCheck probe is the PostSync probe's end
+# to end operation, hourly, because each one launches a Job. Their freshness
+# and failure alerts are the observability chart's (kube-state-metrics).
+synthetic:
+  enabled: true
+  querySchedule: "*/5 * * * *"
+  localCheckSchedule: "17 * * * *"

@@ -34,6 +34,8 @@ thresholds:
   backupMaxAgeSeconds: 93600     # 26 h: a daily backup missed (ENV-09)
   temporalRequestFailureRatio: 0.1   # share of failed Temporal client requests over 5m
   revocationConvergedSeconds: 300     # p95 from a grant revocation to sender convergence over 1h (DD-08)
+  partialPublicationSeconds: 900      # oldest release partially published since its last transition (DD-06)
+  syntheticProbeMaxAgeSeconds: 7800   # 2h10m: two hourly LocalCheck probes missed (RB-A25)
 
 # Which endpoint of each service is scraped: the container port name and the
 # path (the services serve /metrics on their probe listener, Control and the
@@ -58,6 +60,17 @@ scrape:
     - {name: anvilkit-agent-mcp, port: health}
     - {name: anvilkit-agent-mcp, port: relay-health, suffix: relay}
     - {name: anvilkit-agent-background-worker, port: health}
+  # RB-A26: Kyverno's admission controller (chart kyverno 3.9.1, Kyverno
+  # 1.19.1): the results of the CEL ValidatingPolicy and ImageValidatingPolicy
+  # types the AnvilKit admission policies are, on its metrics port (8000),
+  # labelled policy_name, resource_kind, resource_request_operation,
+  # execution_cause and result (pass, fail, warning, error, skip;
+  # pkg/metrics/vpol.go and ivpol.go at v1.19.1).
+  kyverno:
+    enabled: true
+    namespace: kyverno
+    selector: {app.kubernetes.io/instance: kyverno, app.kubernetes.io/component: admission-controller}
+    port: metrics-port
   # Inference serves /metrics only on its TLS business listener with client
   # certificates: scraping it needs a monitoring workload identity
   # (inference.tlsSecret: a Secret with ca.crt, tls.crt, tls.key).

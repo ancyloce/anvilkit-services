@@ -66,3 +66,22 @@ spec:
       relabelings:
         - {sourceLabels: [__meta_kubernetes_pod_label_cnpg_io_cluster], targetLabel: cluster, action: replace}
 {{- end }}
+{{- if .Values.scrape.kyverno.enabled }}
+---
+# RB-A26: Kyverno's admission results (the isolation-failure incident).
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: anvilkit-kyverno
+  namespace: {{ .Values.scrape.kyverno.namespace }}
+  labels:
+    release: {{ .Values.release }}
+    app.kubernetes.io/part-of: anvilkit
+spec:
+  selector:
+    matchLabels: {{ toJson .Values.scrape.kyverno.selector }}
+  podMetricsEndpoints:
+    - port: {{ .Values.scrape.kyverno.port }}
+      path: /metrics
+      interval: {{ .Values.scrape.interval }}
+{{- end }}

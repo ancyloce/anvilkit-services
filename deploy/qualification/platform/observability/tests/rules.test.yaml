@@ -529,3 +529,130 @@ tests:
       exp_annotations:
         summary: "The p95 from a grant revocation to its senders' convergence exceeds 300 s."
         runbook_url: https://github.com/ancyloce/anvilkit-services/blob/main/docs/operations/runbooks/mcp-revocation-ssrf.md
+- name: an MCP egress refusal raises the SSRF alert by reason
+  interval: 1m
+  input_series:
+  - series: anvilkit_mcp_egress_refusals_total{pod="anvilkit-agent-mcp-0",reason="address"}
+    values: 0x10 1x20
+  - series: anvilkit_mcp_egress_refusals_total{pod="anvilkit-agent-mcp-0",reason="redirect"}
+    values: 0x30
+  alert_rule_test:
+  - eval_time: 15m
+    alertname: AnvilKitMCPEgressRefused
+    exp_alerts:
+    - exp_labels:
+        severity: warning
+        reason: address
+      exp_annotations:
+        summary: "MCP's egress refused upstream hops (address) in the last 15 minutes: a substituted, rebinding or unreviewed destination was not contacted."
+        runbook_url: https://github.com/ancyloce/anvilkit-services/blob/main/docs/operations/runbooks/mcp-revocation-ssrf.md
+- name: no MCP egress refusal raises nothing
+  interval: 1m
+  input_series:
+  - series: anvilkit_mcp_egress_refusals_total{pod="anvilkit-agent-mcp-0",reason="address"}
+    values: 0x30
+  alert_rule_test:
+  - eval_time: 20m
+    alertname: AnvilKitMCPEgressRefused
+    exp_alerts: []
+- name: a release left partially published raises the alert
+  interval: 1m
+  input_series:
+  - series: anvilkit_control_release_oldest_seconds{pod="anvilkit-agent-control-0",state="partially_published"}
+    values: 0x5 360+60x25
+  - series: anvilkit_control_release_oldest_seconds{pod="anvilkit-agent-control-1",state="partially_published"}
+    values: 0x30
+  alert_rule_test:
+  - eval_time: 20m
+    alertname: AnvilKitReleasePartiallyPublished
+    exp_alerts:
+    - exp_labels:
+        severity: critical
+      exp_annotations:
+        summary: "A release has stayed partially published (one target published, the other not) for more than 900 s."
+        runbook_url: https://github.com/ancyloce/anvilkit-services/blob/main/docs/operations/runbooks/partial-publication.md
+- name: a short partial publication raises nothing
+  interval: 1m
+  input_series:
+  - series: anvilkit_control_release_oldest_seconds{pod="anvilkit-agent-control-0",state="partially_published"}
+    values: 0+60x10 0x20
+  alert_rule_test:
+  - eval_time: 25m
+    alertname: AnvilKitReleasePartiallyPublished
+    exp_alerts: []
+- name: a synthetic probe whose latest run did not succeed raises the failing alert
+  interval: 1m
+  input_series:
+  - series: kube_cronjob_status_last_schedule_time{cronjob="anvilkit-probe-query",namespace="anvilkit-platform"}
+    values: 600x40
+  - series: kube_cronjob_status_last_successful_time{cronjob="anvilkit-probe-query",namespace="anvilkit-platform"}
+    values: 300x40
+  alert_rule_test:
+  - eval_time: 20m
+    alertname: AnvilKitSyntheticProbeFailing
+    exp_alerts:
+    - exp_labels:
+        severity: critical
+        cronjob: anvilkit-probe-query
+      exp_annotations:
+        summary: "The synthetic probe anvilkit-probe-query has not succeeded since its latest scheduled run: admission or query is failing end to end."
+        runbook_url: https://github.com/ancyloce/anvilkit-services/blob/main/docs/operations/runbooks/rollback.md
+- name: a synthetic probe that succeeded on its latest run raises nothing
+  interval: 1m
+  input_series:
+  - series: kube_cronjob_status_last_schedule_time{cronjob="anvilkit-probe-query",namespace="anvilkit-platform"}
+    values: 600x40
+  - series: kube_cronjob_status_last_successful_time{cronjob="anvilkit-probe-query",namespace="anvilkit-platform"}
+    values: 610x40
+  alert_rule_test:
+  - eval_time: 20m
+    alertname: AnvilKitSyntheticProbeFailing
+    exp_alerts: []
+  - eval_time: 20m
+    alertname: AnvilKitSyntheticProbeStale
+    exp_alerts: []
+- name: a synthetic probe without a success for hours is stale
+  interval: 10m
+  input_series:
+  - series: kube_cronjob_status_last_successful_time{cronjob="anvilkit-probe-localcheck",namespace="anvilkit-platform"}
+    values: 0x20
+  alert_rule_test:
+  - eval_time: 150m
+    alertname: AnvilKitSyntheticProbeStale
+    exp_alerts:
+    - exp_labels:
+        severity: warning
+        cronjob: anvilkit-probe-localcheck
+      exp_annotations:
+        summary: "The synthetic probe anvilkit-probe-localcheck has not succeeded for more than 7800 s."
+        runbook_url: https://github.com/ancyloce/anvilkit-services/blob/main/docs/operations/runbooks/rollback.md
+- name: an AnvilKit admission policy refusing a workload raises the isolation alert
+  interval: 1m
+  input_series:
+  - series: kyverno_validating_policy_results_total{policy_name="anvilkit-components-pods",result="fail",resource_kind="Pod",resource_request_operation="create",execution_cause="admission_request"}
+    values: 0x10 1x20
+  - series: kyverno_validating_policy_results_total{policy_name="anvilkit-components-pods",result="pass",resource_kind="Pod",resource_request_operation="create",execution_cause="admission_request"}
+    values: 0+1x30
+  - series: kyverno_image_validating_policy_results_total{policy_name="other-team-images",result="fail",resource_kind="Pod",resource_request_operation="create",execution_cause="admission_request"}
+    values: 0+1x30
+  alert_rule_test:
+  - eval_time: 15m
+    alertname: AnvilKitIsolationAdmissionRefused
+    exp_alerts:
+    - exp_labels:
+        severity: critical
+        policy_name: anvilkit-components-pods
+      exp_annotations:
+        summary: "The AnvilKit admission policy anvilkit-components-pods refused or could not evaluate a workload in the last 15 minutes: a Job or Pod outside its reviewed template was not admitted."
+        runbook_url: https://github.com/ancyloce/anvilkit-services/blob/main/docs/operations/runbooks/isolation-failure.md
+- name: admitted workloads and other teams' policies raise nothing
+  interval: 1m
+  input_series:
+  - series: kyverno_validating_policy_results_total{policy_name="anvilkit-components-pods",result="pass",resource_kind="Pod",resource_request_operation="create",execution_cause="admission_request"}
+    values: 0+1x30
+  - series: kyverno_image_validating_policy_results_total{policy_name="other-team-images",result="fail",resource_kind="Pod",resource_request_operation="create",execution_cause="admission_request"}
+    values: 0+1x30
+  alert_rule_test:
+  - eval_time: 20m
+    alertname: AnvilKitIsolationAdmissionRefused
+    exp_alerts: []

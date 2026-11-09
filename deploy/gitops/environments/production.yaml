@@ -1,0 +1,295 @@
+# The production platform layer's skeleton (RB-A01; platform.md "Kubernetes",
+# DD-10 §1-§3; technology.md C09, D02-D05, E02, E05, E08). Its structure is
+# reviewed now: which components run, from which chart at which pinned
+# version, in which wave and namespace, and which lock platform row each one
+# provides. Its values are ENV-01..ENV-03 (and ENV-05, ENV-09, ENV-10) inputs,
+# so this is a skeleton, not a combination:
+#
+#   - tools/check-deployment-lock.py checks it: no DEVELOPMENT_ONLY stand-in
+#     (lock standIns), the lock's production pins, every lock platform row
+#     provided or pending its named decision, all eight services, and every
+#     REQUIRED marker naming its inputs or decision;
+#   - deploy/gitops/publish.py refuses to publish it (skeleton: true).
+#
+# A value written {status: REQUIRED, inputs: [...]} is not known yet; one with
+# a decision instead of inputs waits for that owner decision (DECISIONS open
+# table). Chart digests are pinned when the charts are mirrored into Harbor
+# (publish.py), so every upstream digest is REQUIRED here.
+environment: production
+skeleton: true
+development: false
+registry: {status: REQUIRED, inputs: [ENV-03]}
+signing: {mode: keyless, identity: {status: REQUIRED, inputs: [ENV-03, ENV-10]}}
+
+# Installed before Argo CD can run, in this order (platform.md: RKE2 with
+# cni: none, then upstream Cilium, then the control-plane VIP, then Argo CD),
+# and adopted by Argo CD afterwards.
+bootstrap:
+  - name: rke2
+    provides: [kubernetes-control-plane]
+    version: v1.36.4+rke2r1
+    rke2: {cni: none, servers: 3}
+    values: {status: REQUIRED, inputs: [ENV-01, ENV-02]}
+  - name: cilium
+    provides: [network-policies]
+    rke2: {cni: none}
+    chart: {upstream: https://helm.cilium.io, name: cilium, version: 1.20.1, digest: {status: REQUIRED, inputs: [ENV-03]}}
+    values: {status: REQUIRED, inputs: [ENV-01]}
+  - name: kube-vip
+    provides: [kubernetes-control-plane]
+    image: {name: ghcr.io/kube-vip/kube-vip, version: v1.2.3, digest: {status: REQUIRED, inputs: [ENV-03]}}
+    values: {status: REQUIRED, inputs: [ENV-03]}
+  - name: argo-cd
+    provides: [gitops]
+    chart: {upstream: https://argoproj.github.io/argo-helm, name: argo-cd, version: {status: REQUIRED, decision: "the argo-cd chart version that ships Argo CD 3.5.3"}, appVersion: 3.5.3, digest: {status: REQUIRED, inputs: [ENV-03]}}
+    values: {status: REQUIRED, inputs: [ENV-01, ENV-03]}
+
+# Rows of the lock's platform table whose component is an open owner
+# decision: the skeleton names the decision instead of choosing.
+pending:
+  - {row: apollo-mysql, decision: RB-A05}
+  - {row: cache-valkey, decision: RB-A33}
+
+applications:
+  # The network edge and storage layer: production only.
+  - name: metallb
+    wave: -60
+    layer: platform
+    namespace: metallb-system
+    provides: [load-balancer]
+    chart: {upstream: https://metallb.github.io/metallb, name: metallb, version: {status: REQUIRED, decision: "MetalLB version (technology.md D05 records none)"}, digest: {status: REQUIRED, inputs: [ENV-03]}}
+    values: {status: REQUIRED, inputs: [ENV-03]}
+  - name: envoy-gateway
+    wave: -55
+    layer: platform
+    namespace: envoy-gateway-system
+    provides: [gateway]
+    gatewayApi: v1.6.1
+    chart: {upstream: oci://docker.io/envoyproxy/gateway-helm, name: gateway-helm, version: v1.9.1, digest: {status: REQUIRED, inputs: [ENV-03]}}
+    values: {status: REQUIRED, inputs: [ENV-03]}
+  - name: rook-ceph
+    wave: -55
+    layer: platform
+    namespace: rook-ceph
+    provides: [ceph]
+    chart: {upstream: https://charts.rook.io/release, name: rook-ceph, version: {status: REQUIRED, decision: "Rook-Ceph version (technology.md C09 records none)"}, digest: {status: REQUIRED, inputs: [ENV-03]}}
+    values: {status: REQUIRED, inputs: [ENV-01]}
+  - name: rook-ceph-cluster
+    wave: -54
+    layer: platform
+    namespace: rook-ceph
+    provides: [ceph, object-store]
+    chart: {upstream: https://charts.rook.io/release, name: rook-ceph-cluster, version: {status: REQUIRED, decision: "Rook-Ceph version (technology.md C09 records none)"}, digest: {status: REQUIRED, inputs: [ENV-03]}}
+    values: {status: REQUIRED, inputs: [ENV-01, ENV-02, ENV-05]}
+  - name: harbor
+    wave: -52
+    layer: platform
+    namespace: harbor
+    provides: [registry]
+    chart: {upstream: https://helm.goharbor.io, name: harbor, version: {status: REQUIRED, decision: "the harbor chart version that ships Harbor 2.15.2"}, appVersion: 2.15.2, digest: {status: REQUIRED, inputs: [ENV-03]}}
+    values: {status: REQUIRED, inputs: [ENV-01, ENV-03, ENV-10]}
+  # The platform services the qualification combination also runs.
+  - name: cert-manager
+    wave: -50
+    layer: platform
+    namespace: cert-manager
+    provides: [certificates]
+    chart: {upstream: oci://quay.io/jetstack/charts/cert-manager, name: cert-manager, version: v1.21.2, digest: {status: REQUIRED, inputs: [ENV-03]}}
+    values: {status: REQUIRED, inputs: [ENV-03]}
+  - name: anvilkit-pki
+    wave: -48
+    layer: platform
+    namespace: cert-manager
+    provides: [certificates]
+    chart: {source: deploy/qualification/platform/pki, name: anvilkit-pki}
+    values: {status: REQUIRED, inputs: [ENV-03, ENV-07]}
+  - name: metrics-server
+    wave: -50
+    layer: platform
+    namespace: kube-system
+    chart: {upstream: https://kubernetes-sigs.github.io/metrics-server, name: metrics-server, version: 3.14.0, digest: {status: REQUIRED, inputs: [ENV-03]}}
+    values: {status: REQUIRED, inputs: [ENV-01]}
+  - name: kyverno
+    wave: -50
+    layer: platform
+    namespace: kyverno
+    provides: [admission]
+    chart: {upstream: https://kyverno.github.io/kyverno, name: kyverno, version: 3.9.1, digest: {status: REQUIRED, inputs: [ENV-03]}}
+    values: {status: REQUIRED, inputs: [ENV-01]}
+  - name: cloudnative-pg
+    wave: -50
+    layer: platform
+    namespace: cnpg-system
+    provides: [business-postgresql, temporal-postgresql]
+    chart: {upstream: https://cloudnative-pg.github.io/charts, name: cloudnative-pg, version: 0.29.1, digest: {status: REQUIRED, inputs: [ENV-03]}}
+    values: {status: REQUIRED, inputs: [ENV-01]}
+  - name: plugin-barman-cloud
+    wave: -45
+    layer: platform
+    namespace: cnpg-system
+    chart: {upstream: https://cloudnative-pg.github.io/charts, name: plugin-barman-cloud, version: 0.8.1, digest: {status: REQUIRED, inputs: [ENV-03]}}
+    values: {status: REQUIRED, inputs: [ENV-02]}
+  - name: velero
+    wave: -45
+    layer: platform
+    namespace: velero
+    provides: [cluster-backup]
+    chart: {upstream: https://vmware-tanzu.github.io/helm-charts, name: velero, version: {status: REQUIRED, decision: "Velero version (technology.md E05 records none)"}, digest: {status: REQUIRED, inputs: [ENV-03]}}
+    values: {status: REQUIRED, inputs: [ENV-02, ENV-09]}
+  - name: anvilkit-admission
+    wave: -45
+    layer: platform
+    namespace: kyverno
+    provides: [admission]
+    chart: {source: deploy/qualification/platform/admission, name: anvilkit-admission}
+    values: {status: REQUIRED, inputs: [ENV-03, ENV-10]}
+  - name: anvilkit-job-admission
+    wave: -44
+    layer: platform
+    namespace: kyverno
+    provides: [admission]
+    chart: {source: deploy/policies/chart, name: anvilkit-job-admission}
+    values: {status: REQUIRED, inputs: [ENV-03]}
+  - name: anvilkit-network
+    wave: -45
+    layer: platform
+    namespace: anvilkit-platform
+    provides: [network-policies]
+    chart: {source: deploy/qualification/platform/network, name: anvilkit-network}
+    values: {status: REQUIRED, inputs: [ENV-01, ENV-03]}
+  - name: anvilkit-telemetry
+    wave: -45
+    layer: platform
+    namespace: anvilkit-observability
+    provides: [observability]
+    chart: {upstream: https://open-telemetry.github.io/opentelemetry-helm-charts, name: opentelemetry-collector, version: 0.174.1, digest: {status: REQUIRED, inputs: [ENV-03]}}
+    values: {status: REQUIRED, inputs: [ENV-01, ENV-10]}
+  - name: anvilkit-logs
+    wave: -42
+    layer: platform
+    namespace: anvilkit-observability
+    provides: [observability]
+    # Distributed on the RGW object store (E08), not the qualification's
+    # single binary on a volume.
+    chart: {upstream: https://grafana.github.io/helm-charts, name: loki, version: {status: REQUIRED, decision: "distributed Loki version (technology.md E08 records none)"}, digest: {status: REQUIRED, inputs: [ENV-03]}}
+    values: {deploymentMode: Distributed, storage: {type: s3, endpoint: {status: REQUIRED, inputs: [ENV-02]}}, sizing: {status: REQUIRED, inputs: [ENV-05, ENV-09]}}
+  - name: anvilkit-traces
+    wave: -42
+    layer: platform
+    namespace: anvilkit-observability
+    provides: [observability]
+    chart: {upstream: https://grafana.github.io/helm-charts, name: tempo-distributed, version: 1.61.3, digest: {status: REQUIRED, inputs: [ENV-03]}}
+    values: {storage: {trace: {backend: s3, s3: {status: REQUIRED, inputs: [ENV-02]}}}, sizing: {status: REQUIRED, inputs: [ENV-05, ENV-09]}}
+  - name: anvilkit-metrics
+    wave: -31
+    layer: platform
+    namespace: anvilkit-observability
+    provides: [observability]
+    chart: {upstream: https://prometheus-community.github.io/helm-charts, name: kube-prometheus-stack, version: 91.8.2, digest: {status: REQUIRED, inputs: [ENV-03]}}
+    values: {status: REQUIRED, inputs: [ENV-05, ENV-10]}
+  - name: anvilkit-observability
+    wave: -30
+    layer: platform
+    namespace: anvilkit-observability
+    provides: [observability]
+    chart: {source: deploy/qualification/platform/observability, name: anvilkit-observability}
+    values: {development: false, thresholdsSource: {status: REQUIRED, inputs: [ENV-05, ENV-09]}}
+  - name: secrets-store-csi-driver
+    wave: -40
+    layer: platform
+    namespace: kube-system
+    provides: [secret-delivery]
+    chart: {upstream: https://kubernetes-sigs.github.io/secrets-store-csi-driver/charts, name: secrets-store-csi-driver, version: 1.6.1, digest: {status: REQUIRED, inputs: [ENV-03]}}
+    values: {status: REQUIRED, inputs: [ENV-10]}
+  # The stateful layer. No in-cluster S3 stand-in: the object store is
+  # rook-ceph-cluster's RGW.
+  - name: anvilkit-data
+    wave: -30
+    layer: stateful
+    namespace: anvilkit-data
+    provides: [business-postgresql, temporal-postgresql]
+    chart: {source: deploy/qualification/platform/data, name: anvilkit-data}
+    values: {status: REQUIRED, inputs: [ENV-01, ENV-02, ENV-05, ENV-09]}
+  - name: anvilkit-nats
+    wave: -30
+    layer: stateful
+    namespace: anvilkit-data
+    provides: [nats-jetstream]
+    chart: {upstream: https://nats-io.github.io/k8s/helm/charts, name: nats, version: 2.12.4, digest: {status: REQUIRED, inputs: [ENV-03]}}
+    values: {status: REQUIRED, inputs: [ENV-01, ENV-05]}
+  - name: anvilkit-valkey-queue
+    wave: -30
+    layer: stateful
+    namespace: anvilkit-data
+    provides: [queue-valkey]
+    chart: {source: deploy/qualification/platform/valkey, name: valkey}
+    values: {status: REQUIRED, inputs: [ENV-01, ENV-02, ENV-03]}
+  - name: anvilkit-qdrant
+    wave: -30
+    layer: stateful
+    namespace: anvilkit-data
+    provides: [qdrant]
+    chart: {upstream: https://qdrant.github.io/qdrant-helm, name: qdrant, version: 1.19.0, digest: {status: REQUIRED, inputs: [ENV-03]}}
+    values: {status: REQUIRED, inputs: [ENV-01, ENV-02, ENV-05]}
+  - name: openbao
+    wave: -32
+    layer: stateful
+    namespace: anvilkit-platform
+    provides: [openbao]
+    chart: {upstream: https://openbao.github.io/openbao-helm, name: openbao, version: 0.29.5, digest: {status: REQUIRED, inputs: [ENV-03]}}
+    values: {status: REQUIRED, inputs: [ENV-02, ENV-10]}
+  - name: anvilkit-secrets
+    wave: -31
+    layer: stateful
+    namespace: anvilkit-platform
+    provides: [secret-delivery]
+    chart: {source: deploy/qualification/platform/secrets, name: anvilkit-secrets}
+    values: {status: REQUIRED, inputs: [ENV-10]}
+  - name: anvilkit-backups
+    wave: -20
+    layer: stateful
+    namespace: anvilkit-platform
+    chart: {source: deploy/qualification/platform/backups, name: anvilkit-backups}
+    values: {status: REQUIRED, inputs: [ENV-02, ENV-09]}
+  - name: anvilkit-temporal
+    wave: -20
+    layer: stateful
+    namespace: anvilkit-platform
+    provides: [temporal-server]
+    chart: {upstream: https://go.temporal.io/helm-charts, name: temporal, version: 1.6.0, digest: {status: REQUIRED, inputs: [ENV-03]}}
+    values: {status: REQUIRED, inputs: [ENV-01, ENV-05]}
+  - name: anvilkit-streams
+    wave: -20
+    layer: stateful
+    namespace: anvilkit-data
+    chart: {source: deploy/qualification/platform/streams, name: anvilkit-streams}
+    values: {status: REQUIRED, inputs: [ENV-05]}
+  - name: anvilkit-migrations
+    wave: -10
+    layer: migrations
+    namespace: anvilkit-apps
+    chart: {source: deploy/qualification/platform/migrations, name: anvilkit-migrations}
+    values: {status: REQUIRED, inputs: [ENV-03]}
+  - name: anvilkit-contextforge
+    wave: -9
+    layer: platform
+    namespace: anvilkit-platform
+    provides: [contextforge]
+    chart: {source: deploy/qualification/platform/contextforge, name: anvilkit-contextforge}
+    values: {status: REQUIRED, inputs: [ENV-01, ENV-03]}
+  # The eight services, Inference included (a production combination has no
+  # exemption: RB-A12).
+  - {name: anvilkit-agent-control, wave: 0, layer: apps, namespace: anvilkit-apps, chart: {release: anvilkit-agent-control}}
+  - {name: anvilkit-agent-api, wave: 10, layer: apps, namespace: anvilkit-apps, chart: {release: anvilkit-agent-api}}
+  - {name: anvilkit-agent-workflow, wave: 10, layer: apps, namespace: anvilkit-apps, chart: {release: anvilkit-agent-workflow}}
+  - {name: anvilkit-agent-model-proxy, wave: 10, layer: apps, namespace: anvilkit-apps, chart: {release: anvilkit-agent-model-proxy}}
+  - {name: anvilkit-agent-knowledge, wave: 10, layer: apps, namespace: anvilkit-apps, chart: {release: anvilkit-agent-knowledge}}
+  - {name: anvilkit-agent-mcp, wave: 10, layer: apps, namespace: anvilkit-apps, chart: {release: anvilkit-agent-mcp}}
+  - {name: anvilkit-agent-inference, wave: 10, layer: apps, namespace: anvilkit-apps, chart: {release: anvilkit-agent-inference}}
+  - {name: anvilkit-agent-background-worker, wave: 20, layer: apps, namespace: anvilkit-apps, chart: {release: anvilkit-agent-background-worker}}
+  - name: anvilkit-probes
+    wave: 30
+    layer: probes
+    namespace: anvilkit-platform
+    chart: {source: deploy/qualification/platform/probes, name: anvilkit-probes}
+    values: {status: REQUIRED, inputs: [ENV-07]}

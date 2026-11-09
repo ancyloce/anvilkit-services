@@ -97,6 +97,8 @@ for path in knowledge/sources mcp/catalog mcp/grants; do
   [ "$code" = 200 ] && pass "API GET /$path: 200 ($(head -c 80 /tmp/verify-body | tr -d '\n')...)" || fail "API GET /$path $code: $(head -c 200 /tmp/verify-body)"
 done
 rm -f /tmp/verify-body
+echo "== API refusals (RB-S13, RB-S14, RB-A23; each request is refused before a handler runs)"
+python3 "$HERE/api-refusals.py" "$SECRETS/api-principals.json" || rc=1
 echo "== Jobs node (deploy/compose/jobs; plan 0006 option B)"
 KJ="sudo -n /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml"
 if ! sudo -n test -f /etc/rancher/rke2/rke2.yaml 2>/dev/null; then
