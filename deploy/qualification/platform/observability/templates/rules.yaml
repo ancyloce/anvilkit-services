@@ -1,7 +1,7 @@
 {{- /*
 The SLO recording rules and the alerts of P3.6 (platform.md "SLO inputs and
 measurements", DD-09 §6 handoff signals, the plan's operator signals). Every
-alert names its runbook (docs/operations/runbooks). The thresholds are the
+alert names its runbook (deploy/runbooks). The thresholds are the
 values' thresholds; outside development they must name their reviewed source.
 */ -}}
 {{- if and (not .Values.development) (not .Values.thresholdsSource) }}
@@ -236,6 +236,32 @@ spec:
           annotations:
             summary: "A configuration generation (a rotated secret or snapshot) was rejected; the previous one stays active."
             runbook_url: {{ printf "%s/secret-rotation.md" $rb }}
+        # RB-A25 (DEC-050): API, Control, Workflow, Model Proxy and Inference
+        # load their configuration once, so a rejected configuration is a
+        # process that never starts, not a counter: the signal is the
+        # container's own state (kube-state-metrics). Failing: a container
+        # waits in a failed-start reason for 5 minutes (the 2-minute lookback
+        # bridges the moments a crash loop spends running). Restart: the
+        # kubelet restarted a container in the last 15 minutes, whatever ended
+        # it (a failed start, an OOM kill, a failed liveness probe); a rollout
+        # replaces Pods and restarts nothing.
+        - alert: AnvilKitStartupFailing
+          expr: max by (pod, container, reason) (max_over_time(kube_pod_container_status_waiting_reason{namespace={{ .Values.appsNamespace | quote }},reason=~"CrashLoopBackOff|CreateContainerConfigError|CreateContainerError|RunContainerError|ErrImagePull|ImagePullBackOff|InvalidImageName"}[2m])) == 1
+          for: 5m
+          labels: {severity: critical}
+          annotations:
+            summary: "{{ "{{" }} $labels.pod {{ "}}" }} ({{ "{{" }} $labels.container {{ "}}" }}) has not started for 5 minutes ({{ "{{" }} $labels.reason {{ "}}" }}): a configuration or secret the process rejects, or an image that cannot run."
+            runbook_url: {{ printf "%s/startup-failure.md" $rb }}
+        - alert: AnvilKitAbnormalRestart
+          expr: sum by (pod, container) (increase(kube_pod_container_status_restarts_total{namespace={{ .Values.appsNamespace | quote }}}[15m])) > 0
+          labels: {severity: warning}
+          annotations:
+            summary: "{{ "{{" }} $labels.pod {{ "}}" }} ({{ "{{" }} $labels.container {{ "}}" }}) was restarted in the last 15 minutes: its process exited or was killed."
+            runbook_url: {{ printf "%s/startup-failure.md" $rb }}
+        # The gauge is set as the process stops, so a scrape sees it only
+        # until the metrics listener closes; the durable record of a forced
+        # stop is the service's own "stopped" log line with forced=true
+        # (DEC-049; deploy/runbooks/rollback.md).
         - alert: AnvilKitForcedStop
           expr: max({__name__=~"anvilkit_.*_shutdown_forced"}) == 1
           labels: {severity: warning}

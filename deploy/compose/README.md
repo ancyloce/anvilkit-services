@@ -64,6 +64,41 @@ the Compose network. The API authenticates `auth.mode: fixture` bearer tokens fr
 `/srv/anvilkit/secrets/api-principals.json` (DEVELOPMENT_ONLY; ENV-07 supplies the
 production issuer).
 
+## Alerts
+
+This placement runs no Prometheus, so its alerts are evaluated from Docker's own
+container state and the services' log lines by `alerts.py` (RB-A25; DEC-049,
+DEC-050). It reads state only and prints counts, never log content.
+
+| Alert | Fires when | Runbook |
+|---|---|---|
+| `AnvilKitStartupFailing` (critical) | a service container is restarting, dead, unhealthy, absent or exited non-zero, or a migration or setup one-shot exited non-zero. A service that loads its configuration once and rejects it appears here | `deploy/runbooks/startup-failure.md` |
+| `AnvilKitAbnormalRestart` (warning) | Docker's restart policy restarted a container inside the window (15 minutes by default), or its last exit was an out-of-memory kill | `deploy/runbooks/startup-failure.md` |
+| `AnvilKitForcedStop` (warning) | a service logged a stop with `forced=true` inside the window: its drain bound passed and it closed what was still open (the API exits 0 after a forced close) | `deploy/runbooks/rollback.md` |
+
+```sh
+python3 deploy/compose/alerts.py                 # one evaluation; exit 0 silent, 1 firing, 2 state unreadable
+python3 deploy/compose/alerts.py --self-test     # firing and non-firing cases, no Docker
+```
+
+`verify.sh` runs one evaluation. Continuous evaluation is the `anvilkit-alerts`
+systemd timer (every minute, alert lines in the journal with their priority, the
+unit failed while an alert fires). Installing it is a server change that needs
+the owner's authorization:
+
+```sh
+for u in anvilkit-alerts.service anvilkit-alerts.timer; do
+  sed -e "s|@COMPOSE_DIR@|$HOME/anvilkit/deploy/compose|" -e "s|@USER@|$USER|" "deploy/compose/$u" | sudo install -m 0644 /dev/stdin "/etc/systemd/system/$u"
+done
+sudo systemctl daemon-reload && sudo systemctl enable --now anvilkit-alerts.timer
+journalctl -t anvilkit-alerts -p warning --since -1h   # the alerts of the last hour
+```
+
+Limits: no receiver exists on this host (alert routes are ENV-10), so the journal
+and the unit's state are the only sinks. A recreate (`up -d` with a new image)
+removes the old container and its log: to see whether the old container's stop
+was forced, stop the service, run `alerts.py`, then recreate.
+
 ## Local Studio
 
 The Studio is tested from a local checkout (default `../anvilkit-studio` next to this

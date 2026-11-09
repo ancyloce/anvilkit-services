@@ -1,0 +1,18 @@
+# Evaluates the Compose placement's alerts (alerts.py: startup failures,
+# abnormal restarts, forced stops; DEC-049, DEC-050) and writes them to the
+# journal with their priority. The unit fails while an alert fires:
+#   systemctl is-failed anvilkit-alerts.service
+#   journalctl -t anvilkit-alerts -p warning --since -1h
+# @COMPOSE_DIR@ is the server's deploy/compose directory and @USER@ a member of
+# the docker group; README.md (Alerts) has the install commands. It reads
+# Docker's state and changes nothing.
+[Unit]
+Description=AnvilKit Compose alert evaluation
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=@USER@
+ExecStart=/usr/bin/python3 @COMPOSE_DIR@/alerts.py --window 15m --journal
+SyslogIdentifier=anvilkit-alerts

@@ -44,6 +44,14 @@ for svc in postgres temporal minio nats valkey-queue valkey-cache qdrant anvilki
   if [ "$health" = healthy ] || [ "$health" = running ]; then pass "$svc: $health, restart=$restart, memory=${mem}B, nanocpus=$cpus, readonly_rootfs=$ro"; else fail "$svc: $health (restart=$restart)"; fi
 done
 
+echo "== alerts (startup failures, abnormal restarts, forced stops; DEC-049, DEC-050)"
+python3 "$HERE/alerts.py"
+case $? in
+  0) pass "no alert fires (alerts.py, window 15m)" ;;
+  1) fail "an alert fires (alerts.py; deploy/runbooks/startup-failure.md)" ;;
+  *) unex "alerts.py could not read the container state" ;;
+esac
+
 echo "== published ports (loopback, or the host-only address of the Jobs node)"
 bad=$(docker ps --format '{{.Names}} {{.Ports}}' | grep -E '0\.0\.0\.0:|\[::\]:' || true)
 if [ -z "$bad" ]; then pass "no container publishes a port on a non-loopback address"; else fail "non-loopback publication: $bad"; fi

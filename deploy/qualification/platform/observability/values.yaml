@@ -9,9 +9,11 @@ appsNamespace: anvilkit-apps
 # The label the kube-prometheus-stack instance selects rules and monitors by
 # (its ruleSelector / podMonitorSelector).
 release: anvilkit-metrics
-# Every alert links its runbook (docs/operations/runbooks/<name>.md) under
-# this base: the parent repository's tree at the environment's release.
-runbookBase: https://github.com/ancyloce/anvilkit-services/blob/main/docs/operations/runbooks
+# Every alert links its runbook (deploy/runbooks/<name>.md, committed with
+# the rules; RB-A26, DEC-052) under this base: the parent repository's tree
+# at the environment's release. tools/check-docs.py fails an alert whose
+# runbook file is not in that directory.
+runbookBase: https://github.com/ancyloce/anvilkit-services/blob/main/deploy/runbooks
 
 # The alert thresholds. platform.md names the measurements, never invented
 # targets: the SLO and freshness bounds are ENV-05/ENV-09 inputs. The
