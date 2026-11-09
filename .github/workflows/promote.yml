@@ -54,7 +54,8 @@ jobs:
               if path.endswith(".inputs.yaml"):
                   continue
               c = yaml.safe_load(open(path))
-              if c.get("development") or not c.get("release"):
+              # A skeleton (RB-A01) is never published; publish.py refuses it too.
+              if c.get("development") or c.get("skeleton") or not c.get("release"):
                   continue
               print(c["environment"], c["release"]["run"], c["release"]["manifestSha256"])
           PY
