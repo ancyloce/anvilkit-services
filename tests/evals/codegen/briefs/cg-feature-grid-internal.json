@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "componentId": "cmp_eval_feature_grid",
+  "puckType": "FeatureGrid",
+  "packageName": "@anvilkit/eval-feature-grid",
+  "version": "1.0.0",
+  "requirements": "A feature grid composed of internal sub-components in the same package: a FeatureGrid that lays out a heading and a responsive grid of FeatureCard items (icon mark as an inline SVG, title, description). Editable fields: heading (text), columns (radio: 2, 3, 4), cardStyle (select: plain, outlined). No dependencies beyond react and @puckeditor/core, no remote resources.",
+  "sourceRevision": "1"
+}

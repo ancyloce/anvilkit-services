@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "componentId": "cmp_eval_sales_chart",
+  "puckType": "SalesChart",
+  "packageName": "@anvilkit/eval-sales-chart",
+  "version": "1.0.0",
+  "requirements": "A monthly sales bar chart drawn with the chart.js package (version 4) and its react-chartjs-2 wrapper, with twelve bars and a legend. Editable fields: title (text), barColor (select: teal, slate, amber).",
+  "sourceRevision": "1"
+}

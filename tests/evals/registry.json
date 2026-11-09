@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "registryRevision": "17",
+  "registryRevision": "19",
   "description": "P22 requirement traceability (delivery.md P22): every M1, CAP and SEC requirement maps to executable cases and to explicit NOT_RUN entries naming what is missing. A case binds its suite, selector, the reviewed profiles it exercises, its time budget and the gates it contributes evidence to; contributing evidence never closes a gate. tools/run-evaluation.py checks, runs and reports it.",
   "requirements": {
     "M1": [
@@ -412,6 +412,20 @@
       "dir": "services/agent/workflow",
       "tags": "conformance",
       "description": "The Pagix port conformance suite against the in-process reference: the double, and the declaration-driven HTTP adapter over the reference endpoint (DEVELOPMENT_ONLY; the real ENV-07 target is NR-PAGIX)"
+    },
+    "validator-preview": {
+      "runner": "command",
+      "dir": "jobs/validator",
+      "argv": [
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "test/preview-origin.test.ts",
+        "test/preview-csp.test.ts"
+      ],
+      "report": "vitest-json",
+      "description": "The reviewed preview protocol and served CSP using fixed fixtures and a local Chromium browser; no candidate build, Docker, or deployed Studio/Pagix target (DEVELOPMENT_ONLY)."
     }
   },
   "cases": [
@@ -931,6 +945,9 @@
         "M1-16",
         "M1-17"
       ],
+      "caps": [
+        "CAP-05"
+      ],
       "sec": [
         "SEC-01",
         "SEC-02",
@@ -1224,7 +1241,9 @@
       "requirements": [
         "M1-04",
         "M1-09",
-        "M1-10"
+        "M1-10",
+        "M1-06",
+        "M1-08"
       ],
       "sec": [
         "SEC-12"
@@ -1593,6 +1612,42 @@
       "profiles": [],
       "budget": "20m",
       "description": "SEC-09/G-13: unsigned, foreign-signed, tagged and foreign-registry images refused by the qualification cluster's admission; a signed release image by digest admitted."
+    },
+    {
+      "id": "U-CONTROL-RELEASE",
+      "suite": "control",
+      "package": "./internal/domain",
+      "run": "TestSubjectDigestContractVector|TestApplyReleaseBindings|TestCheckReleaseEffect|TestReleaseRecordNeedsTheLedger",
+      "requirements": [
+        "M1-06",
+        "M1-08"
+      ],
+      "sec": [],
+      "gates": [
+        "G-07"
+      ],
+      "profiles": [],
+      "budget": "5m",
+      "description": "Pure release-domain guards: exact subject and approval, dual receipts and effect-ledger bindings. Database transactions remain covered separately by U-CONTROL."
+    },
+    {
+      "id": "U-PREVIEW-SECURITY",
+      "suite": "validator-preview",
+      "requirements": [
+        "M1-04"
+      ],
+      "sec": [
+        "SEC-12"
+      ],
+      "gates": [
+        "G-06",
+        "G-07"
+      ],
+      "profiles": [
+        "host-abi-dev-v1"
+      ],
+      "budget": "10m",
+      "description": "The fixed preview frame renders digest-verified module and CSS bytes in an opaque-origin sandbox; protocol violations close the session, and the served CSP binds the exact import map. ENV-08 host qualification is separate."
     }
   ],
   "notRun": [
@@ -2126,7 +2181,7 @@
     "SEC-09": "No pods/exec negative for the launcher; gVisor RuntimeClass cases print UNEXECUTED without gVisor (check.sh); production admission needs ENV-01/ENV-10.",
     "SEC-10": "Symlink escape in the parser path at integration level is missing; isolation under gVisor needs ENV-01.",
     "SEC-11": "Real restore in the registered suite on CNPG/DR storage (ENV-02/ENV-09).",
-    "SEC-12": "No CSP assertion anywhere (only iframe sandbox attributes); qualified Studio host/origin/CSP need ENV-08; pin the Studio commit (local HEAD cdfb685, dirty).",
+    "SEC-12": "Preview CSP and served-header assertions are registered in U-PREVIEW-SECURITY; Studio lock, manifest, placeholder and channel unit assertions are registered in U-STUDIO. Browser integration with the actual qualified Studio host, preview origin and CSP still needs ENV-08. The local Studio revision is bound by each evaluation inventory.",
     "M1-16": "Asserted at unit level (U-WORKFLOW, U-CONTROL: two grouped rounds, at most three questions, the expiry, a duplicate Update). IT-LIFECYCLE asks and answers one round through the public API (API-06) but is mapped to M1-15 and asserts neither the round bound nor the seven-day wait; real questions need a real model route (ENV-06, NR-REAL-MODELS)."
   },
   "assertions": {
@@ -2244,6 +2299,20 @@
         "name": "TestPagixPortConformance/declared-adapter/a_save_under_a_stale_revision_is_a_conflict_naming_the_current_one",
         "file": "services/agent/workflow/tests/conformance/pagix/conformance_test.go:136",
         "checks": "Through the declaration-driven HTTP adapter over the reference endpoint, a save under a stale revision is a conflict naming the current revision (DEVELOPMENT_ONLY reference, not the real Pagix API)."
+      },
+      {
+        "case": "U-STUDIO",
+        "name": "page-api: expected page revision and remote component lock commits exactly one of two concurrent saves from the same revision and answers the other with a recoverable 409",
+        "file": "${ANVILKIT_STUDIO_DIR}/lib/page-storage/__tests__/page-api.test.ts:98",
+        "checks": "The local SQLite page API accepts one concurrent save, returns the current revision in the conflict, and requires an explicit rebase; no external Studio capability is claimed.",
+        "title": "commits exactly one of two concurrent saves from the same revision and answers the other with a recoverable 409"
+      },
+      {
+        "case": "U-PREVIEW-SECURITY",
+        "name": "anvilkit-preview-v1 bootstraps one session and renders the verified module with its stylesheet",
+        "file": "jobs/validator/test/preview-origin.test.ts:90",
+        "checks": "The fixed browser fixture renders the named preview revision and CSS, and the sandboxed frame cannot read its parent document; the real Studio host remains ENV-08.",
+        "title": "bootstraps one session and renders the verified module with its stylesheet"
       }
     ],
     "M1-05": [
@@ -2277,7 +2346,7 @@
     ],
     "M1-06": [
       {
-        "case": "U-CONTROL",
+        "case": "U-CONTROL-RELEASE",
         "name": "TestApplyReleaseBindings",
         "file": "services/agent/control/internal/domain/release_test.go:55",
         "checks": "A subject whose version, npm digest, source revision or Puck type differs (re-digested or not) is refused."
@@ -2299,6 +2368,19 @@
         "name": "TestRelease",
         "file": "tests/integration/release_integration_test.go:48",
         "checks": "Inline scenario B: an approval of another digest ends rejected APPROVAL_SUBJECT_MISMATCH with nothing published (Pagix double)."
+      },
+      {
+        "case": "U-STUDIO",
+        "name": "release helpers pins only an activated release whose lock binds its approved subject",
+        "file": "${ANVILKIT_STUDIO_DIR}/lib/__tests__/release-client.test.ts:90",
+        "checks": "The client refuses a lock for partial publication, a stale approval, a mismatched package version or manifest digest; only an activated exact subject is delivered.",
+        "title": "pins only an activated release whose lock binds its approved subject"
+      },
+      {
+        "case": "U-CONTROL-RELEASE",
+        "name": "TestCheckReleaseEffect",
+        "file": "services/agent/control/internal/domain/release_test.go:175",
+        "checks": "The domain guard refuses stale approval and activation without both succeeded targets and matching effect-ledger receipts; database permit races remain U-CONTROL."
       }
     ],
     "M1-07": [
@@ -2319,6 +2401,12 @@
         "name": "TestPublishTarget/a_lost_answer_stays_unknown_and_the_original_identity_answers_later;_nothing_is_resent",
         "file": "services/agent/workflow/internal/activities/release_test.go:169",
         "checks": "The Activity keeps a lost answer unknown and resolves it by the original identity without resending."
+      },
+      {
+        "case": "U-WORKFLOW",
+        "name": "TestPartialPublicationThroughTheDeclaredAdapter",
+        "file": "services/agent/workflow/internal/activities/release_test.go:273",
+        "checks": "With the declared HTTP adapter over the reference endpoint, a lost browser answer is queried under its original identity; exactly one physical publication per target is observed."
       }
     ],
     "M1-08": [
@@ -2345,6 +2433,25 @@
         "name": "TestReleaseWorkflow/the_exact_certified_subject_is_approved,_both_targets_are_published_once_and_then_activated",
         "file": "services/agent/workflow/internal/workflows/release_test.go:202",
         "checks": "Activation follows exactly one publication per target under the exact approval."
+      },
+      {
+        "case": "U-STUDIO",
+        "name": "release helpers pins only an activated release whose lock binds its approved subject",
+        "file": "${ANVILKIT_STUDIO_DIR}/lib/__tests__/release-client.test.ts:90",
+        "checks": "The client refuses a lock for partial publication, a stale approval, a mismatched package version or manifest digest; only an activated exact subject is delivered.",
+        "title": "pins only an activated release whose lock binds its approved subject"
+      },
+      {
+        "case": "U-CONTROL-RELEASE",
+        "name": "TestCheckReleaseEffect",
+        "file": "services/agent/control/internal/domain/release_test.go:175",
+        "checks": "The domain guard refuses stale approval and activation without both succeeded targets and matching effect-ledger receipts; database permit races remain U-CONTROL."
+      },
+      {
+        "case": "U-CONTROL-RELEASE",
+        "name": "TestReleaseRecordNeedsTheLedger",
+        "file": "services/agent/control/internal/domain/release_test.go:230",
+        "checks": "The release projection cannot accept a succeeded target or approval unsupported by the operation effect ledger."
       }
     ],
     "M1-09": [
@@ -2361,6 +2468,13 @@
         "name": "TestStudioWorkbench",
         "file": "tests/integration/studio_integration_test.go:42",
         "checks": "Wrapper: the whole agent-workbench Playwright spec passes with no skipped case."
+      },
+      {
+        "case": "U-STUDIO",
+        "name": "session config reserves locked types before built-ins and reports the collision",
+        "file": "${ANVILKIT_STUDIO_DIR}/lib/__tests__/remote-loader.test.ts:220",
+        "checks": "A loaded exact remote release reserves its Puck type ahead of a built-in while unrelated built-ins stay available; dynamic browser loading remains IT-STUDIO.",
+        "title": "reserves locked types before built-ins and reports the collision"
       }
     ],
     "M1-10": [
@@ -2385,6 +2499,34 @@
         "checks": "Saved drafts keep the exact remoteComponentLock and unknown nodes; a newer catalog release is never substituted on reopen.",
         "runner": "playwright",
         "title": "loads locked releases without a host rebuild, reserves types, keeps unknown nodes and saves/reopens the exact lock"
+      },
+      {
+        "case": "U-STUDIO",
+        "name": "page-api: expected page revision and remote component lock saves and reopens the exact lock, local definitions and an unresolvable node",
+        "file": "${ANVILKIT_STUDIO_DIR}/lib/page-storage/__tests__/page-api.test.ts:217",
+        "checks": "The local page API persists and reopens the exact remote lock, local component library and node props without substitution.",
+        "title": "saves and reopens the exact lock, local definitions and an unresolvable node"
+      },
+      {
+        "case": "U-STUDIO",
+        "name": "page-api: expected page revision and remote component lock preserves a stored lock it cannot read, reports it, and keeps the unresolvable node",
+        "file": "${ANVILKIT_STUDIO_DIR}/lib/page-storage/__tests__/page-api.test.ts:235",
+        "checks": "An unreadable stored lock, local library and node content survive source and settings writes; a warning names the unreadable lock.",
+        "title": "preserves a stored lock it cannot read, reports it, and keeps the unresolvable node"
+      },
+      {
+        "case": "U-STUDIO",
+        "name": "page component lock adds exact releases sorted, refuses re-pointing a type and never rewrites an unreadable lock",
+        "file": "${ANVILKIT_STUDIO_DIR}/lib/__tests__/remote-loader.test.ts:109",
+        "checks": "A newer release cannot silently replace the existing exact type lock, and an unreadable lock is never rewritten.",
+        "title": "adds exact releases sorted, refuses re-pointing a type and never rewrites an unreadable lock"
+      },
+      {
+        "case": "U-STUDIO",
+        "name": "session config gives unavailable releases, unreadable locks and unknown types lossless placeholders",
+        "file": "${ANVILKIT_STUDIO_DIR}/lib/__tests__/remote-loader.test.ts:243",
+        "checks": "Unavailable releases and unknown nested types receive inert placeholders without default props or resolvers that could replace saved data.",
+        "title": "gives unavailable releases, unreadable locks and unknown types lossless placeholders"
       }
     ],
     "M1-11": [
@@ -2697,15 +2839,22 @@
         "case": "U-PARSER",
         "name": "run-verification --only parser",
         "title": "def step_parser",
-        "file": "tools/run-verification.py:466",
+        "file": "tools/run-verification.py:468",
         "checks": "Document parsing of the ingestion path inside the built parser image."
       },
       {
         "case": "U-INFERENCE",
         "name": "run-verification --only inference",
         "title": "def step_inference",
-        "file": "tools/run-verification.py:473",
+        "file": "tools/run-verification.py:475",
         "checks": "The Inference service's embedding and reranking units."
+      },
+      {
+        "case": "U-KNOWLEDGE",
+        "name": "index entries rewrites a partly written, unanswered batch under the same ids and repairs missing and stray points before recording",
+        "file": "services/agent/knowledge/test/index.test.ts:206",
+        "checks": "A batch Qdrant partly wrote and never answered is rewritten under the same point ids; missing and stray points are repaired before the index generation is recorded (RB-A31; Testcontainers PostgreSQL and Qdrant).",
+        "title": "rewrites a partly written, unanswered batch under the same ids and repairs missing and stray points before recording"
       }
     ],
     "CAP-03": [
@@ -2800,6 +2949,12 @@
         "title": "\"valkey\": \"queue-writes\"",
         "file": "deploy/qualification/chaos.py:47",
         "checks": "The queue primary lost; owners rebuild lost queue entries from durable requests."
+      },
+      {
+        "case": "U-CONTROL",
+        "name": "TestOutboxReversedCommitAndRollback",
+        "file": "services/agent/control/internal/adapters/outbox/visibility_test.go:29",
+        "checks": "Envelopes written through Repo.InsertEvent: a later offset committed first stays invisible while the earlier transaction is open, then both arrive in offset order, a rolled-back one never does, and a restarted subscriber resumes with exactly the unacknowledged one (RB-A31; Testcontainers PostgreSQL)."
       }
     ],
     "CAP-06": [
@@ -3136,6 +3291,18 @@
         "name": "TestAuthority/tokens_are_bound_to_the_resource_and_cached_per_grant_security_dimensions",
         "file": "services/agent/mcp/internal/adapters/upstream/egress_test.go:217",
         "checks": "Tokens are resource-bound (no cross-host use)."
+      },
+      {
+        "case": "U-MCP",
+        "name": "TestCallsRefuseUnsafeEgressBeforeSending",
+        "file": "services/agent/mcp/internal/application/calls_egress_test.go:57",
+        "checks": "Through Calls with MCP's real guard and go-sdk route (RB-A07): the resource rebinding to a metadata address (IPv4 and IPv4-mapped) or a private one after discovery, a host that no longer resolves and a redirect from the reviewed endpoint cancel the call EGRESS_REFUSED with the permission returned unused, no tools/call sent and the refusal counted by reason (Testcontainers PostgreSQL)."
+      },
+      {
+        "case": "U-MCP",
+        "name": "TestEgressRefusalsAreCountedByReason",
+        "file": "services/agent/mcp/internal/adapters/upstream/refusals_test.go:38",
+        "checks": "Every refusal of the guard (host, scheme, credentials, resolution, address, redirect), of the authorization endpoints named by metadata and of the route's network scope counts once under its fixed reason before anything is sent; no host is a label (RB-A26)."
       }
     ],
     "SEC-08": [
@@ -3298,7 +3465,7 @@
         "case": "U-PARSER",
         "name": "run-verification --only parser",
         "title": "def step_parser",
-        "file": "tools/run-verification.py:466",
+        "file": "tools/run-verification.py:468",
         "checks": "The parser Job's malicious and oversized document tests inside the built image with no network."
       }
     ],
@@ -3364,25 +3531,67 @@
         "checks": "Runs release.spec.ts:99: the activated release is reopened without substitution, node and props kept."
       },
       {
-        "case": "U-VALIDATOR",
+        "case": "U-PREVIEW-SECURITY",
         "name": "anvilkit-preview-v1 refuses bytes that do not match their digest, then closes on disorder",
         "file": "jobs/validator/test/preview-origin.test.ts:136",
         "checks": "The sandboxed preview origin refuses unverified bytes.",
         "title": "refuses bytes that do not match their digest, then closes on disorder"
       },
       {
-        "case": "U-VALIDATOR",
+        "case": "U-PREVIEW-SECURITY",
         "name": "preview frame CSP (SEC-12) is exactly the reviewed policy: no network, no inline code but the import map, embedded by the parent only",
         "title": "is exactly the reviewed policy: no network, no inline code but the import map, embedded by the parent only",
         "file": "jobs/validator/test/preview-csp.test.ts:73",
         "checks": "The frame CSP is exactly the reviewed directive set with no wildcard or unsafe keyword; preview-csp.test.ts also binds the hash to the page's import map and checks the served header (RB-A07)."
       },
       {
-        "case": "U-VALIDATOR",
+        "case": "U-PREVIEW-SECURITY",
         "name": "preview frame CSP (SEC-12) is the policy the preview origin serves with the frame page",
         "title": "is the policy the preview origin serves with the frame page",
         "file": "jobs/validator/test/preview-csp.test.ts:92",
         "checks": "The preview origin serves /frame.html with exactly the reviewed policy, its script hash that of the served import map."
+      },
+      {
+        "case": "U-STUDIO",
+        "name": "page component lock adds exact releases sorted, refuses re-pointing a type and never rewrites an unreadable lock",
+        "file": "${ANVILKIT_STUDIO_DIR}/lib/__tests__/remote-loader.test.ts:109",
+        "checks": "A newer release cannot silently replace the existing exact type lock, and an unreadable lock is never rewritten.",
+        "title": "adds exact releases sorted, refuses re-pointing a type and never rewrites an unreadable lock"
+      },
+      {
+        "case": "U-STUDIO",
+        "name": "session config gives unavailable releases, unreadable locks and unknown types lossless placeholders",
+        "file": "${ANVILKIT_STUDIO_DIR}/lib/__tests__/remote-loader.test.ts:243",
+        "checks": "Unavailable releases and unknown nested types receive inert placeholders without default props or resolvers that could replace saved data.",
+        "title": "gives unavailable releases, unreadable locks and unknown types lossless placeholders"
+      },
+      {
+        "case": "U-STUDIO",
+        "name": "release verification binds the manifest to the locked digest, identity and host profile",
+        "file": "${ANVILKIT_STUDIO_DIR}/lib/__tests__/remote-loader.test.ts:141",
+        "checks": "Changed manifest bytes, an inconsistent Puck type and a different host profile are rejected before mounting.",
+        "title": "binds the manifest to the locked digest, identity and host profile"
+      },
+      {
+        "case": "U-STUDIO",
+        "name": "PreviewSession never sends bytes that do not match their digest",
+        "file": "${ANVILKIT_STUDIO_DIR}/lib/__tests__/preview-bridge.test.ts:114",
+        "checks": "The parent refuses changed module bytes before sending them through the preview channel.",
+        "title": "never sends bytes that do not match their digest"
+      },
+      {
+        "case": "U-STUDIO",
+        "name": "PreviewSession closes on disorder, a foreign session, a wrong nonce or another host profile",
+        "file": "${ANVILKIT_STUDIO_DIR}/lib/__tests__/preview-bridge.test.ts:131",
+        "checks": "The preview bridge closes on out-of-order messages, an alien session or nonce and a mismatched host profile.",
+        "title": "closes on disorder, a foreign session, a wrong nonce or another host profile"
+      },
+      {
+        "case": "U-PREVIEW-SECURITY",
+        "name": "anvilkit-preview-v1 bootstraps one session and renders the verified module with its stylesheet",
+        "file": "jobs/validator/test/preview-origin.test.ts:90",
+        "checks": "The fixed browser fixture renders the named preview revision and CSS, and the sandboxed frame cannot read its parent document; the real Studio host remains ENV-08.",
+        "title": "bootstraps one session and renders the verified module with its stylesheet"
       }
     ]
   },

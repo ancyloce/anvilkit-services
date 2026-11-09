@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "componentId": "cmp_hero_fixed",
+  "puckType": "Hero",
+  "packageName": "@anvilkit/hero-fixed",
+  "version": "1.0.0",
+  "requirements": "The reviewed fixed Hero component of the P10 certification chain, as a brief: a hero section for a landing page with a title, a subtitle, a left or center alignment and one call-to-action button that counts its clicks in a data-clicks attribute. Editable fields: title (text), subtitle (textarea), align (radio: left, center), ctaLabel (text). One stylesheet, one decorative mark resource, no remote resources, no dependencies beyond react and @puckeditor/core.",
+  "sourceRevision": "1"
+}

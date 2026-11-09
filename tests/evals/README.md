@@ -109,11 +109,37 @@ The SEC-09 cluster negatives are registered as:
   cluster);
 - SEC09-ADMISSION (`check-admission.py`, qualification cluster).
 
+## R4 local acceptance (registry revision 18)
+
+The local R4 selection runs existing tests without starting containers or using a deployed service:
+
+- `U-CONTROL-RELEASE` selects the pure release-domain guards. `U-CONTROL` retains the database transaction and permit tests; Docker skips still make that case NOT_RUN.
+- `U-PREVIEW-SECURITY` selects the fixed browser preview and CSP tests. It proves the local protocol and reviewed CSP, not ENV-08 host qualification.
+- `U-STUDIO` now names the existing page-conflict, exact-lock, approval, placeholder, manifest and preview-channel assertions. The Studio commit is bound by the evaluator inventory.
+- `U-WORKFLOW` also names the declared HTTP adapter's original-identity recovery test for M1-07.
+
+Under the resource cap in `docs/operations/compose/local-checks.md`, use the installed toolchains, `ANVILKIT_SKIP_DOCKER_TESTS=1`, `GOWORK=off`, `GOFLAGS=-mod=readonly` and `ANVILKIT_VALIDATOR_CONTRACTS_DIR` pointing to this checkout's contracts directory:
+
+```sh
+.local/verification-venv/bin/python tools/run-evaluation.py --run --case U-API --case U-CONTROL --case U-CONTROL-RELEASE --case U-WORKFLOW --case U-PAGIX-CONFORMANCE --case U-STUDIO --case U-PREVIEW-SECURITY
+```
+
+The PostgreSQL-backed assertions, `IT-STUDIO`, `IT-RELEASE`, real Pagix and the qualified Studio host remain separate requirements. No integration assertion or NOT_RUN entry is removed by this selection; passing local cases cannot close G-07 or full R4.
+
+## Remediation round 3 (registry revision 19)
+
+Four assertions from the remediation backlog's round 3:
+
+- SEC-07 (`U-MCP`): `TestCallsRefuseUnsafeEgressBeforeSending`, the application-level egress refusals through `Calls` with the real guard (Testcontainers), and `TestEgressRefusalsAreCountedByReason`, the refusal counter.
+- CAP-02 (`U-KNOWLEDGE`): Knowledge's existing partial-upsert test, which had no assertion.
+- CAP-05 (`U-CONTROL`, which now maps CAP-05): `TestOutboxReversedCommitAndRollback`, Control's outbox delivery order under a reversed commit and a rollback (Testcontainers).
+
+The Testcontainers assertions run in each repository's CI; locally they skip, so their cases stay NOT_RUN there.
+
 ### Sign-off (P3.4 AC1)
 
 | Revision | Prepared | Reviewer sign-off |
 |---|---|---|
 | 13 | 2026-10-13: the mapping was drafted from a read of every cited test and verified by `--check`, which confirms each name exists at its `file:line` | **PENDING**: a human reviewer confirms, per requirement in `--trace`, that each named assertion exercises the scenario text and that no mapping contradicts it, then records name, date and any changes here |
 
-Until that sign-off is recorded, revision 13's mapping is a proposal. It is
-not reviewed traceability.
+Revision 18 additions prepared 2026-11-09T10:37Z: local R4 assertions checked against their source and executable test names. Human reviewer sign-off remains **PENDING**; the expanded mapping is proposed traceability until that review is recorded.

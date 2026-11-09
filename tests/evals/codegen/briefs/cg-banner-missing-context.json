@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "componentId": "cmp_eval_brand_banner",
+  "puckType": "BrandBanner",
+  "packageName": "@anvilkit/eval-brand-banner",
+  "version": "1.0.0",
+  "requirements": "A full-width banner in our brand gradient with our logo on the left and a headline on the right. Editable fields: headline (text), subline (textarea).",
+  "sourceRevision": "1"
+}

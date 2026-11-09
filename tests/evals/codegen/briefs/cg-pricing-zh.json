@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "componentId": "cmp_eval_pricing_zh",
+  "puckType": "PricingTiers",
+  "packageName": "@anvilkit/eval-pricing-zh",
+  "version": "1.0.0",
+  "requirements": "价格方案组件：横向排列三个方案卡片（基础版、专业版、企业版），每张卡片显示方案名称、月价格和一个“立即订阅”按钮；专业版卡片高亮显示。可编辑字段：标题（text）、副标题（textarea）、高亮方案（select：basic、pro、enterprise）。只使用 react 和 @puckeditor/core，不加载远程资源。",
+  "sourceRevision": "1"
+}
