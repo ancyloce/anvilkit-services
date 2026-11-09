@@ -3,8 +3,9 @@
 
 Usage: python3 tools/check-docs.py [--root PATH] [--include-archive]
 
-Scope: README.md, AGENTS.md, CLAUDE.md, docs/README.md and every Markdown file under
-docs/architecture/ and docs/operations/ (the runbooks, P3.6). docs/archive/ is historical
+Scope: README.md, AGENTS.md, CLAUDE.md, the published runbooks under deploy/runbooks/
+(RB-A26, DEC-052), docs/README.md and every Markdown file under docs/architecture/ and
+docs/operations/. docs/archive/ is historical
 and is skipped unless --include-archive is given; its results are then printed under a
 separate heading and never affect the exit status.
 
@@ -147,6 +148,90 @@ def check_markdown(root: pathlib.Path, files: list[pathlib.Path], local_only: bo
     return failures, counts
 
 
+RUNBOOKS = "deploy/runbooks"
+OBSERVABILITY = "deploy/qualification/platform/observability"
+ALERT_RE = re.compile(r"^\s*- alert: (\w+)\s*$")
+RUNBOOK_URL_RE = re.compile(r'^\s*runbook_url: \{\{ printf "%s/([^"]+)" \$rb \}\}\s*$')
+# What a published runbook never carries: private evidence and memory paths, home
+# directories, key material, bearer values and addresses of a real environment.
+PRIVATE_RES = (
+    (re.compile(r"(?<![\w./-])outputs/"), "a path into outputs/ (private run evidence)"),
+    (re.compile(r"(?<![\w./-])docs/"), "a path into docs/ (local-only documents)"),
+    (re.compile(r"/root/|/home/[a-z]"), "a home directory path"),
+    (re.compile(r"-----BEGIN "), "key or certificate material"),
+    (re.compile(r"Bearer [A-Za-z0-9._~+/-]{16,}"), "a bearer value"),
+    (re.compile(r"\b(?!127\.|10\.|0\.0\.0\.0\b)\d{1,3}(?:\.\d{1,3}){3}\b"), "an address outside loopback and 10/8"),
+)
+
+
+def check_runbooks(root: pathlib.Path) -> tuple[list[str], dict[str, int]]:
+    """RB-A26 (DEC-052): the alerts' runbook links resolve to committed files.
+
+    Every alert of the observability chart names a runbook file under deploy/runbooks/
+    (runbookBase points there), that file and the index row of that file name the alert,
+    the promtool expectations use the same base, and a runbook links only to committed
+    files of this repository and carries nothing private. Read from the files as they
+    are on disk: no render is needed, so a clone checks it too.
+    """
+    failures: list[str] = []
+    counts = {"alerts": 0, "runbooks": 0}
+    book_dir = root / RUNBOOKS
+    files = {p.name: p.read_text(encoding="utf-8") for p in sorted(book_dir.glob("*.md"))} if book_dir.is_dir() else {}
+    counts["runbooks"] = len(files)
+    if "README.md" not in files:
+        return [f"{RUNBOOKS}/README.md is missing: the alerts' runbooks are not published"], counts
+    index = {m.group(1): row for row in files["README.md"].splitlines() if (m := re.match(r"\|\s*\[([a-z0-9-]+\.md)\]\(\1\)\s*\|", row))}
+    for name in files:
+        if name != "README.md" and name not in index:
+            failures.append(f"{RUNBOOKS}/README.md: no index row for {name}")
+
+    values = (root / OBSERVABILITY / "values.yaml").read_text(encoding="utf-8")
+    base = re.search(r"^runbookBase:\s*(\S+)\s*$", values, flags=re.M)
+    if not base or not base.group(1).endswith("/" + RUNBOOKS):
+        failures.append(f"{OBSERVABILITY}/values.yaml: runbookBase must end with /{RUNBOOKS}")
+    alert = None
+    for ln, line in enumerate((root / OBSERVABILITY / "templates" / "rules.yaml").read_text(encoding="utf-8").splitlines(), 1):
+        if m := ALERT_RE.match(line):
+            if alert:
+                failures.append(f"{OBSERVABILITY}/templates/rules.yaml: alert {alert} has no runbook_url of the form printf \"%s/<file>\" $rb")
+            alert = m.group(1)
+            counts["alerts"] += 1
+        elif (m := RUNBOOK_URL_RE.match(line)) and alert:
+            name = m.group(1)
+            if name not in files:
+                failures.append(f"{OBSERVABILITY}/templates/rules.yaml:{ln}: alert {alert} links {name}, which {RUNBOOKS}/ does not hold")
+            else:
+                if alert not in files[name]:
+                    failures.append(f"{RUNBOOKS}/{name}: does not name the alert {alert} that links it")
+                if alert not in index.get(name, ""):
+                    failures.append(f"{RUNBOOKS}/README.md: the row of {name} does not name the alert {alert}")
+            alert = None
+    if alert:
+        failures.append(f"{OBSERVABILITY}/templates/rules.yaml: alert {alert} has no runbook_url of the form printf \"%s/<file>\" $rb")
+    if base:
+        tests = (root / OBSERVABILITY / "tests" / "rules.test.yaml").read_text(encoding="utf-8")
+        for ln, line in enumerate(tests.splitlines(), 1):
+            if m := re.match(r"\s*runbook_url:\s*(\S+)\s*$", line):
+                prefix = base.group(1) + "/"
+                if not m.group(1).startswith(prefix) or m.group(1)[len(prefix):] not in files:
+                    failures.append(f"{OBSERVABILITY}/tests/rules.test.yaml:{ln}: expected runbook_url is not {prefix}<a file of {RUNBOOKS}/>")
+
+    committed_only = (root / "docs").resolve()
+    for name, text in files.items():
+        for m in LINK_RE.finditer(strip_fences(CODE_SPAN_RE.sub("", text))):
+            target = m.group(2).partition("#")[0]
+            if not target or re.match(r"^[a-z][a-z0-9+.-]*:", target):
+                continue
+            dest = (book_dir / target).resolve()
+            if dest.is_relative_to(committed_only) or not dest.is_relative_to(root):
+                failures.append(f"{RUNBOOKS}/{name}: links {m.group(2)!r}, which is not a committed file of this repository")
+        for ln, line in enumerate(text.splitlines(), 1):
+            for pattern, what in PRIVATE_RES:
+                if pattern.search(line):
+                    failures.append(f"{RUNBOOKS}/{name}:{ln}: carries {what}")
+    return failures, counts
+
+
 def docs_status_drift(root: pathlib.Path) -> list[str]:
     """tools/docs-status.py's drift check against root (its own checkout's tools)."""
     import importlib.util
@@ -174,6 +259,7 @@ def main() -> int:
         return 1
 
     current = [root / n for n in ("README.md", "AGENTS.md", "CLAUDE.md")]
+    current += sorted((root / RUNBOOKS).glob("*.md"))
     if not local_only:
         current += [root / "docs" / "README.md"]
         current += sorted((root / "docs" / "architecture").glob("*.md"))
@@ -184,9 +270,12 @@ def main() -> int:
     # pins) must match the checkout, and no component README may cite
     # another contracts version than its manifest pins.
     failures += docs_status_drift(root)
+    runbook_failures, runbook_counts = check_runbooks(root)
+    failures += runbook_failures
     for f in failures:
         print("FAIL", f)
     print(f"current baseline: {counts['files']} files, {counts['tables']} tables, {counts['links']} links, {len(failures)} failures")
+    print(f"runbooks: {runbook_counts['alerts']} alerts link {runbook_counts['runbooks']} files under {RUNBOOKS}/, {len(runbook_failures)} failures")
     if local_only:
         print(f"UNEXECUTED: docs/ is not in this tree (the documents are local-only); they and {counts['unresolved']} links into docs/ were not checked")
 

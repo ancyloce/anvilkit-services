@@ -118,9 +118,11 @@ REQUIRED_DIRS = (
     "deploy/dev",
     "deploy/handover",
     # P3 (plan 0004): the release, promotion and qualification tooling, the
-    # load tool and the parent's CI (the runbooks under docs/ are local-only).
+    # load tool and the parent's CI; the alerts' runbooks are published with
+    # them (deploy/runbooks, RB-A26; the other documents under docs/ stay local-only).
     "deploy/gitops",
     "deploy/qualification/platform/observability",
+    "deploy/runbooks",
     "deploy/qualification/platform/backups",
     "tests/load",
     ".github/workflows",
