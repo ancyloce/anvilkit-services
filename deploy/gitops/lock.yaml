@@ -175,6 +175,8 @@ applications:
     pools:
       - {cluster: business, database: anvilkit_knowledge, config: database.max_conn, perReplica: 8, generations: 2}
       - {cluster: business, database: anvilkit_knowledge, config: store.max_conn, perReplica: 4, generations: 2}
+      # The cleanup identity's own pool (P2.7), built with each generation.
+      - {cluster: business, database: anvilkit_knowledge, fixed: {source: services/agent/knowledge/src/generations.ts, pattern: "newPool\\(gen\\.config\\.cleanup\\.url, (\\d+)"}, perReplica: 2, generations: 2}
       - {cluster: business, database: anvilkit_knowledge, container: forwarder, fixed: {source: services/agent/knowledge/forwarder/internal/forwarder/forwarder.go, pattern: "poolCfg.MaxConns = (\\d+)"}, perReplica: 4, generations: 1}
       - {cluster: business, database: anvilkit_knowledge, container: relay, fixed: {source: services/agent/background-worker/src/relay/relay.ts, pattern: "databaseUrl, max: (\\d+)"}, perReplica: 2, generations: 1}
   - name: anvilkit-agent-mcp
