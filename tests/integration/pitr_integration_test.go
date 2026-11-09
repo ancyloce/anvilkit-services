@@ -51,8 +51,7 @@ func dockerCLI(t *testing.T, args ...string) string {
 func newPITRDatabase(t *testing.T) *pitrDatabase {
 	t.Helper()
 	p := startPITRDatabase(t)
-	for _, s := range []string{"CREATE ROLE anvilkit_control_app LOGIN PASSWORD 'app'", "CREATE ROLE anvilkit_control_migrator LOGIN PASSWORD 'migrator'",
-		"CREATE ROLE anvilkit_control_retention LOGIN PASSWORD 'retention'",
+	for _, s := range []string{"CREATE ROLE anvilkit_control_app LOGIN PASSWORD 'app'", "CREATE ROLE anvilkit_control_migrator LOGIN PASSWORD 'migrator'", "CREATE ROLE anvilkit_control_retention LOGIN PASSWORD 'retention'",
 		"CREATE DATABASE anvilkit_control OWNER anvilkit_control_migrator"} {
 		p.psql("postgres", s)
 	}
