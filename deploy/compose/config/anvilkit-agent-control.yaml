@@ -108,6 +108,11 @@ recovery:
   enumeration_page: 500
 relay:
   interval: 500ms
+retention:
+  batch: 100
+  interval: 1h
+  # DEVELOPMENT_ONLY period; the data owner's value is ENV-09 (RB-A27).
+  operation_events: 2160h
 temporal:
   address: 127.0.0.1:27233
   namespace: anvilkit

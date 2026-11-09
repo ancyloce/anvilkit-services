@@ -23,6 +23,7 @@ backup:
 businessRoles:
   - anvilkit_control_app
   - anvilkit_control_migrator
+  - anvilkit_control_retention
   - anvilkit_knowledge_app
   - anvilkit_knowledge_migrator
   - anvilkit_knowledge_relay

@@ -39,7 +39,7 @@ POSTGRES_PWD=$PW
 "
   fi
   PW=$(sed -n 's/^ANVILKIT_DEV_PASSWORD=//p' "$SECRETS/postgres.env")
-  for role in control_app control_migrator knowledge_app knowledge_migrator knowledge_relay knowledge_forwarder knowledge_store knowledge_store_migrator knowledge_cleanup mcp_app mcp_migrator mcp_relay; do
+  for role in control_app control_migrator control_retention knowledge_app knowledge_migrator knowledge_relay knowledge_forwarder knowledge_store knowledge_store_migrator knowledge_cleanup mcp_app mcp_migrator mcp_relay; do
     db=anvilkit_${role%%_*}
     write_secret "$(echo "$role" | tr '_' '-')-dsn" "postgres://anvilkit_${role}:${PW}@postgres:5432/${db}?sslmode=disable"
   done
@@ -138,9 +138,10 @@ setup() {
 migrate() {
   # Roles created by postgres-init.sh exist on a fresh data directory; an
   # existing database gets the relay, forwarder, Store and cleanup identities
-  # (P14, P17, P2.7) here, idempotently.
+  # (P14, P17, P2.7) and Control's retention identity (RB-A27) here,
+  # idempotently, before the migrations that grant them.
   PW=$(sed -n 's/^ANVILKIT_DEV_PASSWORD=//p' "$SECRETS/postgres.env")
-  for role in anvilkit_knowledge_relay anvilkit_mcp_relay anvilkit_knowledge_forwarder anvilkit_knowledge_store_migrator anvilkit_knowledge_store anvilkit_knowledge_cleanup; do
+  for role in anvilkit_knowledge_relay anvilkit_mcp_relay anvilkit_knowledge_forwarder anvilkit_knowledge_store_migrator anvilkit_knowledge_store anvilkit_knowledge_cleanup anvilkit_control_retention; do
     $COMPOSE exec -T postgres psql -v ON_ERROR_STOP=1 -U postgres -d postgres -tAc "SELECT 1 FROM pg_roles WHERE rolname = '$role'" | grep -qx 1 \
       || $COMPOSE exec -T -e PW="$PW" postgres sh -c "psql -v ON_ERROR_STOP=1 -U postgres -d postgres -c \"CREATE ROLE $role LOGIN PASSWORD '\$PW'\"" >/dev/null
   done

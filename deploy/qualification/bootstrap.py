@@ -130,7 +130,7 @@ OPENBAO_ROLES = [
 OPENBAO_EXTRA = {"anvilkit-backups": 'path "sys/storage/raft/snapshot" { capabilities = ["read"] }\n'}
 # The six namespaces with their labels (RB-S09: Pod Security levels); checked by deploy/policies/check.sh.
 NAMESPACES_FILE = ROOT / "deploy/qualification/namespaces.yaml"
-ROLES = ["anvilkit_control_app", "anvilkit_control_migrator", "anvilkit_knowledge_app", "anvilkit_knowledge_migrator",
+ROLES = ["anvilkit_control_app", "anvilkit_control_migrator", "anvilkit_control_retention", "anvilkit_knowledge_app", "anvilkit_knowledge_migrator",
          "anvilkit_knowledge_relay", "anvilkit_knowledge_forwarder", "anvilkit_knowledge_cleanup", "anvilkit_knowledge_store_migrator", "anvilkit_knowledge_store",
          "anvilkit_mcp_app", "anvilkit_mcp_migrator", "anvilkit_mcp_relay", "anvilkit_contextforge", "temporal"]
 # Each CloudNativePG cluster's database owner (bootstrap.initdb.owner). The operator
@@ -349,7 +349,9 @@ def kv_payloads(c: dict) -> dict[str, dict[str, str]]:
             "inventory-access-key-id": dr["inventory"]["id"], "inventory-secret-access-key": dr["inventory"]["secret"],
             "artifacts-access-key-id": o["ARTIFACTS"]["id"], "artifacts-secret-access-key": o["ARTIFACTS"]["secret"],
             # P2.8: the forwarder's NKey seed (operation events to JetStream).
-            "nats-creds": n["control-forwarder"]["seed"]},
+            "nats-creds": n["control-forwarder"]["seed"],
+            # RB-A27: the retention identity (deletes operation events only).
+            "retention-database-url": dsn("anvilkit_control_retention", "anvilkit_control", r["anvilkit_control_retention"])},
         "anvilkit/apps/anvilkit-agent-control-migration": {
             "migration-dsn": dsn("anvilkit_control_migrator", "anvilkit_control", r["anvilkit_control_migrator"])},
         "anvilkit/apps/anvilkit-agent-knowledge": {

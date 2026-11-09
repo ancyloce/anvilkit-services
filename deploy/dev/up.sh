@@ -103,7 +103,7 @@ docker compose -f "$ROOT/deploy/dev/compose.yaml" run --rm --no-deps nats-setup 
 # 00002), Knowledge's Store migrator and Store roles (P17) and its cleanup
 # identity (P2.7). postgres-init.sh creates them on a fresh data directory;
 # an existing foundation gets them here, idempotently.
-for role in anvilkit_knowledge_relay anvilkit_mcp_relay anvilkit_knowledge_forwarder anvilkit_knowledge_store_migrator anvilkit_knowledge_store anvilkit_knowledge_cleanup; do
+for role in anvilkit_knowledge_relay anvilkit_mcp_relay anvilkit_knowledge_forwarder anvilkit_knowledge_store_migrator anvilkit_knowledge_store anvilkit_knowledge_cleanup anvilkit_control_retention; do
   docker compose -f "$ROOT/deploy/dev/compose.yaml" exec -T postgres psql -v ON_ERROR_STOP=1 -U postgres -d postgres -tAc \
     "SELECT 1 FROM pg_roles WHERE rolname = '$role'" | grep -qx 1 \
     || docker compose -f "$ROOT/deploy/dev/compose.yaml" exec -T postgres psql -v ON_ERROR_STOP=1 -U postgres -d postgres -c \

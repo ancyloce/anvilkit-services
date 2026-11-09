@@ -52,6 +52,12 @@ temporal:
       name: anvilkit-agent-control-identity
       key: ca.crt
   address: anvilkit-temporal-frontend.anvilkit-platform.svc.cluster.local:7233
+# RB-A27: the retention identity (the CSI key retention-database-url
+# bootstrap.py writes) and its period; ENV-09 owns the value, this one is
+# DEVELOPMENT_ONLY like the placement.
+retention:
+  enabled: true
+  operationEvents: 2160h
 # P2.8: operation events to JetStream (stream ANVILKIT_CONTROL) over TLS
 # verified against the CA of the workload identity bundle; the forwarder's
 # NKey seed is the CSI key nats-creds.

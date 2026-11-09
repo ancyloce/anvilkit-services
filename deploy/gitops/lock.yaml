@@ -119,8 +119,10 @@ applications:
         control: {requests: {cpu: 100m, memory: 64Mi}, limits: {cpu: 1000m, memory: 256Mi}}
       ephemeral: {}
       peak: {measured: REQUIRED, headroom: REQUIRED, inputs: [ENV-05]}
+    # RB-A27: the operation-event retention's own pool (the retention identity).
     pools:
       - {cluster: business, database: anvilkit_control, config: database.max_conns, perReplica: 8, generations: 1}
+      - {cluster: business, database: anvilkit_control, fixed: {source: services/agent/control/internal/bootstrap/retention.go, pattern: "const retentionMaxConns = (\\d+)"}, perReplica: 1, generations: 1}
   - name: anvilkit-agent-workflow
     chart: services/agent/workflow/deploy/chart
     replicas: {min: 2}

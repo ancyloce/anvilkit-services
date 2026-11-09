@@ -30,6 +30,7 @@ x-service: &service
 secrets:
   control-app-dsn: { file: "${ANVILKIT_HOME:-/srv/anvilkit}/secrets/control-app-dsn" }
   control-migrator-dsn: { file: "${ANVILKIT_HOME:-/srv/anvilkit}/secrets/control-migrator-dsn" }
+  control-retention-dsn: { file: "${ANVILKIT_HOME:-/srv/anvilkit}/secrets/control-retention-dsn" }
   knowledge-app-dsn: { file: "${ANVILKIT_HOME:-/srv/anvilkit}/secrets/knowledge-app-dsn" }
   knowledge-migrator-dsn: { file: "${ANVILKIT_HOME:-/srv/anvilkit}/secrets/knowledge-migrator-dsn" }
   knowledge-relay-dsn: { file: "${ANVILKIT_HOME:-/srv/anvilkit}/secrets/knowledge-relay-dsn" }
@@ -305,6 +306,7 @@ services:
       ANVILKIT_CONTROL_HEALTH_LISTEN: 0.0.0.0:9113
       ANVILKIT_CONTROL_TEMPORAL_ADDRESS: temporal:7233
       ANVILKIT_CONTROL_DATABASE_URL_FILE: /run/secrets/control-app-dsn
+      ANVILKIT_CONTROL_RETENTION_DATABASE_URL_FILE: /run/secrets/control-retention-dsn
       ANVILKIT_CONTROL_INVENTORY_S3_ENDPOINT: http://minio:9000
       ANVILKIT_CONTROL_INVENTORY_S3_BUCKET: anvilkit-inventory
       ANVILKIT_CONTROL_INVENTORY_S3_ACCESS_KEY_ID_FILE: /run/secrets/inventory-access-key-id
@@ -315,7 +317,7 @@ services:
       ANVILKIT_CONTROL_ARTIFACTS_S3_SECRET_ACCESS_KEY_FILE: /run/secrets/artifacts-secret-access-key
       ANVILKIT_CONTROL_NATS_URL: nats://nats:4222
       GOMEMLIMIT: 400MiB
-    secrets: [control-app-dsn, inventory-access-key-id, inventory-secret-access-key, artifacts-access-key-id, artifacts-secret-access-key]
+    secrets: [control-app-dsn, control-retention-dsn, inventory-access-key-id, inventory-secret-access-key, artifacts-access-key-id, artifacts-secret-access-key]
     volumes:
       - ./config/anvilkit-agent-control.yaml:/etc/anvilkit/anvilkit-agent-control/config.yaml:ro
       - ${ANVILKIT_HOME:-/srv/anvilkit}/certs/anvilkit-agent-control:/etc/anvilkit/identity:ro

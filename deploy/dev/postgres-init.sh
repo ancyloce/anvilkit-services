@@ -33,6 +33,12 @@ CREATE ROLE anvilkit_knowledge_store_migrator LOGIN PASSWORD '${ANVILKIT_DEV_PAS
 CREATE ROLE anvilkit_knowledge_store LOGIN PASSWORD '${ANVILKIT_DEV_PASSWORD}';
 SQL
   fi
+  # RB-A27: the Control retention identity (00019: deletes operation events).
+  if [ "$domain" = control ]; then
+    psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d postgres <<SQL
+CREATE ROLE anvilkit_control_retention LOGIN PASSWORD '${ANVILKIT_DEV_PASSWORD}';
+SQL
+  fi
   # The app role must not be able to create objects in the domain schema.
   psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "anvilkit_${domain}" <<SQL
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;
