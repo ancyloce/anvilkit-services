@@ -46,7 +46,8 @@ func isolatedControlDatabaseMigratedBy(t *testing.T, migration func(migratorDSN 
 	admin, err := pgx.Connect(ctx, dsn)
 	require.NoError(t, err)
 	defer admin.Close(ctx)
-	for _, s := range []string{"CREATE ROLE anvilkit_control_app LOGIN PASSWORD 'app'", "CREATE ROLE anvilkit_control_migrator LOGIN PASSWORD 'migrator'", "CREATE DATABASE anvilkit_control OWNER anvilkit_control_migrator"} {
+	for _, s := range []string{"CREATE ROLE anvilkit_control_app LOGIN PASSWORD 'app'", "CREATE ROLE anvilkit_control_migrator LOGIN PASSWORD 'migrator'",
+		"CREATE ROLE anvilkit_control_retention LOGIN PASSWORD 'retention'", "CREATE DATABASE anvilkit_control OWNER anvilkit_control_migrator"} {
 		_, err = admin.Exec(ctx, s)
 		require.NoError(t, err)
 	}
