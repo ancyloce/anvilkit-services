@@ -18,6 +18,8 @@ Steps, in order:
               --self-test                              M1/CAP/SEC requirement to existing executable cases or
                                                        explicit NOT_RUN entries naming the missing ENV inputs;
                                                        the evaluator's skip/BLOCKED/roll-up negatives hold
+              tools/check-codegen-corpus.py            the codegen task corpus's schema, strata, tools and
+              --self-test                              budgets (RB-A15; DEVELOPMENT_ONLY)
   deployment  tools/check-deployment-lock.py           the P23 deployment lock (deploy/gitops/lock.yaml): the eight
               --self-test; the self-tests of           charts rendered with the qualification values carry its
               tools/release-artifacts.py,              replica/HPA/PDB/spread/probe/grace/pool limits, the
@@ -577,7 +579,8 @@ def main() -> int:
         ("docs", lambda: scripts([PY, "tools/docs-status.py", "--self-test"], [PY, "tools/check-docs.py"])),
         ("generate", step_generate),
         ("contracts", lambda: script([PY, "tools/check-contracts.py"])),
-        ("evals", lambda: scripts([PY, "tools/run-evaluation.py", "--check"], [PY, "tools/run-evaluation.py", "--self-test"])),
+        ("evals", lambda: scripts([PY, "tools/run-evaluation.py", "--check"], [PY, "tools/run-evaluation.py", "--self-test"],
+                                  [PY, "tools/check-codegen-corpus.py", "--self-test"])),
         ("deployment", lambda: scripts([PY, "tools/check-deployment-lock.py", "--self-test"], [PY, "tools/release-artifacts.py", "--self-test"],
                                        [PY, "deploy/gitops/publish.py", "--self-test"], [PY, "deploy/qualification/record.py", "--self-test"],
                                        [PY, "deploy/qualification/check-dr.py", "--self-test"], [PY, "deploy/qualification/loadrun.py", "--self-test"],

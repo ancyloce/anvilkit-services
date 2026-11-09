@@ -638,6 +638,38 @@ def percentile(xs: list[float], q: float) -> float | None:
     return round(xs[i], 1)
 
 
+def stratum_key(stratum) -> str:
+    """A case's stratum as a grouping key: a word, or (RB-A15's codegen corpus)
+    an object of dimensions, written dimension=value in a fixed order."""
+    if isinstance(stratum, dict):
+        return ",".join(f"{k}={stratum[k]}" for k in sorted(stratum))
+    return stratum or "-"
+
+
+def trial_cost(trials_by_case: list[list[dict]], doc: dict):
+    """RB-A15: the monetary cost of a run, measured only when every trial reports
+    its costMicros (Control's recorded actual cost of its sends); a partial
+    report never yields a total. Without any, the report's own statement or the
+    reason it is not measured."""
+    costs = [tr.get("costMicros") for trials in trials_by_case for tr in trials]
+    known = [c for c in costs if isinstance(c, int) and c >= 0]
+    if costs and len(known) == len(costs):
+        return {"status": "MEASURED", "currency": doc.get("currency", "USD"), "totalMicros": sum(known),
+                "perTrialMicros": {"p50": percentile([float(c) for c in known], 0.5), "p95": percentile([float(c) for c in known], 0.95)},
+                "source": doc.get("costSource", "the trials' costMicros")}
+    if known:
+        return f"partly measured: {len(known)} of {len(costs)} trials report costMicros (no total)"
+    return doc.get("monetaryCost", "not measured: no priced route (ENV-04/ENV-06)")
+
+
+def rel(p: pathlib.Path) -> str:
+    """A path relative to the checkout when it is inside it."""
+    try:
+        return str(p.relative_to(ROOT))
+    except ValueError:
+        return str(p)
+
+
 def trials_of(c: dict, started: float) -> dict | None:
     t = c.get("trials")
     if not t:
@@ -648,9 +680,10 @@ def trials_of(c: dict, started: float) -> dict | None:
         return {"status": "NOT_RUN", "reason": f"no report written to {t['reports']} by this run"}
     f = reports[-1]
     doc = json.loads(f.read_text(encoding="utf-8"))
-    cases, classes, latencies, strata = [], {}, [], {}
+    cases, classes, latencies, strata, all_trials = [], {}, [], {}, []
     for case in doc.get("cases", []):
         trials = case.get("trials", [])
+        all_trials.append(trials)
         passed = [not (tr.get("failureClasses") or []) for tr in trials]
         for tr in trials:
             for cl in tr.get("failureClasses") or []:
@@ -661,20 +694,20 @@ def trials_of(c: dict, started: float) -> dict | None:
         row = {"id": case.get("id"), "stratum": case.get("stratum"), "k": k, "passedTrials": sum(passed),
                "passAtK": any(passed), "passPowK": bool(passed) and all(passed)}
         cases.append(row)
-        st = strata.setdefault(case.get("stratum") or "-", {"cases": 0, "passAtK": 0, "passPowK": 0})
+        st = strata.setdefault(stratum_key(case.get("stratum")), {"cases": 0, "passAtK": 0, "passPowK": 0})
         st["cases"] += 1
         st["passAtK"] += row["passAtK"]
         st["passPowK"] += row["passPowK"]
     n = len(cases)
     short = [r["id"] for r in cases if r["k"] != t["k"]]
     return {
-        "report": str(f.relative_to(ROOT)), "reportDigest": sha256_file(f), "expectedK": t["k"], "cases": n,
+        "report": rel(f), "reportDigest": sha256_file(f), "expectedK": t["k"], "cases": n,
         "trialsTotal": sum(r["k"] for r in cases), "casesWithOtherK": short,
         "passAtK": round(sum(r["passAtK"] for r in cases) / n, 4) if n else None,
         "passPowK": round(sum(r["passPowK"] for r in cases) / n, 4) if n else None,
         "failureClasses": dict(sorted(classes.items())), "latencyMs": {"p50": percentile(latencies, 0.5), "p95": percentile(latencies, 0.95)},
         "strata": strata, "perCase": cases,
-        "monetaryCost": doc.get("monetaryCost", "not measured: no priced route (ENV-04/ENV-06)"),
+        "monetaryCost": trial_cost(all_trials, doc),
     }
 
 
@@ -852,6 +885,22 @@ def self_test() -> int:
         if saved is not None:
             os.environ["ANVILKIT_QUALIFICATION_RUN"] = saved
     cases.append(("a qualification-run suite without an authorized run is NOT_RUN, never run", gated["status"] == "NOT_RUN" and "ANVILKIT_QUALIFICATION_RUN" in gated["reason"]))
+    # RB-A15: pass@k and pass^k over composite strata, and the cost measured
+    # only when every trial reports it.
+    with tempfile.TemporaryDirectory() as d:
+        report = {"cases": [
+            {"id": "t1", "stratum": {"toolEffects": "write", "dependencyComplexity": "none"}, "trials": [{"costMicros": 100}, {"costMicros": 300, "failureClasses": ["build"]}]},
+            {"id": "t2", "stratum": {"dependencyComplexity": "none", "toolEffects": "write"}, "trials": [{"costMicros": 200}, {"costMicros": 200}]}]}
+        pathlib.Path(d, "report-1.json").write_text(json.dumps(report), encoding="utf-8")
+        tr = trials_of({"trials": {"reports": d, "k": 2}}, 0)
+        key = "dependencyComplexity=none,toolEffects=write"
+        cases.append(("composite strata group by their dimensions, whatever the key order", tr["strata"].get(key) == {"cases": 2, "passAtK": 2, "passPowK": 1}))
+        cases.append(("pass@k and pass^k are reported per run", tr["passAtK"] == 1.0 and tr["passPowK"] == 0.5))
+        cases.append(("the cost is measured when every trial reports it", isinstance(tr["monetaryCost"], dict) and tr["monetaryCost"]["totalMicros"] == 800))
+        report["cases"][1]["trials"][1].pop("costMicros")
+        pathlib.Path(d, "report-1.json").write_text(json.dumps(report), encoding="utf-8")
+        tr = trials_of({"trials": {"reports": d, "k": 2}}, 0)
+        cases.append(("a partly reported cost yields no total", isinstance(tr["monetaryCost"], str) and tr["monetaryCost"].startswith("partly measured")))
     failures = [name for name, ok in cases if not ok]
     for name, ok in cases:
         print(f"{'PASS' if ok else 'FAIL':<5} self-test: {name}")
