@@ -43,10 +43,11 @@ registry. The foundation images are the digests of `deploy/dev/compose.yaml`.
 
 ```sh
 export ANVILKIT_HOME=/srv/anvilkit
-sh deploy/compose/up.sh                  # secrets, PKI, pull, foundation, setup one-shots, migrations, services, status
+sh deploy/compose/up.sh                  # secrets, PKI, pull, foundation, setup one-shots, migrations, budget pools, services, status
 sh deploy/compose/up.sh budget           # current + next month budget pools of tenant_a/user_a (once a month)
 sh deploy/compose/up.sh status           # docker compose ps
 sh deploy/compose/pki.sh verify          # every leaf chains to the CA; SANs printed
+sh deploy/compose/verify.sh              # runtime checks, each PASS, FAIL or UNEXECUTED; exit 1 on any FAIL
 sh deploy/compose/down.sh                # stop and remove containers; volumes, secrets and certificates stay
 docker compose --project-directory deploy/compose --env-file deploy/compose/images.env logs --since 10m anvilkit-agent-control
 ```
@@ -57,10 +58,11 @@ forwarder 90 s, background worker and relays 60 s, Workflow 45 s, Inference 40 s
 Control and API 30 s), so a stop or recreate lets the drain finish; Docker's default
 of 10 s would cut admitted model sends.
 
-Published ports, all on `127.0.0.1` of the server (reach them through
+Published ports on `127.0.0.1` of the server (reach them through
 `ssh -L 9100:127.0.0.1:9100 ubuntu@<server>`): API `9100`; operations: PostgreSQL
-`25432`, Temporal `27233`, MinIO `29000`, OIDC `25556`. Every other port is private to
-the Compose network. The API authenticates `auth.mode: fixture` bearer tokens from
+`25432`, Temporal `27233`, MinIO `29000`, OIDC `25556`. Control `9101`, the Model Proxy
+`9103` and MinIO `9000` also publish on the Jobs node's host-only address 10.255.255.1
+(Jobs node, below). Every other port is private to the Compose network. The API authenticates `auth.mode: fixture` bearer tokens from
 `/srv/anvilkit/secrets/api-principals.json` (DEVELOPMENT_ONLY; ENV-07 supplies the
 production issuer).
 
@@ -146,11 +148,16 @@ replaces this step once it exists.
 ## Jobs node
 
 Owner decisions (plan 0006): option B with the D-2 exception (one RKE2 node on this
-host, Job namespaces only, never the services), D-4 development profiles first (no
-gVisor yet: `local-check-v1`, `validator-source-dev-v1`, `codegen-team-dev-v1`,
-`parser-docling-dev-v1`), D-5 one generation at a time (a `pods: 1` quota per Job
-namespace). `jobs/jobs-node.sh` installs and configures it, in this order, before the
-Compose services that publish on its address start:
+host, Job namespaces only, never the services), D-4 development profiles first
+(`local-check-v1`, `validator-source-dev-v1`, `codegen-team-dev-v1`,
+`parser-docling-dev-v1`), then gVisor, D-5 one generation at a time (a `pods: 1` quota
+per Job namespace). Since 2026-11-03 the node runs gVisor `release-20260914.0` (`runsc`
+registered with RKE2's containerd, RuntimeClass `gvisor` in `jobs/cluster.yaml`); since
+2026-11-05 (DEC-045, `v0.1.21`) Generations use the production profiles
+`codegen-team-v1` and `validator-source-v1` under it
+(`config/anvilkit-agent-control.yaml` `profiles.generation`), and the development
+profiles stay enabled. `jobs/jobs-node.sh` installs and configures the node, in this
+order, before the Compose services that publish on its address start:
 
 ```sh
 sh deploy/compose/jobs/jobs-node.sh host            # anvilkit-jobs0 (10.255.255.1) and the inbound guard
@@ -160,6 +167,12 @@ sh deploy/compose/jobs/jobs-node.sh cluster         # Kyverno 1.19.1, admission 
 sh deploy/compose/jobs/jobs-node.sh identities      # launcher identities and kubeconfigs, sidecar identity
 sh deploy/compose/jobs/jobs-node.sh probe           # DNS, relay and refusals from a pod with the Job policies
 ```
+
+The gVisor install is a manual step that `jobs-node.sh` does not perform: the `runsc`
+binaries and RKE2's containerd template (`config-v3.toml.tmpl`) go on the node by hand
+after `install`, as `docs/operations/compose/gvisor-jobs-node.md` describes; `cluster`
+then applies the RuntimeClass. A node rebuilt without it cannot start the production
+profiles' Pods that Control's Generations use.
 
 How the Job pods reach the services: Control (9101), the Model Proxy (9103) and MinIO
 (9000) publish on the host-only address 10.255.255.1 (a dummy interface; nothing
@@ -183,11 +196,11 @@ allowlists do not admit the sidecar here).
 
 ## Known blockers of this placement
 
-- **B-1 Job execution.** Addressed by the Jobs node (above) for the development profiles;
-  the gVisor production profiles (`codegen-*-v1`, `validator-source-v1`,
-  `preview-build-v1`, `parser-docling-v1`) stay unavailable until gVisor is installed and
-  qualified on the node (plan 0006 D-4, next step). Without the node (`verify.sh` reports
-  it), every Job launch fails at `CreateJob`.
+- **B-1 Job execution.** Addressed by the Jobs node (above): the development profiles
+  and, under gVisor since 2026-11-05, `codegen-team-v1` and `validator-source-v1` run
+  there. `codegen-fixed-v1`, `preview-build-v1` and `parser-docling-v1` stay `disabled`
+  in `contracts/jobs/profiles.json`; parsing runs `parser-docling-dev-v1`. Without the
+  node (`verify.sh` reports it), every Job launch fails at `CreateJob`.
 - **B-2 Provider credential.** The Model Proxy's route `controlled-openai-v1` (DeepSeek
   `deepseek-flash`) is enabled in `config/anvilkit-agent-model-proxy.yaml` with the unpaid
   `health_probe: models`, and is served only where the operator wrote

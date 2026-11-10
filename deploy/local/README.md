@@ -4,8 +4,9 @@ This profile runs the current `local-check-v1` flow and, since development
 plan S2 (2026-09-13), the fixed preparation flow: Agent API, Control and
 Workflow, PostgreSQL 18.6 and Temporal Server 1.31.2. Two short-lived containers
 initialize Temporal schemas and the namespace. The Control and Workflow images
-build from their legacy submodules using Go 1.27.0 and their retained
-contracts. The API image is pinned since 2026-09-15: `services/agent/api` now
+(`legacy-20260916`) build only from the preserved legacy worktree snapshots
+under `.local/legacy/anvilkit-agent-{control,workflow}-20260916/worktree` with
+`Service.Dockerfile` (Go 1.27.2) and their retained contracts. The API image is pinned since 2026-09-15: `services/agent/api` now
 holds the replacement API, so the legacy `anvilkit-agent-api` service uses the
 image built from the old worktree (`anvilkit-local-anvilkit-agent-api:legacy-20260915`)
 and rebuilds only from the preserved legacy worktree snapshot under
@@ -15,8 +16,11 @@ machine); it never builds from the replacement.
 ## Start
 
 Run from the repository root on Linux/amd64 with Docker Engine, Docker Compose,
-Python 3 and OpenSSL available. The three service checkouts and parent contract
-files must be present.
+Python 3 and OpenSSL available. The three preserved legacy worktrees under
+`.local/legacy/` and the parent contract files must be present. The PostgreSQL
+service mounts its three contract SQL files from `docs/archive/contracts/`
+(`compose.yaml:28-30`, read by `init-agent.sh`), which is not in this
+checkout, so this profile cannot start from this checkout as it is.
 
 ```sh
 python3 tools/prepare-local-compose.py

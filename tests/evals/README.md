@@ -11,6 +11,7 @@ ENV-10). Contributing evidence never closes a gate on its own.
 |---|---|
 | `registry.json` | Suites, cases and NOT_RUN entries (schema version 1, registry revision) |
 | `rag/`, `memory/` | The DEVELOPMENT_ONLY labeled sets of the P16/P17 evaluators, whose reports keep every trial |
+| `codegen/` | The DEVELOPMENT_ONLY codegen task corpus of RB-A15: `cases.json` (six cases in seven strata, no quality threshold) and their `briefs/`, checked by `tools/check-codegen-corpus.py` |
 
 ```sh
 .local/verification-venv/bin/python tools/run-evaluation.py --check       # coverage and selectors

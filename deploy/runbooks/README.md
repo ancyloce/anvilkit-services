@@ -4,7 +4,7 @@ Operator procedures for the alerts of the `anvilkit-observability` chart ([rules
 
 Conventions used by every runbook:
 
-- `K="kubectl --kubeconfig <environment kubeconfig>"`; namespaces are those of DD-10 §2 (architecture `platform.md`) (`anvilkit-apps`, `anvilkit-data`, `anvilkit-platform`, `anvilkit-observability`).
+- `K="kubectl --kubeconfig <environment kubeconfig>"`; namespaces are those of DD-10 §2 (architecture `platform.md`) (`anvilkit-apps`, `anvilkit-components`, `anvilkit-parsing`, `anvilkit-data`, `anvilkit-platform`, `anvilkit-observability`).
 - The business database's current primary: `PRIMARY=$($K -n anvilkit-data get pods -l cnpg.io/cluster=anvilkit-business,cnpg.io/instanceRole=primary -o name)`; the diagnostic queries below are read-only and run as the instance's local superuser.
 - Dashboards are the Grafana dashboards with uid `anvilkit-<name>` (`anvilkit-overview`, `anvilkit-control`, `anvilkit-model-proxy`, `anvilkit-mcp`, `anvilkit-knowledge`, `anvilkit-background-worker`, `anvilkit-api`, `anvilkit-workflow`, `anvilkit-inference`).
 - PromQL is run in Grafana's Explore view or with `$K -n anvilkit-observability get --raw "/api/v1/namespaces/anvilkit-observability/services/http:anvilkit-metrics-prometheus:9090/proxy/api/v1/query?query=<urlencoded>"`.

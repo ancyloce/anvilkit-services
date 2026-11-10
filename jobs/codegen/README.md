@@ -5,7 +5,7 @@ The codegen Job class (architecture DD-03, delivery.md P09/P12) is built from tw
 | Path | Repository | Owns |
 |---|---|---|
 | `supervisor/` | [`anvilkit-job-codegen-supervisor`](https://github.com/ancyloce/anvilkit-job-codegen-supervisor) (Go module `github.com/ancyloce/anvilkit-job-codegen-supervisor`) | The trusted supervisor and its privilege-drop trampoline, the candidate stop and confirmation, the observer and finalizer of the fixed task, the fixed candidate, `config.yaml`, the base trusted resources (`agent/resources.json`), the fixed-task fixtures, the fixed-task image (`anvilkit-codegen`: `codegen-fixed-v1`, `harness-wiring-dev-v1`) |
-| `team/` | [`anvilkit-job-codegen-team`](https://github.com/ancyloce/anvilkit-job-codegen-team) (npm package `@anvilkit/codegen-team`) | The trusted coordinator (LangGraph team, budgets, stage store, recovery), the Pi coder, `team.yaml`, the prompts and reviewed tools (`agent/team/`), the brief fixture, the final Codegen Job image (`anvilkit-codegen-team`: `codegen-team-dev-v1`) |
+| `team/` | [`anvilkit-job-codegen-team`](https://github.com/ancyloce/anvilkit-job-codegen-team) (npm package `@anvilkit/codegen-team`) | The trusted coordinator (LangGraph team, budgets, stage store, recovery), the Pi coder, `team.yaml`, the prompts and reviewed tools (`agent/team/`), the brief fixture, the final Codegen Job image (`anvilkit-codegen-team`: `codegen-team-dev-v1`, `codegen-team-v1`) |
 
 ## Process protocol
 
@@ -21,7 +21,7 @@ docker build --build-context supervisor=jobs/codegen/supervisor \
 sh jobs/codegen/team/tools/image-smoke.sh anvilkit-codegen-team
 ```
 
-`deploy/dev/images.sh` builds both images into the development registry. The image digests are pinned by `contracts/jobs/profiles.json` and admitted by `deploy/policies/chart/` (the Job-admission chart); a rebuilt image is a new digest and needs a profile revision there. The team image's inputs outside its repository are pinned in its CI (`SUPERVISOR_REF`, `CONTRACTS_REF`, the validator digest in the `Dockerfile`).
+`deploy/dev/images.sh` builds both images into the development registry. The published images are built by `.github/workflows/job-images.yml` (`tools/release-artifacts.py --jobs`), and `contracts/jobs/profiles.json` pins their published digests, which `deploy/policies/chart/` (the Job-admission chart) admits; a rebuilt image is a new digest and needs a profile revision there. The team image's inputs outside its repository are pinned in its CI (`SUPERVISOR_REF`, `CONTRACTS_REF`, the validator digest in the `Dockerfile`).
 
 ## Parent-owned integration
 
@@ -38,4 +38,4 @@ sh jobs/codegen/supervisor/tools/sync-protocol.sh --check contracts && sh jobs/c
 . .local/dev/env.sh && (cd tests/integration && go test -tags integration -run 'TestTrustedHarnessProcessFlow|TestCodegenTeamFlow' .)
 ```
 
-These establish behavior on the host with real processes; they qualify no Kubernetes runtime, gVisor or candidate isolation (G-04/G-05 stay NOT_RUN; both codegen profiles stay DISABLED).
+These establish behavior on the host with real processes; they qualify no Kubernetes runtime, gVisor or candidate isolation (G-04/G-05 stay NOT_RUN). Profile states in `contracts/jobs/profiles.json`: `codegen-fixed-v1` is disabled, `codegen-team-dev-v1` is a development profile without a RuntimeClass, and `codegen-team-v1` is enabled under the `gvisor` RuntimeClass, which the Compose placement's Workflow enables for its DEVELOPMENT_ONLY Jobs node (`deploy/compose/config/anvilkit-agent-workflow.yaml`).

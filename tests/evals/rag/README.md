@@ -5,12 +5,15 @@ A small labeled corpus and its cases for the hybrid retrieval of Knowledge
 It was written by the implementing agent, not by a business owner. It exercises
 the evaluator end to end on the real pipeline and produces comparable figures,
 but it is **not** the approved business-labeled corpus that G-08 requires, and
-no quality threshold is derived from it.
+no G-08 quality threshold is derived from it. `thresholds.json` holds only this
+corpus's DEVELOPMENT_ONLY regression bounds, which `TestRetrieval` asserts; the
+business-labeled corpus and its thresholds remain an ENV-05 input.
 
 | Path | Content |
 |---|---|
 | `corpus/*.md` | Ten Markdown documents: component styling and structure, accessibility, release, one Chinese document, one document carrying a prompt injection, one actor-restricted document and one document of a second tenant |
 | `cases.json` | The sources (tenant, trusted ACL) and 27 cases in strata: component styling/structure, accessibility, release, Chinese, unanswerable, malicious source and authorization (a positive control reads the restricted document as its authorized actor) |
+| `thresholds.json` | P3.4 (EVAL-04): minimum Recall@k, nDCG@k and no-answer correctness and maximum false no-answer ratio and unauthorized disclosures, derived from development runs of this corpus and bound to its digest (a different corpus digest refuses them) |
 
 Each label names a document and an evidence phrase with a graded gain; a
 returned item matches when it comes from that document and contains the phrase.

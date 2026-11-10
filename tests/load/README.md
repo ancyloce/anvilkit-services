@@ -19,7 +19,8 @@ ANVILKIT_LOAD_TOKEN=... go run ./tests/load --api https://api.example \
 ```
 
 The bearer token is read only from `ANVILKIT_LOAD_TOKEN`. It never appears on
-a command line, in the log or in `summary.json`.
+a command line, in the log or in `summary.json`. `--api` and `--prometheus`
+default to `ANVILKIT_LOAD_API_URL` and `ANVILKIT_LOAD_PROMETHEUS_URL`.
 
 ## Scenarios
 

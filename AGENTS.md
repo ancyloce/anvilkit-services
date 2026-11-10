@@ -17,7 +17,7 @@ At a first orientation on the project, read this file, [docs/README.md](docs/REA
 
 ## 2. Repository state
 
-Each service and Job class owns a repository mounted as a submodule; contracts mount at `contracts/` ([ownership](docs/architecture/architecture.md#repositories)). The parent owns documents, `deploy/dev`, `deploy/{qualification,gitops,policies,handover,runbooks}`, `tools/`, `tests/`, and currently `jobs/migration` for Knowledge/MCP. Control owns its migrations.
+Each service and Job class owns a repository mounted as a submodule; contracts mount at `contracts/` ([ownership](docs/architecture/architecture.md#repositories)). The parent owns documents, `deploy/{compose,dev,verification,qualification,gitops,policies,handover,runbooks}`, `packages/profile-schemas`, `tools/`, `tests/`, its CI (`.github/`), and `jobs/migration` for the Knowledge and MCP domain schemas (Knowledge's memory store migrates from Knowledge's own image). Control owns its migrations.
 
 Root `go.work` modules also build with `GOWORK=off`; TypeScript/Python are separate packages. [Delivery records](docs/architecture/delivery.md#unit-status-records) own unit status; the [README summary](README.md#unit-status) is generated.
 
@@ -48,7 +48,7 @@ Preserve the generated markers; use `tools/docs-status.py` for authorized regene
 
 Work in the primary checkout: untracked task inputs can be absent from a worktree. Check `.gitignore` for exclusions, including `docs/archive/`, `outputs/`, `logs/`, `.local/`, and build caches.
 
-**Legacy boundary:** `deploy/local/`, `compose.yaml`, and `tools/prepare-local-compose.py` belong to `anvilkit-local`. Its API/Control/Workflow use legacy images and `.local/legacy/` worktrees; legacy contracts/tools live under `docs/archive/`. Handover is incomplete: P24 was rehearsed on 2026-10-03, business-owner confirmation pending; P24b requires P23 qualification and execution authorization ([record](docs/architecture/delivery.md#verification-forty-first-pass)).
+**Legacy boundary:** `deploy/local/`, `compose.yaml`, and `tools/prepare-local-compose.py` belong to `anvilkit-local`. Its API/Control/Workflow use legacy images and `.local/legacy/` worktrees; its legacy contracts/tools lived under `docs/archive/`, absent from the checkout since 2026-11-02, so its PostgreSQL mounts (`compose.yaml:28-30`) cannot be satisfied as is. Handover is incomplete: P24 was rehearsed on 2026-10-03, business-owner confirmation pending; P24b requires P23 qualification and execution authorization ([record](docs/architecture/delivery.md#verification-forty-first-pass)).
 
 ## 3. Task scope and the user's work
 
@@ -60,7 +60,7 @@ Work in the primary checkout: untracked task inputs can be absent from a worktre
 
 ## 4. Git is read-only
 
-- Never `git commit`, `git push`, or open a PR unless the user explicitly asks in that message (commit/push may also be hook-blocked — a block is the policy working, not an obstacle to route around). Default: leave changes uncommitted and report modified files, flagging those inside submodules and nested repositories (`contracts/`, `services/agent/{api,control,workflow}`).
+- Never `git commit`, `git push`, or open a PR unless the user explicitly asks in that message (commit/push may also be hook-blocked — a block is the policy working, not an obstacle to route around). Default: leave changes uncommitted and report modified files, flagging those inside submodules (the fourteen paths of the [§2 table](#2-repository-state); `git submodule status`).
 - Never stage, amend, rebase, merge, cherry-pick, reset, clean, tag, switch branches, register or change submodules (`git submodule add/update/sync`, `.gitmodules`) or publish a package unless asked for that exact action. Never force-push, never push `main`. Read-only git is always fine. Prepare such operations locally and present their concrete targets for authorization.
 - Never run `tools/release-train.py run`: it commits, tags, pushes and dispatches in the owner's name. Agents may run its `plan`, `--self-test` and `--replay` (DEC-035).
 - Never publish, deploy, or send anything to an external service without task authorization.
@@ -102,7 +102,9 @@ Use the pinned CPython 3.12 interpreter `.local/verification-venv/bin/python` fo
 
 | Task | Check |
 | --- | --- |
-| Repository documentation, the published runbooks (`deploy/runbooks/`) and the alerts' runbook links | `tools/check-docs.py` with the pinned interpreter; read-only, current baseline, required inputs must be present |
+| Repository documentation, the published runbooks (`deploy/runbooks/`) and the alerts' runbook links | `tools/check-docs.py` with the pinned interpreter; read-only, current baseline, required inputs must be present. Its scope is the root documents, `deploy/runbooks/`, `docs/README.md`, `docs/architecture/` and `docs/operations/`: the other `deploy/` READMEs (`deploy/compose/README.md` among them) have no automated check, so re-read them against the code they describe |
+| Admission, seccomp or network policy (`deploy/policies/`) | `sh deploy/policies/check.sh` offline (the parent CI's `policies` job); a `fixtures rendered-equals-committed` failure with stale Knowledge `node_modules` is the known local trap, not the change |
+| Compose alert rules (`deploy/compose/alerts.py`, its timer) | `deploy/compose/alerts.py --self-test` (the parent CI's `alerts` job, which also runs promtool on the chart rules) |
 | Project memory files (`docs/{SESSION_SUMMARY,HANDOFF,BLOCKERS,DECISIONS,ROADMAP}.md`, `docs/operations/compose/`) | `tools/check-memory.py` with the pinned interpreter; read-only; `--self-test` proves its rules; `UNEXECUTED` without `docs/` |
 | Contracts repository | In `contracts/`, `sh tools/verification-env.sh`: checks, generation `--check`, Go with `GOWORK=off`, TypeScript, Python; reads only that repository |
 | Parent contract integration | `tools/check-contracts.py` and `tools/generate-contracts.py --check` with the pinned interpreter; delegates to contracts, compares the services' verbatim fixture copies with their contracts source, and checks Control's sqlc |
@@ -168,7 +170,7 @@ When work depends on readiness, isolation, qualification, or retirement, inspect
 
 - **Trust:** Service inventory remains `DEVELOPMENT_ONLY`; P0.1/P0.3 use development SPIFFE PKI and a disposable OIDC IdP. Production CA/IdP inputs ENV-03/ENV-07 remain pending.
 - **Environment:** [P0 closeout](docs/architecture/delivery.md#verification-p0-closeout) records control-plane/Valkey failures and an unapplied PostgreSQL TLS rejection fix. NetworkPolicy evidence is from the Cilium stand-in; kindnet does not enforce it. OTLP remains development-labelled; `rehearse.py install-check` awaits passing from-zero evidence.
-- **Isolation:** `validator-source-v1` and candidate-code profiles stay disabled until gVisor qualifies (G-04); Chromium's development seccomp fallback does not qualify isolation.
+- **Isolation:** `codegen-team-v1` and `validator-source-v1` are enabled only on the DEVELOPMENT_ONLY Compose Jobs node under gVisor (DEC-044, DEC-045); `codegen-fixed-v1`, `preview-build-v1` and `parser-docling-v1` stay disabled. None of this qualifies isolation (G-04 `NOT_RUN`), and Chromium's development seccomp fallback does not either.
 - **Reproducibility:** Parent replacement inputs need acceptance from a clean recursive clone after authorized commit/push. Legacy `anvilkit-local` remains until P24b; rehearsal does not authorize retirement.
 - **Qualification:** Every G gate remains `NOT_RUN` until its required evidence is recorded.
 
