@@ -16,8 +16,8 @@ Memory rules (each failure names the file and the rule):
              appended diary (AGENTS.md 11.3).
   budget     SESSION_SUMMARY and HANDOFF at most 16000 bytes, ROADMAP at most 20000,
              BLOCKERS' active part (before `# Resolution History`) at most 24000. Over
-             budget means: condense at the owner or move history to its evidence record
-             or docs/archive/memory/; never drop a constraint to fit.
+             budget means: condense at the owner or move history to its evidence record;
+             never drop a constraint to fit.
   resume     SESSION_SUMMARY has one `# Resume` section with the labels Objective,
              Authorized scope, Stopping point, Uncommitted work, External operations,
              Pending checks, and a `## Verified state` table.
@@ -121,7 +121,7 @@ def check_memory(root: pathlib.Path, mod) -> list[str]:
             failures.append(f"{rel}: header rule: line 2 must be `Last Updated: <UTC minute>` (one short parenthesis at most, {HEADER_MAX} characters at most), not an appended diary")
         size = len(text.encode("utf-8"))
         if rel in BUDGETS and size > BUDGETS[rel]:
-            failures.append(f"{rel}: budget rule: {size} bytes exceeds {BUDGETS[rel]}; condense at the owner or move history to its evidence record or docs/archive/memory/")
+            failures.append(f"{rel}: budget rule: {size} bytes exceeds {BUDGETS[rel]}; condense at the owner or move history to its evidence record")
 
     ss = texts["docs/SESSION_SUMMARY.md"]
     if len(re.findall(r"^# Resume\s*$", ss, flags=re.M)) != 1:
