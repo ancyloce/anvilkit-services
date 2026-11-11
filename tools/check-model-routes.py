@@ -118,8 +118,8 @@ def self_test() -> int:
                 failures.append(f"{why}: no {rule} failure")
             (base / rel).write_text(text)
 
-        mutated(WORKFLOW, "    max_output_tokens: 4096\n", "", "brief", "the Compose Workflow without its Preparation cap (B1 run 4)")
-        mutated(PROXY, "    max_output_tokens: 4096", "    max_output_tokens: 2048", "tokens", "a Proxy bound below team.yaml route.maxTokens")
+        mutated(WORKFLOW, "    max_output_tokens: 8192\n", "", "brief", "the Compose Workflow without its Preparation cap (B1 run 4)")
+        mutated(PROXY, "    max_output_tokens: 8192", "    max_output_tokens: 4096", "tokens", "a Proxy bound below team.yaml route.maxTokens")
         mutated(TEAM, 'exposurePerSend: "1000000"', 'exposurePerSend: "2000000"', "exposure", "team.yaml reserving another exposure")
         mutated(PROXY, "  enabled: true\n  health_probe:", "  enabled: false\n  health_probe:", "route", "the team's route disabled")
     for f in failures:
