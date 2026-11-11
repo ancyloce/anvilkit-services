@@ -135,6 +135,14 @@ def blob_of(cwd: str, text: str) -> str:
     return git("hash-object", "--stdin", cwd=cwd, stdin=text)
 
 
+def documentation_only(paths: list[str]) -> bool:
+    """True when every changed path is Markdown documentation, which no contract consumer reads.
+    Such commits may sit between the base go/v tag and contracts' main and ride along into the
+    train's go/v tag; anything else is an unreleased contract change (2026-11-11: go/v0.1.36 plus
+    a README commit blocked the Puck 0.24.0 train)."""
+    return all(p.endswith(".md") for p in paths)
+
+
 def gitlink(rev: str, path: str) -> str | None:
     entry = git("ls-tree", rev, path).split()
     return entry[2] if len(entry) >= 3 and entry[1] == "commit" else None
@@ -560,8 +568,21 @@ def make_plan(images: list[str], at: str | None) -> tuple[dict, list[tuple[str, 
         base = latest_tag("go/v", contracts_tags)
         plan["contracts"] = {"tag": next_tag("go/v", list(contracts_tags)), "base": base, "baseCommit": contracts_tags[base]}
         c_main = remote_refs(CONTRACTS, "refs/heads/main")["refs/heads/main"]
-        checks.append(("OK" if c_main == contracts_tags[base] else "BLOCKED",
-                       f"contracts: origin/main {c_main[:12]} is {base} (no unreleased contract change rides along)"))
+        if c_main == contracts_tags[base]:
+            checks.append(("OK", f"contracts: origin/main {c_main[:12]} is {base} (no unreleased contract change rides along)"))
+        else:
+            p = run(["git", "diff", "--name-only", contracts_tags[base], c_main], CONTRACTS)
+            drift = p.stdout.split() if p.returncode == 0 else None
+            if drift is not None and documentation_only(drift):
+                checks.append(("OK", f"contracts: origin/main {c_main[:12]} is {base} plus documentation only "
+                                     f"({', '.join(drift)}), which rides along into {plan['contracts']['tag']}"))
+            elif drift is None:
+                checks.append(("BLOCKED", f"contracts: origin/main {c_main[:12]} is past {base} and not in the local objects; "
+                                          "fetch contracts and plan again"))
+            else:
+                changes = [f for f in drift if not documentation_only([f])]
+                checks.append(("BLOCKED", f"contracts: origin/main {c_main[:12]} is past {base} with unreleased contract changes "
+                                          f"({', '.join(changes[:5])}); release or revert them first"))
         profiles = show(CONTRACTS, contracts_tags[base], PROFILE_COPIES[0])
         try:
             _, _, revisions = repin_profiles(profiles, {i: "sha256:" + "0" * 64 for i in images})
@@ -718,9 +739,14 @@ class Train:
         git("fetch", "--quiet", "origin", cwd=CONTRACTS)
         main = git("rev-parse", "origin/main", cwd=CONTRACTS)
         if main != c["baseCommit"]:
-            # Only this train's re-pin may sit between the base tag and origin/main.
-            other = set(git("diff", "--name-only", c["baseCommit"], main, cwd=CONTRACTS).splitlines()) - set(PROFILE_COPIES)
-            if other or any(blob_at(CONTRACTS, main, f) != blob_of(CONTRACTS, text) for f in PROFILE_COPIES):
+            # Between the base tag and origin/main may sit only documentation (it rides along into the
+            # new tag) and, on a resumed run, this train's own re-pin; the profile copies are then either
+            # untouched or already re-pinned.
+            changed = git("diff", "--name-only", c["baseCommit"], main, cwd=CONTRACTS).splitlines()
+            other = {f for f in changed if f not in PROFILE_COPIES and not documentation_only([f])}
+            repinned = all(blob_at(CONTRACTS, main, f) == blob_of(CONTRACTS, text) for f in PROFILE_COPIES)
+            untouched = all(blob_at(CONTRACTS, main, f) == blob_at(CONTRACTS, c["baseCommit"], f) for f in PROFILE_COPIES)
+            if other or not (repinned or untouched):
                 raise Stop(f"contracts: origin/main {main[:12]} moved past {c['base']} with other changes ({sorted(other)[:3]}); "
                            "release or revert them first")
         message = (f"✨ feat: re-pin the Job profiles to the images of {', '.join(j['tag'] for j in self.plan['jobs'])}\n\n"
@@ -905,6 +931,9 @@ def self_test() -> int:
     cases.append(("next patch tag", next_tag("jobs-v", ["jobs-v0.1.9", "jobs-v0.1.15", "v0.2.0"]) == "jobs-v0.1.16"))
     cases.append(("next release tag ignores other prefixes", next_tag("v", ["v0.1.12", "jobs-v0.9.0", "go/v1.0.0"]) == "v0.1.13"))
     cases.append(("next go tag", next_tag("go/v", ["go/v0.1.24", "go/v0.1.3"]) == "go/v0.1.25"))
+    cases.append(("contracts drift of Markdown only rides along", documentation_only(["README.md", "go/README.md"])))
+    cases.append(("contracts drift with a contract file does not", not documentation_only(["README.md", "jobs/profiles.json"])))
+    cases.append(("no contracts drift is no drift", documentation_only([])))
     profiles = json.dumps({"schemaVersion": 1, "profiles": [
         {"profileId": "team-dev", "revision": "18", "image": {"repository": TEAM_IMAGE, "digest": d["a"]},
          "sidecarImage": {"repository": "anvilkit-job-access-sidecar", "digest": d["c"]}},
