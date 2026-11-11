@@ -558,7 +558,7 @@ try {
 		// A dependency outside the build-support profile: the validator's
 		// source contract refuses it (CANDIDATE_BUILD_FAILED, repairable by
 		// the profile's map) before any build; the repair round rewrites it.
-		broken := map[string]string{"package.json": `{"name":"@anvilkit/hero-fixed","version":"1.0.0","description":"Reviewed fixed Hero component of the P10 certification chain (DEVELOPMENT fixture).","license":"MIT","dependencies":{"@puckeditor/core":"0.23.0","react":"19.3.0","left-pad":"1.3.0"}}` + "\n"}
+		broken := map[string]string{"package.json": `{"name":"@anvilkit/hero-fixed","version":"1.0.0","description":"Reviewed fixed Hero component of the P10 certification chain (DEVELOPMENT fixture).","license":"MIT","dependencies":{"@puckeditor/core":"0.24.0","react":"19.3.0","left-pad":"1.3.0"}}` + "\n"}
 		script := heroWritesWith(t, root, broken)
 		up.next(script...)
 		before := up.receives.Load()

@@ -355,7 +355,7 @@ func helloCardPlan(title string) string {
 Plan:
 1. component.json with exactly these members and no others:
    {"schemaVersion":1,"componentId":"cmp_hello_card_smoke","puckType":"HelloCard","entry":"src/index.tsx","styles":["styles/hello-card.css"],"resources":[],"usage":"README.md","editableFields":[{"name":"title","type":"text","default":"` + title + `"}]}
-2. package.json with exactly the members name, version, description, license and dependencies: name "@anvilkit/hello-card-smoke", version "1.0.0", license "MIT", a one-sentence description, dependencies exactly {"@puckeditor/core":"0.23.0","react":"19.3.0"} (exact versions, nothing else, no scripts).
+2. package.json with exactly the members name, version, description, license and dependencies: name "@anvilkit/hello-card-smoke", version "1.0.0", license "MIT", a one-sentence description, dependencies exactly {"@puckeditor/core":"0.24.0","react":"19.3.0"} (exact versions, nothing else, no scripts).
 3. pnpm-lock.yaml with exactly this content (the pinned build configuration):
 lockfileVersion: '9.0'
 
@@ -368,8 +368,8 @@ importers:
   .:
     dependencies:
       '@puckeditor/core':
-        specifier: 0.23.0
-        version: 0.23.0
+        specifier: 0.24.0
+        version: 0.24.0
       react:
         specifier: 19.3.0
         version: 19.3.0
@@ -754,8 +754,8 @@ func scriptFixtureCoder(t *testing.T, up *modelUpstream, title string) {
 	t.Helper()
 	files := [][2]string{
 		{"component.json", `{"schemaVersion":1,"componentId":"cmp_hello_card_smoke","puckType":"HelloCard","entry":"src/index.tsx","styles":["styles/hello-card.css"],"resources":[],"usage":"README.md","editableFields":[{"name":"title","type":"text","default":"` + title + `"}]}` + "\n"},
-		{"package.json", `{"name":"@anvilkit/hello-card-smoke","version":"1.0.0","description":"Fixture HelloCard of the smoke dry run.","license":"MIT","dependencies":{"@puckeditor/core":"0.23.0","react":"19.3.0"}}` + "\n"},
-		{"pnpm-lock.yaml", "lockfileVersion: '9.0'\n\nsettings:\n  autoInstallPeers: true\n  excludeLinksFromLockfile: false\n\nimporters:\n\n  .:\n    dependencies:\n      '@puckeditor/core':\n        specifier: 0.23.0\n        version: 0.23.0\n      react:\n        specifier: 19.3.0\n        version: 19.3.0\n"},
+		{"package.json", `{"name":"@anvilkit/hello-card-smoke","version":"1.0.0","description":"Fixture HelloCard of the smoke dry run.","license":"MIT","dependencies":{"@puckeditor/core":"0.24.0","react":"19.3.0"}}` + "\n"},
+		{"pnpm-lock.yaml", "lockfileVersion: '9.0'\n\nsettings:\n  autoInstallPeers: true\n  excludeLinksFromLockfile: false\n\nimporters:\n\n  .:\n    dependencies:\n      '@puckeditor/core':\n        specifier: 0.24.0\n        version: 0.24.0\n      react:\n        specifier: 19.3.0\n        version: 19.3.0\n"},
 		{"README.md", "# HelloCard\n\nThe default export is the Puck ComponentConfig; load styles/hello-card.css before importing the module.\n"},
 		{"src/hello-card.tsx", "export interface HelloCardProps {\n\ttitle: string;\n}\n\nexport function HelloCard({ title }: HelloCardProps) {\n\treturn (\n\t\t<section className=\"ak-hello-card\" data-anvilkit-component=\"HelloCard\">\n\t\t\t<h2 className=\"ak-hello-card__title\">{title}</h2>\n\t\t</section>\n\t);\n}\n"},
 		{"src/index.tsx", "import type { ComponentConfig } from \"@puckeditor/core\";\nimport { HelloCard, type HelloCardProps } from \"./hello-card\";\n\nexport const config: ComponentConfig<HelloCardProps> = {\n\tlabel: \"HelloCard\",\n\tfields: { title: { type: \"text\" } },\n\tdefaultProps: { title: \"" + title + "\" },\n\trender: ({ title }) => <HelloCard title={title} />,\n};\n\nexport { HelloCard };\nexport type { HelloCardProps };\nexport default config;\n"},
