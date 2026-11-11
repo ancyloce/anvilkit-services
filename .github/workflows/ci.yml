@@ -109,7 +109,17 @@ jobs:
         working-directory: jobs/validator
         run: |
           pnpm install --frozen-lockfile
-          pnpm exec playwright install --with-deps chromium-headless-shell
+          pnpm exec playwright install chromium-headless-shell
+          # The browser comes from Playwright's CDN, its system packages from
+          # Ubuntu's archive. When the hosted runner cannot reach the archive
+          # (2026-11-11: every *.ubuntu.com mirror failed to resolve while
+          # packages.microsoft.com answered), retry, then continue on the runner
+          # image's preinstalled Chrome libraries: the browser tests decide.
+          for attempt in 1 2 3; do
+            pnpm exec playwright install-deps chromium-headless-shell && break
+            echo "::warning::playwright install-deps failed (attempt $attempt of 3): Ubuntu archive unreachable"
+            [ "$attempt" = 3 ] || sleep 30
+          done
       # Decision D-6 (a): a FAIL (exit 1) fails the job; exit 2 (a step PARTIAL or
       # UNEXECUTED: the Docker-backed and root-only units --static omits, the
       # local-only docs/) passes the job with a warning annotation, and the job
