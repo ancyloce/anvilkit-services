@@ -37,13 +37,13 @@ spec:
         - name: ANVILKIT_ATTEMPT_ID
           value: att_policy
         - name: ANVILKIT_LAUNCH_ENVELOPE
-          value: '{"attemptId":"att_policy","component":{"componentId":"cmp_policy","packageName":"@anvilkit/hero-policy","puckType":"Hero","sourceRevision":"3"},"deadline":"2026-09-16T12:10:00Z","executionEpoch":"1","inputs":[{"digest":"sha256:5555555555555555555555555555555555555555555555555555555555555555","handle":"h_policy_source","name":"source"}],"jobKind":"codegen","launchEpoch":"1","launchId":"lch_policy","launchKey":"policy-codegen-team-v1","operationId":"op_policy","profileId":"codegen-team-v1","profileRevision":"21","schemaVersion":1}'
+          value: '{"attemptId":"att_policy","component":{"componentId":"cmp_policy","packageName":"@anvilkit/hero-policy","puckType":"Hero","sourceRevision":"3"},"deadline":"2026-09-16T12:10:00Z","executionEpoch":"1","inputs":[{"digest":"sha256:5555555555555555555555555555555555555555555555555555555555555555","handle":"h_policy_source","name":"source"}],"jobKind":"codegen","launchEpoch":"1","launchId":"lch_policy","launchKey":"policy-codegen-team-v1","operationId":"op_policy","profileId":"codegen-team-v1","profileRevision":"22","schemaVersion":1}'
         - name: ANVILKIT_LAUNCH_SECRET
           valueFrom:
             secretKeyRef:
               key: launch-secret
               name: policy-codegen-team-v1
-        image: localhost:5001/anvilkit-codegen-team@sha256:a349deabf69850b2d3e5d5b99404711921df302f879697fcd0553aca2deb4339
+        image: localhost:5001/anvilkit-codegen-team@sha256:b772f92c75a986051f017bb78b40e17b3b859424ee7082d2e5a93f1bdbec3701
         name: supervisor
         resources:
           limits:
@@ -92,7 +92,7 @@ spec:
               apiVersion: v1
               fieldPath: metadata.uid
         - name: ANVILKIT_SIDECAR_LAUNCH_ENVELOPE
-          value: '{"attemptId":"att_policy","component":{"componentId":"cmp_policy","packageName":"@anvilkit/hero-policy","puckType":"Hero","sourceRevision":"3"},"deadline":"2026-09-16T12:10:00Z","executionEpoch":"1","inputs":[{"digest":"sha256:5555555555555555555555555555555555555555555555555555555555555555","handle":"h_policy_source","name":"source"}],"jobKind":"codegen","launchEpoch":"1","launchId":"lch_policy","launchKey":"policy-codegen-team-v1","operationId":"op_policy","profileId":"codegen-team-v1","profileRevision":"21","schemaVersion":1}'
+          value: '{"attemptId":"att_policy","component":{"componentId":"cmp_policy","packageName":"@anvilkit/hero-policy","puckType":"Hero","sourceRevision":"3"},"deadline":"2026-09-16T12:10:00Z","executionEpoch":"1","inputs":[{"digest":"sha256:5555555555555555555555555555555555555555555555555555555555555555","handle":"h_policy_source","name":"source"}],"jobKind":"codegen","launchEpoch":"1","launchId":"lch_policy","launchKey":"policy-codegen-team-v1","operationId":"op_policy","profileId":"codegen-team-v1","profileRevision":"22","schemaVersion":1}'
         - name: ANVILKIT_SIDECAR_LAUNCH_SECRET
           valueFrom:
             secretKeyRef:
