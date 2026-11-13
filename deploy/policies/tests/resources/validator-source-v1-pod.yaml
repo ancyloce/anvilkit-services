@@ -23,13 +23,13 @@ spec:
     - name: ANVILKIT_ATTEMPT_ID
       value: att_policy
     - name: ANVILKIT_LAUNCH_ENVELOPE
-      value: '{"attemptId":"att_policy","component":{"componentId":"cmp_policy","packageName":"@anvilkit/hero-policy","puckType":"Hero","sourceRevision":"3"},"deadline":"2026-09-16T12:10:00Z","executionEpoch":"1","inputs":[{"digest":"sha256:5555555555555555555555555555555555555555555555555555555555555555","handle":"h_policy_source","name":"source"}],"jobKind":"validator","launchEpoch":"1","launchId":"lch_policy","launchKey":"policy-validator-source-v1","operationId":"op_policy","profileId":"validator-source-v1","profileRevision":"16","schemaVersion":1}'
+      value: '{"attemptId":"att_policy","component":{"componentId":"cmp_policy","packageName":"@anvilkit/hero-policy","puckType":"Hero","sourceRevision":"3"},"deadline":"2026-09-16T12:10:00Z","executionEpoch":"1","inputs":[{"digest":"sha256:5555555555555555555555555555555555555555555555555555555555555555","handle":"h_policy_source","name":"source"}],"jobKind":"validator","launchEpoch":"1","launchId":"lch_policy","launchKey":"policy-validator-source-v1","operationId":"op_policy","profileId":"validator-source-v1","profileRevision":"17","schemaVersion":1}'
     - name: ANVILKIT_LAUNCH_SECRET
       valueFrom:
         secretKeyRef:
           key: launch-secret
           name: policy-validator-source-v1
-    image: localhost:5001/anvilkit-job-validator@sha256:d6dfa02524b947d51bdace3246429924a2c9e54c9f2fac364f401cf7f978ec79
+    image: localhost:5001/anvilkit-job-validator@sha256:948a8ea28e146e34bcb47ef3dfc7825d8d43eaed0382eac2fbf891411a2b7a2b
     name: supervisor
     resources:
       limits:
@@ -78,7 +78,7 @@ spec:
           apiVersion: v1
           fieldPath: metadata.uid
     - name: ANVILKIT_SIDECAR_LAUNCH_ENVELOPE
-      value: '{"attemptId":"att_policy","component":{"componentId":"cmp_policy","packageName":"@anvilkit/hero-policy","puckType":"Hero","sourceRevision":"3"},"deadline":"2026-09-16T12:10:00Z","executionEpoch":"1","inputs":[{"digest":"sha256:5555555555555555555555555555555555555555555555555555555555555555","handle":"h_policy_source","name":"source"}],"jobKind":"validator","launchEpoch":"1","launchId":"lch_policy","launchKey":"policy-validator-source-v1","operationId":"op_policy","profileId":"validator-source-v1","profileRevision":"16","schemaVersion":1}'
+      value: '{"attemptId":"att_policy","component":{"componentId":"cmp_policy","packageName":"@anvilkit/hero-policy","puckType":"Hero","sourceRevision":"3"},"deadline":"2026-09-16T12:10:00Z","executionEpoch":"1","inputs":[{"digest":"sha256:5555555555555555555555555555555555555555555555555555555555555555","handle":"h_policy_source","name":"source"}],"jobKind":"validator","launchEpoch":"1","launchId":"lch_policy","launchKey":"policy-validator-source-v1","operationId":"op_policy","profileId":"validator-source-v1","profileRevision":"17","schemaVersion":1}'
     - name: ANVILKIT_SIDECAR_LAUNCH_SECRET
       valueFrom:
         secretKeyRef:

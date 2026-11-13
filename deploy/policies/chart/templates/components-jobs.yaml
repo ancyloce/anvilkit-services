@@ -50,7 +50,7 @@ spec:
     - name: fixtureDigests
       expression: "['sha256:9db7b59979c38555a39def84a31fb98b5296952f9e3afd4f6f11f05b07adfab0']"
     - name: supervisorDigests
-      expression: "['sha256:d7b3821e89c9f02f8779cbe97ba823e8c810660462db26cf34eddf545ef7a56e', 'sha256:d6dfa02524b947d51bdace3246429924a2c9e54c9f2fac364f401cf7f978ec79', 'sha256:735d0f3858e99de55a8dcf1eb4fd372ec4254ce055629d03fae0e6ae1a411b53']"
+      expression: "['sha256:d7b3821e89c9f02f8779cbe97ba823e8c810660462db26cf34eddf545ef7a56e', 'sha256:948a8ea28e146e34bcb47ef3dfc7825d8d43eaed0382eac2fbf891411a2b7a2b', 'sha256:da38ff35d289614f28d6423145f0b12355505956622a8892bdc34939c785597a']"
     - name: sidecarDigests
       expression: "['sha256:e43ed27ab2fae4d865067d09b1c07043288d79ac1d73fc75400025a3be52c044']"
     - name: supervisorEnv
@@ -99,9 +99,9 @@ spec:
     # twin codegen-team-dev-v1 currently pin the same CI-published image; they
     # may diverge again, so each keeps its own variable.
     - name: teamDigest
-      expression: "'sha256:735d0f3858e99de55a8dcf1eb4fd372ec4254ce055629d03fae0e6ae1a411b53'"
+      expression: "'sha256:da38ff35d289614f28d6423145f0b12355505956622a8892bdc34939c785597a'"
     - name: teamDevDigest
-      expression: "'sha256:735d0f3858e99de55a8dcf1eb4fd372ec4254ce055629d03fae0e6ae1a411b53'"
+      expression: "'sha256:da38ff35d289614f28d6423145f0b12355505956622a8892bdc34939c785597a'"
     # P0.8: the development-state candidate profiles this environment admits
     # without the gVisor RuntimeClass (DEVELOPMENT_ONLY; empty elsewhere).
     - name: developmentProfiles
@@ -109,7 +109,7 @@ spec:
     - name: validatorCommand
       expression: "['/usr/local/bin/node', '/anvilkit/validator/dist/job.js']"
     - name: validatorDigest
-      expression: "'sha256:d6dfa02524b947d51bdace3246429924a2c9e54c9f2fac364f401cf7f978ec79'"
+      expression: "'sha256:948a8ea28e146e34bcb47ef3dfc7825d8d43eaed0382eac2fbf891411a2b7a2b'"
     # The access sidecar's workload certificate (P0.1): the one Secret volume
     # a harness Pod carries, mounted read-only into the sidecar alone.
     - name: sidecarIdentitySecret
