@@ -4,6 +4,13 @@
 rule_files:
 - rules.yaml
 evaluation_interval: 1m
+# The recording rules' group first at every evaluation time: promtool guarantees the
+# order only for the groups listed here. Without it an alert on a recorded series fed
+# every 10 minutes saw no data whenever its group ran first (Prometheus 3's lookback
+# is left-open), and the stale-probe case failed intermittently in CI (2026-11-12).
+group_eval_order:
+- anvilkit-slo
+- anvilkit-alerts
 tests:
 - name: API error ratio above the bound for 10 minutes
   interval: 1m
