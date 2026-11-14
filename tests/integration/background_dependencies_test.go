@@ -48,7 +48,7 @@ func laneDependencies(t *testing.T, root string) (map[string]string, func(), *la
 	}
 	// The server key re-installed for the postgres user (it refuses a key
 	// others can read), TLS on and pg_hba refusing every non-TLS connection.
-	pgc, err := postgres.Run(ctx, "postgres:17-alpine", postgres.WithDatabase("postgres"), postgres.WithUsername("postgres"), postgres.WithPassword("disposable"), postgres.BasicWaitStrategies(), testcontainers.WithLabels(map[string]string{"anvilkit.test.owner": owner}),
+	pgc, err := postgres.Run(ctx, "postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73", postgres.WithDatabase("postgres"), postgres.WithUsername("postgres"), postgres.WithPassword("disposable"), postgres.BasicWaitStrategies(), testcontainers.WithLabels(map[string]string{"anvilkit.test.owner": owner}),
 		testcontainers.WithFiles(dp.files()...),
 		testcontainers.WithEntrypoint("sh", "-c", `install -o postgres -g postgres -m 0600 /tls/tls.key /var/lib/postgresql/tls.key && install -o postgres -g postgres -m 0644 /tls/tls.crt /var/lib/postgresql/tls.crt && install -o postgres -g postgres -m 0644 /tls/pg_hba.conf /var/lib/postgresql/pg_hba.conf && exec docker-entrypoint.sh "$@" -c ssl=on -c ssl_cert_file=/var/lib/postgresql/tls.crt -c ssl_key_file=/var/lib/postgresql/tls.key -c hba_file=/var/lib/postgresql/pg_hba.conf`, "sh"))
 	require.NoError(t, err)
@@ -108,14 +108,14 @@ func laneDependencies(t *testing.T, root string) (map[string]string, func(), *la
 		return c
 	}
 	// Valkey: TLS on the only port, the default user off, one ACL user per role.
-	queue := start("valkey/valkey:9.0.2-alpine", "6379/tcp", []string{"valkey-server", "--port", "0", "--tls-port", "6379", "--tls-cert-file", "/tls/tls.crt", "--tls-key-file", "/tls/tls.key",
+	queue := start("valkey/valkey:9.0.2-alpine@sha256:68677f85c863830af7836ff07c4a13b7f085ebeff62f4dedb71499ca27d229f2", "6379/tcp", []string{"valkey-server", "--port", "0", "--tls-port", "6379", "--tls-cert-file", "/tls/tls.crt", "--tls-key-file", "/tls/tls.key",
 		"--tls-ca-cert-file", "/tls/ca.crt", "--tls-auth-clients", "no", "--aclfile", "/tls/users.acl"}, "Ready to accept connections")
 	endpoint, err := queue.Endpoint(ctx, "")
 	require.NoError(t, err)
 	dp.queue, dp.queueEndpoint = queue, endpoint
 	env["ANVILKIT_DEV_QUEUE_CA_FILE"] = dp.ca
 	// NATS: TLS only, NKey users with per-role subject permissions.
-	broker := start("nats:2.12.4-alpine", "4222/tcp", []string{"-c", "/tls/nats.conf"}, "Server is ready")
+	broker := start("nats:2.12.4-alpine@sha256:31c6ed3b2da61645aaa3ad9217b5a52b34b6ebd555ecb71259cd7723c59ae1ea", "4222/tcp", []string{"-c", "/tls/nats.conf"}, "Server is ready")
 	endpoint, err = broker.Endpoint(ctx, "")
 	require.NoError(t, err)
 	dp.natsURL = "tls://" + endpoint

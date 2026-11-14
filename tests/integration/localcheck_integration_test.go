@@ -106,12 +106,6 @@ type env struct {
 	t        *testing.T
 }
 
-func repoRoot(t *testing.T) string {
-	wd, err := os.Getwd()
-	require.NoError(t, err)
-	return filepath.Clean(filepath.Join(wd, "..", ".."))
-}
-
 var integrationPort atomic.Uint32
 
 // freePort picks a loopback port outside Linux's ephemeral client-port range.

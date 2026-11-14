@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "registryRevision": "19",
+  "registryRevision": "20",
   "description": "P22 requirement traceability (delivery.md P22): every M1, CAP and SEC requirement maps to executable cases and to explicit NOT_RUN entries naming what is missing. A case binds its suite, selector, the reviewed profiles it exercises, its time budget and the gates it contributes evidence to; contributing evidence never closes a gate. tools/run-evaluation.py checks, runs and reports it.",
   "requirements": {
     "M1": [
@@ -314,8 +314,7 @@
     "integration-offline": {
       "runner": "go",
       "dir": "tests/integration",
-      "tags": "integration",
-      "description": "Integration-tagged checks that need no foundation (the RAG quality bounds' check on recorded and degraded measurements)"
+      "description": "Offline checks in the integration module that need no foundation and no build tag (the RAG quality bounds' check on recorded and degraded measurements; the chain's go step runs them too)"
     },
     "model-proxy-stress": {
       "runner": "command",
@@ -591,14 +590,13 @@
       "suite": "integration",
       "run": "TestArtifactTransfer|TestArtifactAcceptance",
       "requirements": [],
-      "sec": [
-        "SEC-03"
-      ],
+      "sec": [],
       "gates": [
         "G-02"
       ],
       "profiles": [],
-      "budget": "20m"
+      "budget": "20m",
+      "unmapped": "API-12 artifact transfer and Control's acceptance of a transfer-bound result on the foundation (forged handles, stale epochs, wrong digests refused); no subtest asserts a SEC-03 boundary (secret reads, trusted-socket access, verdict tampering, PID/fd transfer), so it maps no requirement; supporting G-02 evidence."
     },
     {
       "id": "IT-HARNESS",
@@ -1979,7 +1977,7 @@
       "missing": [
         "ENV-06"
       ],
-      "reason": "Credits versus actual spend is unimplemented: the cost-entry kind credit is declared (services/agent/control/internal/domain/budget.go:420, migrate/sql/00001_init.sql:238) but nothing writes or asserts it, and the credit model (kind, defaults, limits, relation to the USD caps) is an owner decision (RB-A13). Real prices and caps need ENV-06.",
+      "reason": "Credits versus actual spend is unimplemented: the cost-entry kind credit is declared (services/agent/control/internal/domain/budget.go:420, services/agent/control/internal/migrate/sql/00001_init.sql:238) but nothing writes or asserts it, and the credit model (kind, defaults, limits, relation to the USD caps) is an owner decision (RB-A13). Real prices and caps need ENV-06.",
       "gates": [
         "G-02",
         "G-03"
@@ -2159,7 +2157,7 @@
     "M1-08": "Activation against the real Pagix catalog/receipts needs ENV-07.",
     "M1-09": "Qualified Studio host/page API and resource origin (ENV-08, NR-STUDIO-HOST).",
     "M1-10": "Old-page round trip on the real Studio host (ENV-08) and page-lock handover (G-13).",
-    "M1-11": "Credits versus actual spend is untested: the cost-entry kind credit is declared (services/agent/control/internal/domain/budget.go:420, migrate/sql/00001_init.sql:238) but nothing writes or asserts it; real prices/caps need ENV-06.",
+    "M1-11": "Credits versus actual spend is untested: the cost-entry kind credit is declared (services/agent/control/internal/domain/budget.go:420, services/agent/control/internal/migrate/sql/00001_init.sql:238) but nothing writes or asserts it; real prices/caps need ENV-06.",
     "M1-12": "CNPG PITR with an independent DR inventory needs ENV-02/ENV-09 (G-14); TestPointInTimeRecovery (IT-PITR) uses a local Docker PostgreSQL with host-directory WAL (DEVELOPMENT_ONLY).",
     "M1-13": "Two Control replicas behind a Service on the S3 inventory and two Proxies on the S3 store under 2-way/8-way races (P3.4 AC3), and failure-domain recovery, need ENV-01/ENV-02 (G-14, NR-HA-DR).",
     "M1-14": "Hold/resume/definition change through the public API on a running Generation needs the candidate profiles enabled (ENV-01); Temporal SDK upgrade replay on a qualified environment (G-12, NR-FAILOVER).",
@@ -2189,19 +2187,19 @@
       {
         "case": "IT-LOCALCHECK",
         "name": "TestLocalCheckChain/submit,_observe_over_SSE,_one_accepted_result,_cleanup",
-        "file": "tests/integration/localcheck_integration_test.go:542",
+        "file": "tests/integration/localcheck_integration_test.go:536",
         "checks": "Tenant B's GET is 404, a reconnect with cursor 2 replays from event 3 only, and a cursor past coveredEventSeq yields reset_required."
       },
       {
         "case": "IT-LOCALCHECK",
         "name": "TestLocalCheckChain/duplicate_submission_returns_the_original_operation_and_starts_nothing_new",
-        "file": "tests/integration/localcheck_integration_test.go:602",
+        "file": "tests/integration/localcheck_integration_test.go:596",
         "checks": "The same commandId returns the original operationId, a different body is 409 IDEMPOTENCY_CONFLICT, one operations row and one accepted result."
       },
       {
         "case": "IT-LOCALCHECK",
         "name": "TestLocalCheckChain/cancel_while_the_Job_runs_fences_new_launches_and_ends_canceled_with_cleanup",
-        "file": "tests/integration/localcheck_integration_test.go:620",
+        "file": "tests/integration/localcheck_integration_test.go:614",
         "checks": "A cancel under expectedRevision on a running Job ends canceled/cancel_applied with cleanup complete and the Job gone."
       },
       {
@@ -2752,7 +2750,7 @@
       {
         "case": "IT-RETRIEVAL",
         "name": "TestRetrieval/a_revocation_applies_to_the_frozen_snapshot_and_a_deletion_to_every_generation",
-        "file": "tests/integration/retrieval_integration_test.go:631",
+        "file": "tests/integration/retrieval_integration_test.go:629",
         "checks": "An ACL narrowing hides the source on the next search and a deletion purges every generation."
       },
       {
@@ -2806,14 +2804,14 @@
       {
         "case": "IT-RETRIEVAL",
         "name": "TestRetrieval/the_corpus_is_parsed,_indexed_as_named_dense/sparse_points_and_accepted_in_the_index_generation",
-        "file": "tests/integration/retrieval_integration_test.go:232",
+        "file": "tests/integration/retrieval_integration_test.go:230",
         "checks": "The corpus is indexed as named dense/sparse points in an accepted generation.",
         "title": "the corpus is parsed, indexed as named dense/sparse points and accepted in the index generation"
       },
       {
         "case": "IT-RETRIEVAL",
         "name": "TestRetrieval/report:_no_unauthorized_disclosure,_verifiable_citations,_the_positive_control_answered",
-        "file": "tests/integration/retrieval_integration_test.go:422",
+        "file": "tests/integration/retrieval_integration_test.go:420",
         "checks": "Zero disclosures, every citation verifies, derived RAG thresholds hold."
       },
       {
@@ -2826,27 +2824,27 @@
       {
         "case": "U-RAG-THRESHOLDS",
         "name": "TestRAGThresholdsRefuseADegradedRun/a_degraded_index_whose_recall_drops_below_the_bound_fails",
-        "file": "tests/integration/rag_thresholds_test.go:99",
+        "file": "tests/integration/rag_thresholds_test.go:97",
         "checks": "A recall below the DEVELOPMENT_ONLY bound fails the evaluation (P3.4 AC6 negative)."
       },
       {
         "case": "U-RAG-THRESHOLDS",
         "name": "TestRAGThresholdsRefuseADegradedRun/the_recorded_development_measurements_meet_the_bounds",
-        "file": "tests/integration/rag_thresholds_test.go:96",
+        "file": "tests/integration/rag_thresholds_test.go:94",
         "checks": "The recorded development run meets the derived bounds."
       },
       {
         "case": "U-PARSER",
         "name": "run-verification --only parser",
         "title": "def step_parser",
-        "file": "tools/run-verification.py:468",
+        "file": "tools/run-verification.py:489",
         "checks": "Document parsing of the ingestion path inside the built parser image."
       },
       {
         "case": "U-INFERENCE",
         "name": "run-verification --only inference",
         "title": "def step_inference",
-        "file": "tools/run-verification.py:475",
+        "file": "tools/run-verification.py:496",
         "checks": "The Inference service's embedding and reranking units."
       },
       {
@@ -3215,19 +3213,19 @@
       {
         "case": "IT-RETRIEVAL",
         "name": "TestRetrieval/a_revocation_applies_to_the_frozen_snapshot_and_a_deletion_to_every_generation",
-        "file": "tests/integration/retrieval_integration_test.go:631",
+        "file": "tests/integration/retrieval_integration_test.go:629",
         "checks": "End to end on Qdrant: revoked source and its marker disappear from results."
       },
       {
         "case": "U-RAG-THRESHOLDS",
         "name": "TestRAGThresholdsRefuseADegradedRun/a_disclosure_or_an_invalid_citation_fails_whatever_the_recall",
-        "file": "tests/integration/rag_thresholds_test.go:107",
+        "file": "tests/integration/rag_thresholds_test.go:105",
         "checks": "Any unauthorized disclosure or invalid citation fails the evaluation regardless of recall."
       },
       {
         "case": "IT-RETRIEVAL",
         "name": "TestRetrieval/a_revocation_concurrent_with_searches:_no_search_begun_after_its_commit_discloses_the_source",
-        "file": "tests/integration/retrieval_integration_test.go:559",
+        "file": "tests/integration/retrieval_integration_test.go:557",
         "checks": "Revocation race at integration level: six concurrent searchers on Qdrant while the ACL revocation commits; no search begun after the commit returns the source (positive control before it).",
         "title": "a revocation concurrent with searches"
       }
@@ -3465,7 +3463,7 @@
         "case": "U-PARSER",
         "name": "run-verification --only parser",
         "title": "def step_parser",
-        "file": "tools/run-verification.py:468",
+        "file": "tools/run-verification.py:489",
         "checks": "The parser Job's malicious and oversized document tests inside the built image with no network."
       }
     ],

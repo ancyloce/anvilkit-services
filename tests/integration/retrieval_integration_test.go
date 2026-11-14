@@ -79,8 +79,6 @@ type ragCaseReport struct {
 	Stable  bool       `json:"sameCitationsInEveryTrial"`
 }
 
-func ragRoot(t *testing.T) string { return filepath.Join(repoRoot(t), "tests", "evals", "rag") }
-
 func loadCorpus(t *testing.T) (ragCorpus, string) {
 	raw, err := os.ReadFile(filepath.Join(ragRoot(t), "cases.json"))
 	require.NoError(t, err)

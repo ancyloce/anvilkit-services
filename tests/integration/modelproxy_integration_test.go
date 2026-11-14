@@ -1174,13 +1174,6 @@ func logTail(t *testing.T, path string, n int) string {
 	return strings.Join(lines, "\n")
 }
 
-func readLog(t *testing.T, p *proxyProcess) []byte {
-	t.Helper()
-	raw, err := os.ReadFile(filepath.Join(filepath.Dir(p.cfg), p.name+".log"))
-	require.NoError(t, err)
-	return raw
-}
-
 // relayCall posts one model relay over the trusted name, bound by the trusted token, and returns the status and the raw answer after checking the sidecar's proof.
 func relayCall(t *testing.T, socket peerSocket, body string) (int, []byte) {
 	t.Helper()

@@ -140,4 +140,7 @@ require (
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
 
+// Deliberate: the parent's integration module tests the contracts at the parent's
+// gitlink (contracts/), not a published go/v tag, so the version required above is
+// never resolved and the release train does not bump it (the services pin tags).
 replace github.com/ancyloce/anvilkit-agent-contracts/go => ../../contracts/go
