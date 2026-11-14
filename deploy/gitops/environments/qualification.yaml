@@ -185,10 +185,6 @@ applications:
       resources:
         requests: {cpu: 50m, memory: 128Mi}
         limits: {memory: 384Mi}
-      clusterRole:
-        create: true
-        rules:
-          - {apiGroups: [""], resources: [pods], verbs: [get, list, watch]}
       ports:
         jaeger-compact: {enabled: false}
         jaeger-thrift: {enabled: false}

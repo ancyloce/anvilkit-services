@@ -274,31 +274,14 @@ def drill_db_primary(load: Load) -> dict:
             "checks": {"failedOver": switched is not None}}
 
 
-# DEVELOPMENT_ONLY authorization fixtures the owners' local-check requests are bound to
-# (the shapes tests/integration/background_integration_test.go seeds): one Knowledge
-# source and one MCP server, approved descriptor and active grant, owned by the drills.
+# DEVELOPMENT_ONLY authorization fixture the Knowledge local-check requests are bound to
+# (the shape tests/integration/background_integration_test.go seeds): one Knowledge
+# source owned by the drills. MCP has no lane here (LANE_OWNERS below).
 FIXTURES = {
     "anvilkit_knowledge": [
         "INSERT INTO sources (source_id, tenant_id, kind, locator, command_id, request_digest) VALUES ('src_drill', 'tenant_a', 'document', "
         "'file://qualification-drill', 'cmd_src_drill', 'sha256:0000000000000000000000000000000000000000000000000000000000000000') "
         "ON CONFLICT (source_id) DO UPDATE SET deleted = false"],
-    "anvilkit_mcp": [
-        "INSERT INTO servers (server_id, tenant_id, canonical_resource, transport) VALUES ('srv_drill', 'tenant_a', 'https://mcp.example/drill', "
-        "'streamable-http') ON CONFLICT DO NOTHING",
-        "INSERT INTO descriptors (server_id, revision, protocol_version, provenance, descriptor_digest, tools, state, command_id, request_digest, "
-        "data_class, revision_evidence, discovered_by, reviewer, review_id) VALUES ('srv_drill', 1, '2025-06-18', 'test', "
-        "'sha256:0000000000000000000000000000000000000000000000000000000000000001', '[]', 'approved', 'cmd_drill', "
-        "'sha256:0000000000000000000000000000000000000000000000000000000000000002', 'internal', 'fixture', 'fixture-discoverer', "
-        "'fixture-reviewer', 'rev_fixture') ON CONFLICT DO NOTHING",
-        "INSERT INTO grants (grant_id, tenant_id, subject_type, subject_id, server_id, descriptor_revision, descriptor_digest, methods, purpose, "
-        "cost_cap_currency, cost_cap_amount, state, expires_at, command_id, request_digest, canonical_resource, transport, protocol_version, "
-        "audience, data_class, policy_digest, registration_command_id, control_receipt_id) VALUES ('g_drill', 'tenant_a', 'actor', 'user_a', "
-        "'srv_drill', 1, 'sha256:0000000000000000000000000000000000000000000000000000000000000001', '{tools/call}', 'test', 'USD', 0, 'active', "
-        "now() + interval '12 hours', 'cmd_grant_drill', 'sha256:0000000000000000000000000000000000000000000000000000000000000003', "
-        "'https://mcp.example/drill', 'streamable-http', '2025-06-18', 'https://mcp.example/drill', 'internal', "
-        "'sha256:0000000000000000000000000000000000000000000000000000000000000004', 'reg_drill', 'rcpt_fixture') ON CONFLICT (grant_id) DO UPDATE "
-        "SET state = 'active', expires_at = now() + interval '12 hours', control_receipt_id = 'rcpt_fixture', revocation_command_id = NULL, "
-        "control_state = 'none', revoked_at = NULL"],
 }
 
 
@@ -311,22 +294,21 @@ FIXTURES = {
 # UNEXECUTED until then.
 LANE_OWNERS = ("knowledge",)
 LANE_UNEXECUTED = {"mcp": "UNEXECUTED: local-check is absent from MCP's production binary and schema since P2.5; "
-                          "the MCP lane needs mcp-catalog-refresh against a reviewed upstream (ContextForge not deployed here)"}
+                          "the MCP lane needs mcp-catalog-refresh against a reviewed upstream (none behind this environment's ContextForge)"}
 OWNER_DB = {"knowledge": "anvilkit_knowledge", "mcp": "anvilkit_mcp"}
 
 
 def owner_request(owner: str, n: int, tag: str) -> list[str]:
+    """n Knowledge local-check requests (the only lane owner, LANE_OWNERS)."""
+    if owner != "knowledge":
+        raise ValueError(f"no local-check lane for {owner} (LANE_OWNERS)")
     for db, statements in FIXTURES.items():
         for sql in statements:
             psql("anvilkit-business", sql, db)
     ids = []
     for i in range(n):
-        if owner == "knowledge":
-            out = k("-n", "anvilkit-apps", "exec", "deploy/anvilkit-agent-knowledge", "-c", "knowledge", "--",
-                    "node", "/anvilkit/knowledge/dist/localcheck.js", "request", "--source", "src_drill", "--task-id", f"task_{tag}_{i}")
-        else:
-            out = k("-n", "anvilkit-apps", "exec", "deploy/anvilkit-agent-mcp", "-c", "mcp", "--",
-                    "/usr/local/bin/anvilkit-agent-mcp", "local-check", "request", "-grant", "g_drill", "-task-id", f"task_{tag}_{i}")
+        out = k("-n", "anvilkit-apps", "exec", "deploy/anvilkit-agent-knowledge", "-c", "knowledge", "--",
+                "node", "/anvilkit/knowledge/dist/localcheck.js", "request", "--source", "src_drill", "--task-id", f"task_{tag}_{i}")
         ids.append(json.loads(out)["taskId"])
     return ids
 

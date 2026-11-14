@@ -71,7 +71,8 @@ case "$mode" in
     ;;
   verify)
     rc=0
-    echo "$PRINCIPALS" | while IFS='|' read -r name ns; do
+    # A here-document, not a pipe: the loop must run in this shell so rc survives it.
+    while IFS='|' read -r name ns; do
       [ -n "$name" ] || continue
       if openssl verify -CAfile "$CERTS/ca/ca.crt" "$CERTS/$name/tls.crt" >/dev/null 2>&1; then
         san=$(openssl x509 -in "$CERTS/$name/tls.crt" -noout -ext subjectAltName | tr -d '\n' | sed 's/^ *X509v3 Subject Alternative Name: *//;s/  */ /g')
@@ -79,7 +80,9 @@ case "$mode" in
       else
         echo "FAIL $name: does not chain to $CERTS/ca/ca.crt"; rc=1
       fi
-    done
+    done <<EOF
+$PRINCIPALS
+EOF
     exit $rc
     ;;
   *) echo "usage: $0 [issue|renew|verify]" >&2; exit 2 ;;

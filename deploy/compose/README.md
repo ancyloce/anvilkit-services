@@ -25,7 +25,9 @@ sh deploy/compose/images.sh /tmp/release-<tag>/release-manifest.json > deploy/co
 
 `images.sh` refuses a `BLOCKED` manifest, findings, a manifest pushed to the
 development registry and any reference that is not a digest under the manifest's
-registry. The foundation images are the digests of `deploy/dev/compose.yaml`.
+registry. The foundation images are the digests of `deploy/dev/compose.yaml`, except
+MinIO, which comes from the owner's GHCR mirror (`ghcr.io/ancyloce/minio`): Docker Hub
+no longer serves `minio/minio` or `minio/mc` (`compose.yaml`).
 
 ## Server layout
 
@@ -35,7 +37,7 @@ registry. The foundation images are the digests of `deploy/dev/compose.yaml`.
 | `~/anvilkit/deploy/dev/` | the setup scripts and reviewed files the stack mounts (`postgres-init.sh`, `minio-setup.sh`, `nats-setup.sh`, `nats/`, `temporal-setup.sh`, `temporal-dynamicconfig.yaml`, `oidc/config.json`) | configuration only |
 | `~/anvilkit/deploy/policies/`, `~/anvilkit/services/agent/{workflow,knowledge}/deploy/chart/` | the Job admission chart and default-deny policies; the two service charts whose launcher ServiceAccount and Role `jobs-node.sh identities` renders | configuration only |
 | `/srv/anvilkit/secrets/` | generated credentials and DSNs (`up.sh secrets`), the API's fixture principals, the Workflow's and Knowledge's launcher kubeconfigs (`jobs-node.sh identities`), optionally `model-proxy-credentials.env` | directory 0700, files 0644 (read by the containers' own users through bind mounts) |
-| `/etc/rancher/rke2/`, `/etc/systemd/network/50-anvilkit-jobs0.*`, `/etc/anvilkit/guard.nft` | the Jobs node's RKE2 configuration (admin kubeconfig 0600), the host-only interface, the inbound guard | root |
+| `/etc/rancher/rke2/`, `/etc/systemd/network/anvilkit-jobs0.*`, `/etc/anvilkit/guard.nft` | the Jobs node's RKE2 configuration (admin kubeconfig 0600), the host-only interface, the inbound guard | root |
 | `/srv/anvilkit/certs/` | `ca/` and one directory per principal (`tls.crt`, `tls.key`, `ca.crt`) from `pki.sh` | directory 0700, principal directories 0755 |
 | Docker volumes `anvilkit_*` | `postgres-data`, `minio-data`, `nats-data`, `valkey-queue-data`, `qdrant-data`, `pagix-double` (owned by the Workflow's user 65532 through the `pagix-double-init` one-shot) | persistent; `down.sh` keeps them |
 
@@ -116,7 +118,8 @@ sh deploy/compose/studio-local.sh down     # stops all of it, removes the alias 
 signed upload URLs Control hands out name `minio:9000`), adds `127.0.0.1 minio` to
 `/etc/hosts` when it can, copies the `tenant_a` fixture token to a `0600` file under
 `~/.local/state/anvilkit-studio-local/`, and starts `pnpm dev` with
-`ANVILKIT_AGENT_API_URL` and `ANVILKIT_AGENT_API_TOKEN` only. The browser calls the Studio's
+`ANVILKIT_AGENT_API_URL` and `ANVILKIT_AGENT_API_TOKEN`, in-memory page storage
+(`ANVILKIT_PAGE_STORAGE=memory`) and Next.js telemetry off. The browser calls the Studio's
 own relay; it never sees the token or the API address. Open `http://localhost:3000/agent/…`
 (`localhost`: Next.js blocks its development resources for other hosts). The Studio
 relay has no user authentication of its own, so keep it on the local machine.

@@ -838,7 +838,7 @@ LEGACY_MARKERS = [r"anvilkit-local(?!-check)", r"anvilkit-local-check(?!-v1)", r
                   r"\banvilkit_agent\b", r"\bagent_control\b", r"\.local/legacy", r"\.local/compose"]
 
 
-REVIEWED_HOST_PATHS = {"/var/log/pods", "/var/lib/anvilkit-telemetry"}  # the OpenTelemetry Collector DaemonSet (P23-06)
+REVIEWED_HOST_PATHS = {"/var/log/pods"}  # the OpenTelemetry Collector DaemonSet's read-only pod logs (P23-06)
 
 
 def parse_time(value: str) -> datetime.datetime:
@@ -1101,7 +1101,7 @@ def cmd_dto(a: argparse.Namespace) -> int:
         for method, template in new_routes:
             path = template.replace("{operationId}", FAKE_ID).replace("{commandId}", FAKE_ID).replace("{sourceId}", FAKE_ID) \
                 .replace("{factId}", FAKE_ID).replace("{serverId}", FAKE_ID).replace("{grantId}", FAKE_ID).replace("{callId}", FAKE_ID) \
-                .replace("{handle}", FAKE_ID).replace("{digest}", "sha256:" + "0" * 64)
+                .replace("{handle}", FAKE_ID).replace("{runId}", FAKE_ID).replace("{snapshotId}", FAKE_ID).replace("{digest}", "sha256:" + "0" * 64)
             body = b"{}" if method in ("POST", "PUT", "PATCH") else None
             status, text, parsed = call(tenant_a, method, path, body)
             case("D new route served", f"{method} {template}", method, path, body, tenant_a, "answered by the API (not an unknown route)",

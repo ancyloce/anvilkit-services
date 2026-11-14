@@ -116,8 +116,6 @@ relay:
 # Telemetry (P23-06): spans to the node-local Collector (anvilkit-telemetry,
 # internalTrafficPolicy Local); Prometheus scrapes the Pod's health port
 # through the anvilkit-observability chart's PodMonitors (P3.6).
-podAnnotations:
-  prometheus.io/scrape: "true"
 telemetry:
   otlpEndpoint: "http://anvilkit-otel-collector.anvilkit-observability.svc.cluster.local:4318"
 # P0.1: the workload identity issued by the qualification PKI (anvilkit-pki).

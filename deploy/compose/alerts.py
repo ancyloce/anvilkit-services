@@ -31,7 +31,7 @@ counts. One line per finding, then a result line. Exit 0 when no alert fires,
 A recreate (a deployment's `up -d` with a new image) removes the old container
 and its log with it: stop the service first and run this script before the
 recreate to see a forced stop of the old container (README.md, Alerts).
-Runbook: deploy/runbooks/startup-failure.md.
+Runbooks: deploy/runbooks/startup-failure.md; AnvilKitForcedStop: deploy/runbooks/rollback.md.
 """
 from __future__ import annotations
 

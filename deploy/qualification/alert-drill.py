@@ -3,8 +3,10 @@
 
   .local/verification-venv/bin/python deploy/qualification/alert-drill.py --run RUN [--wait 2700]
 
-Injects every AnvilKit alert's condition and proves that each alert fires and
-reaches the receiver its severity routes to. The injection is a drill Pod in
+Injects the condition of each alert listed in CONDITIONS and proves that it fires
+and reaches the receiver its severity routes to. CONDITIONS covers 20 of the
+observability chart's 35 AnvilKit alerts (2026-11-13); the others, added after
+P3.6, have no drill condition yet and are not proved here. The injection is a drill Pod in
 anvilkit-observability (busybox httpd, the digest the Job profiles pin) that
 serves the conditions as Prometheus metrics, scraped through a PodMonitor with
 the metrics stack's release label: the rules aggregate over every series of a
@@ -13,7 +15,7 @@ would, without disturbing a service. For each alert the drill waits until
 Alertmanager holds it (GET /api/v2/alerts) and records its receivers; the
 drill Pod, its ConfigMap and PodMonitor are deleted afterwards (also on
 failure). Writes outputs/qualification/<RUN>/alerts/alert-drill.json. PASS
-only when every alert of the rules fired and reached the receiver of its
+only when every alert in CONDITIONS fired and reached the receiver of its
 severity; an alert instance already active before the injection proves
 nothing and does not count (a real condition can hold an alert the drill
 then cannot raise anew). It creates and deletes resources in anvilkit-observability: run it

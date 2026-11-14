@@ -1,6 +1,6 @@
 # Reviewed, secret-free configuration of anvilkit-agent-knowledge for the Compose placement
 # (deploy/compose; DEVELOPMENT_ONLY). Rendered from the service chart's config
-# template with the development values of deploy/dev/values and adapted to the
+# template with development values (deploy/dev/values has no file for it) and adapted to the
 # Compose service names; placements (addresses, listeners, secret files) come
 # from the allowlisted ANVILKIT_* environment in compose.yaml. Mounted read-only
 # at /etc/anvilkit/anvilkit-agent-knowledge/config.yaml.
@@ -53,7 +53,7 @@ parser:
   node_pool: components
   poll_interval: 1s
   presign_ttl: 15m
-  # Plan 0006 D-4: the development parser profile (no gVisor on the Jobs node yet).
+  # Plan 0006 D-4: the development parser profile; parser-docling-v1 stays disabled.
   profile: parser-docling-dev-v1
   seccomp_profile: anvilkit/candidate.json
 reload:

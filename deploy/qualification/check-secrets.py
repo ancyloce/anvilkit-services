@@ -64,7 +64,7 @@ EXCEPTIONS = [
     ("*", r"anvilkit-otel-collector\.anvilkit-observability\.svc\.cluster\.local:431[78]", "the OTLP export stays development-labelled (telemetry.otlpTls.mode development; B-36)"),
     ("*", r"http://127\.0\.0\.1|http://localhost|http://0\.0\.0\.0", "a Pod-local health or metrics listener (no network peer)"),
     ("*", r"\bhttp://\[::\]|http_port|\"http_port\"", "a Pod-local listener definition"),
-    ("anvilkit-telemetry", r"http://", "the Collector's own receivers and Kubernetes discovery (observability, B-36)"),
+    ("anvilkit-telemetry", r"http://", "the Collector's own receivers (observability, B-36)"),
     ("anvilkit-metrics", r"http://", "the metrics stack's in-cluster endpoints (Prometheus, Alertmanager, Grafana and its Loki/Tempo data sources) inside anvilkit-observability; DEVELOPMENT_ONLY plaintext like the OTLP export (B-36), production TLS"),
     ("anvilkit-logs", r"http://", "Loki's in-cluster endpoints inside anvilkit-observability (DEVELOPMENT_ONLY plaintext, B-36)"),
     ("anvilkit-traces", r"http://", "Tempo's in-cluster endpoints inside anvilkit-observability (DEVELOPMENT_ONLY plaintext, B-36)"),

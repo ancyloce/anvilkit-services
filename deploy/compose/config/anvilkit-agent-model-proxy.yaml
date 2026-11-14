@@ -110,6 +110,140 @@ routes:
           items:
             additionalProperties: false
             properties:
+              arrayFields:
+                additionalProperties:
+                  additionalProperties: false
+                  properties:
+                    arrayFields:
+                      additionalProperties:
+                        additionalProperties: false
+                        properties:
+                          options:
+                            description: 'The choices of a select, radio or checkbox field: required for those types, absent for every other.'
+                            items:
+                              additionalProperties: false
+                              properties:
+                                label:
+                                  maxLength: 200
+                                  minLength: 1
+                                  type: string
+                                value:
+                                  type:
+                                  - string
+                                  - number
+                                  - boolean
+                              required:
+                              - label
+                              - value
+                              type: object
+                            maxItems: 32
+                            minItems: 1
+                            type: array
+                          type:
+                            enum:
+                            - text
+                            - textarea
+                            - richtext
+                            - number
+                            - select
+                            - radio
+                            - checkbox
+                            - external
+                            - custom
+                            - slot
+                            type: string
+                        required:
+                        - type
+                        type: object
+                      maxProperties: 16
+                      minProperties: 1
+                      type: object
+                    objectFields:
+                      additionalProperties:
+                        additionalProperties: false
+                        properties:
+                          options:
+                            description: 'The choices of a select, radio or checkbox field: required for those types, absent for every other.'
+                            items:
+                              additionalProperties: false
+                              properties:
+                                label:
+                                  maxLength: 200
+                                  minLength: 1
+                                  type: string
+                                value:
+                                  type:
+                                  - string
+                                  - number
+                                  - boolean
+                              required:
+                              - label
+                              - value
+                              type: object
+                            maxItems: 32
+                            minItems: 1
+                            type: array
+                          type:
+                            enum:
+                            - text
+                            - textarea
+                            - richtext
+                            - number
+                            - select
+                            - radio
+                            - checkbox
+                            - external
+                            - custom
+                            - slot
+                            type: string
+                        required:
+                        - type
+                        type: object
+                      maxProperties: 16
+                      minProperties: 1
+                      type: object
+                    options:
+                      description: 'The choices of a select, radio or checkbox field: required for those types, absent for every other.'
+                      items:
+                        additionalProperties: false
+                        properties:
+                          label:
+                            maxLength: 200
+                            minLength: 1
+                            type: string
+                          value:
+                            type:
+                            - string
+                            - number
+                            - boolean
+                        required:
+                        - label
+                        - value
+                        type: object
+                      maxItems: 32
+                      minItems: 1
+                      type: array
+                    type:
+                      enum:
+                      - text
+                      - textarea
+                      - richtext
+                      - number
+                      - select
+                      - radio
+                      - checkbox
+                      - array
+                      - object
+                      - external
+                      - custom
+                      - slot
+                      type: string
+                  required:
+                  - type
+                  type: object
+                maxProperties: 16
+                minProperties: 1
+                type: object
               default:
                 maxLength: 2000
                 type: string
@@ -117,15 +251,175 @@ routes:
                 maxLength: 64
                 minLength: 1
                 type: string
+              objectFields:
+                additionalProperties:
+                  additionalProperties: false
+                  properties:
+                    arrayFields:
+                      additionalProperties:
+                        additionalProperties: false
+                        properties:
+                          options:
+                            description: 'The choices of a select, radio or checkbox field: required for those types, absent for every other.'
+                            items:
+                              additionalProperties: false
+                              properties:
+                                label:
+                                  maxLength: 200
+                                  minLength: 1
+                                  type: string
+                                value:
+                                  type:
+                                  - string
+                                  - number
+                                  - boolean
+                              required:
+                              - label
+                              - value
+                              type: object
+                            maxItems: 32
+                            minItems: 1
+                            type: array
+                          type:
+                            enum:
+                            - text
+                            - textarea
+                            - richtext
+                            - number
+                            - select
+                            - radio
+                            - checkbox
+                            - external
+                            - custom
+                            - slot
+                            type: string
+                        required:
+                        - type
+                        type: object
+                      maxProperties: 16
+                      minProperties: 1
+                      type: object
+                    objectFields:
+                      additionalProperties:
+                        additionalProperties: false
+                        properties:
+                          options:
+                            description: 'The choices of a select, radio or checkbox field: required for those types, absent for every other.'
+                            items:
+                              additionalProperties: false
+                              properties:
+                                label:
+                                  maxLength: 200
+                                  minLength: 1
+                                  type: string
+                                value:
+                                  type:
+                                  - string
+                                  - number
+                                  - boolean
+                              required:
+                              - label
+                              - value
+                              type: object
+                            maxItems: 32
+                            minItems: 1
+                            type: array
+                          type:
+                            enum:
+                            - text
+                            - textarea
+                            - richtext
+                            - number
+                            - select
+                            - radio
+                            - checkbox
+                            - external
+                            - custom
+                            - slot
+                            type: string
+                        required:
+                        - type
+                        type: object
+                      maxProperties: 16
+                      minProperties: 1
+                      type: object
+                    options:
+                      description: 'The choices of a select, radio or checkbox field: required for those types, absent for every other.'
+                      items:
+                        additionalProperties: false
+                        properties:
+                          label:
+                            maxLength: 200
+                            minLength: 1
+                            type: string
+                          value:
+                            type:
+                            - string
+                            - number
+                            - boolean
+                        required:
+                        - label
+                        - value
+                        type: object
+                      maxItems: 32
+                      minItems: 1
+                      type: array
+                    type:
+                      enum:
+                      - text
+                      - textarea
+                      - richtext
+                      - number
+                      - select
+                      - radio
+                      - checkbox
+                      - array
+                      - object
+                      - external
+                      - custom
+                      - slot
+                      type: string
+                  required:
+                  - type
+                  type: object
+                maxProperties: 16
+                minProperties: 1
+                type: object
+              options:
+                description: 'The choices of a select, radio or checkbox field: required for those types, absent for every other.'
+                items:
+                  additionalProperties: false
+                  properties:
+                    label:
+                      maxLength: 200
+                      minLength: 1
+                      type: string
+                    value:
+                      type:
+                      - string
+                      - number
+                      - boolean
+                  required:
+                  - label
+                  - value
+                  type: object
+                maxItems: 32
+                minItems: 1
+                type: array
               type:
                 enum:
                 - text
+                - textarea
                 - richtext
-                - image
-                - link
                 - number
-                - boolean
-                - color
+                - select
+                - radio
+                - checkbox
+                - array
+                - object
+                - external
+                - custom
+                - slot
                 type: string
             required:
             - name

@@ -16,8 +16,8 @@ autoscaling:
   minReplicas: 2
   maxReplicas: 3
   targetCPUUtilizationPercentage: 70
+# The inference chart always renders its PodDisruptionBudget (no enabled switch).
 podDisruptionBudget:
-  enabled: true
   minAvailable: 1
 topologySpreadConstraints:
   - maxSkew: 1

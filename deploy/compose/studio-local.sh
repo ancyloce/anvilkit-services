@@ -6,8 +6,9 @@
 #   up      SSH tunnel to the server (local 9100 -> API, local 9000 -> MinIO,
 #           because signed upload URLs name minio:9000), the `minio` alias in
 #           /etc/hosts, a 0600 copy of the tenant_a fixture API token outside
-#           any repository, and the Studio dev server with the two server-side
-#           variables (ANVILKIT_AGENT_API_URL, ANVILKIT_AGENT_API_TOKEN).
+#           any repository, and the Studio dev server with the server-side
+#           variables ANVILKIT_AGENT_API_URL and ANVILKIT_AGENT_API_TOKEN, in-memory
+#           page storage and Next.js telemetry off.
 #   down    stops the dev server and the tunnel, removes the alias line this
 #           script added and the token copy.
 #   status  tunnel, API readiness through it, alias, Studio.

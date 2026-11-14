@@ -1,10 +1,11 @@
 # RKE2 configuration of the Jobs-only node of the Compose placement (plan 0006
 # option B, owner decision D-2: one RKE2 node on the Compose host, Job
 # namespaces only, never the services). jobs-node.sh installs it as
-# /etc/rancher/rke2/config.yaml. DEVELOPMENT_ONLY: no gVisor yet (D-4), so only
-# local-check-v1 and the development profiles run here.
+# /etc/rancher/rke2/config.yaml. DEVELOPMENT_ONLY: local-check-v1 and the
+# development profiles run under runc, the production candidate profiles under
+# the gVisor RuntimeClass (cluster.yaml; DEC-044, DEC-045); nothing is qualified.
 node-name: anvilkit-jobs
-# The CNI of the qualified RKE2 combination (deploy/verification).
+# The CNI of the RKE2 combination deploy/verification set up (not qualified).
 cni: cilium
 write-kubeconfig-mode: "0600"
 # The launchers in the Compose containers reach the API server on the

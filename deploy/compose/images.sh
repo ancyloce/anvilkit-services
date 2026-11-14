@@ -5,7 +5,8 @@
 # under the registry the manifest was pushed to. Nothing is pulled or built here;
 # `docker compose pull` on the server then fetches exactly these digests.
 #
-#   sh deploy/compose/images.sh outputs/qualification/<run>/release/release-manifest.json [> images.env]
+#   sh deploy/compose/images.sh outputs/compose-deploy-<tag>/release/release-manifest.json [> images.env]
+#   (the manifest of the v* tag's release run, downloaded into the deployment's record)
 #
 # Refuses a manifest whose status is BLOCKED or that carries findings, and a
 # manifest whose images were pushed to the development registry (localhost:5001 /

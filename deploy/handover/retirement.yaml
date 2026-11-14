@@ -136,12 +136,12 @@ items:
 
   - id: legacy-compose-profile
     kind: source
-    identity: {path: deploy/local/, tracked: false, files: [README.md, Service.Dockerfile, init-agent.sh, temporal.sh]}
+    identity: {path: deploy/local/, tracked: true, files: [README.md, Service.Dockerfile, init-agent.sh, temporal.sh]}
     consumers: [compose.yaml]
     decision: retire
     preserve: >-
-      copied into .local/legacy/deploy-local-<RUN>/ before deletion (it was never
-      committed, so Git history does not hold it)
+      copied into .local/legacy/deploy-local-<RUN>/ before deletion (tracked since
+      97ae048, so Git history holds it too)
     action: copy, verify, delete from the working tree
     authorization: destructive retirement
 

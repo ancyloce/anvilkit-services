@@ -1,9 +1,0 @@
-# Build context filter for the DEVELOPMENT_ONLY image builds that use the
-# parent root as context (access-sidecar.dev.Dockerfile): only the inputs the
-# Dockerfiles copy enter the build.
-*
-!contracts/go
-!jobs/shared/access-sidecar
-jobs/shared/access-sidecar/.git
-**/*_test.go
-**/.local

@@ -2,8 +2,9 @@
 # default deny in both directions for every Pod of anvilkit-parsing. The
 # environment adds one egress policy that admits the object store the
 # trusted stager reaches through its presigned URLs, by address and port
-# (deploy/dev/up.sh generates it from the machine's addresses); no DNS, no
-# other destination. A Pod NetworkPolicy does not separate the containers
+# (deploy/dev/up.sh generates it from the machine's addresses; on the Compose
+# Jobs node it is deploy/compose/jobs/cluster.yaml's
+# anvilkit-parsing-allowed-egress); no DNS, no other destination. A Pod NetworkPolicy does not separate the containers
 # of one Pod: the parser container is kept off the network by its syscall
 # profile (deploy/policies/seccomp) and, on the target runtime, by gVisor;
 # the kind foundation's CNI (kindnet) does not enforce NetworkPolicy, so

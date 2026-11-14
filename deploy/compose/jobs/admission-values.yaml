@@ -1,8 +1,9 @@
 # DEVELOPMENT_ONLY environment values of the Job-boundary admission chart
 # (deploy/policies/chart) for the Jobs node of the Compose placement: the
 # CI-published Job images and the pinned busybox of the LocalCheck fixture,
-# the development profiles the owner admitted first (plan 0006 D-4; no gVisor
-# here yet), and the sidecar placement the Compose Workflow renders
+# the development profiles the owner admitted first (plan 0006 D-4; the chart
+# admits the production profiles only under the gVisor RuntimeClass, DEC-044,
+# DEC-045), and the sidecar placement the Compose Workflow renders
 # (ANVILKIT_WORKFLOW_SIDECAR_MODEL_PROXY_URL; the MCP and Knowledge relays stay
 # off, so no placement of those kinds is admitted).
 registries:

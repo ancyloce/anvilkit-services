@@ -48,7 +48,7 @@ echo "== alerts (startup failures, abnormal restarts, forced stops; DEC-049, DEC
 python3 "$HERE/alerts.py"
 case $? in
   0) pass "no alert fires (alerts.py, window 15m)" ;;
-  1) fail "an alert fires (alerts.py; deploy/runbooks/startup-failure.md)" ;;
+  1) fail "an alert fires (alerts.py; deploy/runbooks/startup-failure.md, AnvilKitForcedStop deploy/runbooks/rollback.md)" ;;
   *) unex "alerts.py could not read the container state" ;;
 esac
 

@@ -169,9 +169,9 @@ flows:
   - {from: backupJobs, toExternal: backups}
   - {from: postgresBusiness, toExternal: backups}
   - {from: postgresTemporal, toExternal: backups}
-  # Telemetry: OTLP from the services to the Collector and its Kubernetes
-  # attributes; Prometheus scrapes the metrics listeners (P3.6; the Collector
-  # exports traces and logs to Tempo and Loki inside the namespace).
+  # Telemetry: OTLP from the services to the Collector (which reads pod logs from
+  # its node, no Kubernetes API); Prometheus scrapes the metrics listeners (P3.6;
+  # the Collector exports traces and logs to Tempo and Loki inside the namespace).
   - {from: api, to: collector, ports: [4317, 4318]}
   - {from: control, to: collector, ports: [4317, 4318]}
   - {from: workflow, to: collector, ports: [4317, 4318]}
@@ -180,7 +180,6 @@ flows:
   - {from: mcp, to: collector, ports: [4317, 4318]}
   - {from: backgroundWorker, to: collector, ports: [4317, 4318]}
   - {from: inference, to: collector, ports: [4317, 4318]}
-  - {from: collector, toExternal: kubernetesAPI}
   - {from: prometheus, to: api, ports: [9464]}
   - {from: prometheus, to: control, ports: [9464]}
   - {from: prometheus, to: workflow, ports: [9102]}
