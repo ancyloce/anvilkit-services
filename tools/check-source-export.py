@@ -23,7 +23,7 @@ Then:
      the export set. The documents under docs/ are local-only (the owner keeps them out of
      the repository): they are neither required nor exported, and tools/check-docs.py in the
      export reports them UNEXECUTED.
-  2. Exclusions: nothing from docs/archive/, outputs/, logs/, .local/, node_modules/,
+  2. Exclusions: nothing from docs/ (DEC-007), outputs/, logs/, .local/, node_modules/,
      __pycache__/ or *.egg-info/, no `.env*`, `*.pem`, `*.log`, `*.kubeconfig`, and nothing
      from inside a legacy submodule.
   3. Disposable export: the committed trees are extracted (`git archive`) into a temporary
@@ -182,7 +182,7 @@ REQUIRED_FILES = (
     "services/agent/inference/Dockerfile", "services/agent/inference/pyproject.toml", "services/agent/inference/requirements.in",
     "services/agent/inference/requirements.lock", "services/agent/inference/models.lock", "services/agent/inference/config.yaml",
     "services/agent/inference/README.md", "services/agent/inference/LICENSE", "services/agent/inference/.github/workflows/ci.yml",
-    "deploy/dev/images.sh", "deploy/dev/docker/access-sidecar.dev.Dockerfile",
+    "deploy/dev/images.sh",
     "jobs/migration/internal/migrate/sql/knowledge/00001_init.sql",
     "jobs/migration/internal/migrate/sql/knowledge/00002_background.sql",
     "jobs/migration/internal/migrate/sql/knowledge/00003_ingestion.sql",
@@ -252,7 +252,7 @@ REQUIRED_FILES = (
 # the TypeScript packages' dist/): build caches, never a required source input or an
 # exported artifact.
 GENERATED_OUTPUT_PREFIXES = ("jobs/validator/fixtures/host/browser/dist/", "jobs/validator/fixtures/preview/dist/", "services/agent/model-proxy/dist/", "jobs/codegen/team/dist/", "services/agent/knowledge/dist/", "services/agent/background-worker/dist/")
-EXCLUDED_PREFIXES = ("docs/archive/", "outputs/", "logs/", ".local/", "node_modules/")
+EXCLUDED_PREFIXES = ("docs/", "outputs/", "logs/", ".local/", "node_modules/")
 EXCLUDED_INFIXES = ("/node_modules/", "/__pycache__/", ".egg-info/")
 EXCLUDED_PATTERNS = (re.compile(r"(^|/)\.env(\.|$)"), re.compile(r"\.pem$"), re.compile(r"\.log$"), re.compile(r"\.kubeconfig$"))
 LEGACY_TOOLING = ("deploy/local/", "compose.yaml", "tools/prepare-local-compose.py", "tools/component/")
@@ -338,6 +338,18 @@ def required_failures(root: pathlib.Path, files: set[str], required_files, requi
                 if rel not in files:
                     failures.append(f"file under a declared input directory is untracked, uncommitted or ignored: {rel}")
     return failures
+
+
+def write_status_metadata(meta: pathlib.Path, gitlinks: dict[str, str]) -> None:
+    """The facts tools/docs-status.py checks the generated status blocks against in an
+    export, which has no Git metadata: the exported gitlinks and the contracts' go/v* tags
+    (commit -> tag names, an annotated tag by the commit it points to). Written outside
+    the exported tree; pre-push.py shares it."""
+    tags: dict[str, list[str]] = {}
+    for line in git("for-each-ref", "--format=%(objectname) %(*objectname) %(refname:short)", "refs/tags/go/", cwd=ROOT / "contracts").splitlines():
+        parts = line.split()
+        tags.setdefault(parts[1] if len(parts) == 3 else parts[0], []).append(parts[-1])
+    meta.write_text(json.dumps({"gitlinks": dict(sorted(gitlinks.items())), "contractsTags": tags}))
 
 
 def extract(repo: pathlib.Path, commit: str, target: pathlib.Path) -> None:
@@ -447,11 +459,7 @@ def main() -> int:
         # contracts' go/v* tags), recorded outside the exported tree.
         meta_dir = tempfile.TemporaryDirectory(prefix="anvilkit-export-meta-")
         meta = pathlib.Path(meta_dir.name) / "docs-status-metadata.json"
-        tags: dict[str, list[str]] = {}
-        for line in git("for-each-ref", "--format=%(objectname) %(*objectname) %(refname:short)", "refs/tags/go/", cwd=ROOT / "contracts").splitlines():
-            parts = line.split()
-            tags.setdefault(parts[1] if len(parts) == 3 else parts[0], []).append(parts[-1])
-        meta.write_text(json.dumps({"gitlinks": dict(sorted(repos.items())), "contractsTags": tags}))
+        write_status_metadata(meta, repos)
         docs_env = {"ANVILKIT_DOCS_STATUS_METADATA": str(meta)}
         steps: list[tuple] = [
             ("docs", [sys.executable, "tools/check-docs.py"], target, docs_env),

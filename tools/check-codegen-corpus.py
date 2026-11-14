@@ -58,7 +58,9 @@ def canonical_digest(obj) -> str:
 def team_tools() -> set[str]:
     m = re.search(r"tools:\s*\{[^}]*enum:\s*\[([^\]]*)\]", ROUND.read_text(encoding="utf-8"))
     if not m:
-        raise SystemExit(f"UNEXECUTED: the tool enum is not found in {ROUND.relative_to(ROOT)}")
+        # Exit 2 (UNEXECUTED, the chain's contract), not SystemExit(str), which exits 1 (FAIL).
+        print(f"UNEXECUTED: the tool enum is not found in {ROUND.relative_to(ROOT)}", file=sys.stderr)
+        sys.exit(2)
     return set(re.findall(r'"([a-z]+)"', m[1]))
 
 

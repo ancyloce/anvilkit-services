@@ -59,9 +59,9 @@ _spec = importlib.util.spec_from_file_location("release_artifacts", ROOT / "tool
 release = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(release)
 
-# The build contexts a release builds: its owned images and Job images, plus the supervisor the
-# team image builds from.
-CONTEXTS = sorted({c for _, c, _ in release.OWNED} | {c for _, c, *_ in release.JOBS} | {"jobs/codegen/supervisor"})
+# The build contexts a release builds: its owned images and Job images (the latter include the
+# supervisor the team image builds from).
+CONTEXTS = sorted({c for _, c, _ in release.OWNED} | {c for _, c, *_ in release.JOBS})
 ARCHIVE = {
     suite: [f"https://deb.debian.org/debian/dists/{suite}/main/binary-amd64/Packages.xz",
             f"https://deb.debian.org/debian/dists/{suite}-updates/main/binary-amd64/Packages.xz",

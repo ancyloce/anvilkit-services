@@ -72,7 +72,7 @@ import time
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import pyenv_check  # noqa: E402
 
-pyenv_check.require("yaml")
+pyenv_check.require()
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 REGISTRY = ROOT / "tests" / "evals" / "registry.json"
@@ -617,7 +617,7 @@ def run_case(c: dict, s: dict, raw_dir: pathlib.Path) -> dict:
     duration = round(time.time() - t0, 1)
     log = raw_dir / f"{c['id']}.log"
     log.write_bytes(raw)
-    out.update({"argv": argv, "dir": str(d.relative_to(ROOT.parent)), "durationSeconds": duration, "rawLog": str(log.relative_to(ROOT)), "rawDigest": sha256_bytes(raw)})
+    out.update({"argv": argv, "dir": str(d.relative_to(ROOT.parent)), "durationSeconds": duration, "rawLog": rel(log), "rawDigest": sha256_bytes(raw)})
     if rc == -1:
         return {**out, "status": "FAIL", "reason": f"exceeded the budget {c['budget']}"}
     if s["runner"] == "go":
@@ -625,7 +625,7 @@ def run_case(c: dict, s: dict, raw_dir: pathlib.Path) -> dict:
     if s["runner"] == "pnpm" or s.get("report") == "vitest-json":
         report = json.loads(vitest_report.read_text(encoding="utf-8")) if vitest_report.exists() else None
         if report is not None:
-            out.update({"report": str(vitest_report.relative_to(ROOT)), "reportDigest": sha256_file(vitest_report)})
+            out.update({"report": rel(vitest_report), "reportDigest": sha256_file(vitest_report)})
         return {**out, **classify_vitest(report, rc)}
     return {**out, **classify_text(raw, rc)}
 
@@ -982,7 +982,7 @@ def main() -> int:
     if a.trace:
         return trace_table(load_registry(pathlib.Path(a.registry)))
     if a.reclassify:
-        return reclassify(pathlib.Path(a.reclassify).resolve(), pathlib.Path(a.out))
+        return reclassify(pathlib.Path(a.reclassify).resolve(), pathlib.Path(a.out).resolve())
     reg_path = pathlib.Path(a.registry)
     reg_digest = sha256_file(reg_path)  # bound at load: what this run actually executed
     reg = load_registry(reg_path)
@@ -997,7 +997,7 @@ def main() -> int:
             print(f"FAIL {e}")
         return 1
     run_id = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    out = pathlib.Path(a.out) / run_id
+    out = pathlib.Path(a.out).resolve() / run_id
     raw_dir = out / "raw"
     raw_dir.mkdir(parents=True, exist_ok=True)
     inv = inventory()

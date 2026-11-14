@@ -28,7 +28,6 @@ The gate never writes outside a temporary directory.
 from __future__ import annotations
 
 import importlib.util
-import json
 import os
 import pathlib
 import re
@@ -74,12 +73,8 @@ def materialize(commit: str, target: pathlib.Path) -> tuple[pathlib.Path, list[s
         repos[rel] = sub
     for legacy in gitlinks:
         shutil.rmtree(tree / legacy, ignore_errors=True)
-    tags: dict[str, list[str]] = {}
-    for line in git("for-each-ref", "--format=%(objectname) %(*objectname) %(refname:short)", "refs/tags/go/", cwd=ROOT / "contracts").splitlines():
-        parts = line.split()
-        tags.setdefault(parts[1] if len(parts) == 3 else parts[0], []).append(parts[-1])
     meta = target / "docs-status-metadata.json"
-    meta.write_text(json.dumps({"gitlinks": dict(sorted(repos.items())), "contractsTags": tags}))
+    export.write_status_metadata(meta, repos)
     return meta, failures
 
 

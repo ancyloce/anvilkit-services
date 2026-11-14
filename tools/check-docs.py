@@ -1,13 +1,11 @@
 #!/usr/bin/env python3
 """Read-only documentation check for the current architecture baseline.
 
-Usage: python3 tools/check-docs.py [--root PATH] [--include-archive]
+Usage: python3 tools/check-docs.py [--root PATH]
 
 Scope: README.md, AGENTS.md, CLAUDE.md, the published runbooks under deploy/runbooks/
 (RB-A26, DEC-052), docs/README.md and every Markdown file under docs/architecture/ and
-docs/operations/. docs/archive/ is historical
-and is skipped unless --include-archive is given; its results are then printed under a
-separate heading and never affect the exit status.
+docs/operations/.
 
 The documents under docs/ are local-only: the owner keeps them out of the repository, so a
 clone has no docs/ directory. Without it the root documents (README.md, AGENTS.md,
@@ -245,7 +243,6 @@ def docs_status_drift(root: pathlib.Path) -> list[str]:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--root", default=str(pathlib.Path(__file__).resolve().parent.parent))
-    ap.add_argument("--include-archive", action="store_true", help="also report docs/archive/ (informational)")
     args = ap.parse_args()
     root = pathlib.Path(args.root).resolve()
 
@@ -279,12 +276,6 @@ def main() -> int:
     if local_only:
         print(f"UNEXECUTED: docs/ is not in this tree (the documents are local-only); they and {counts['unresolved']} links into docs/ were not checked")
 
-    if args.include_archive:
-        archive = sorted((root / "docs" / "archive").rglob("*.md"))
-        arch_failures, arch_counts = check_markdown(root, archive) if archive else ([], {"files": 0, "tables": 0, "links": 0})
-        print(f"docs/archive (informational, not part of the exit status): {arch_counts['files']} files, {len(arch_failures)} findings")
-        for f in arch_failures[:40]:
-            print("ARCHIVE", f)
     if failures:
         return 1
     return 2 if local_only else 0

@@ -8,6 +8,8 @@ contract and evidence recording").
 
 Steps, in order:
   docs        tools/check-docs.py                      current-baseline Markdown, missing inputs fail, generated status drift (docs-status.py, whose --self-test runs first)
+              tools/check-memory.py --self-test,       the project memory files (AGENTS.md section 11, DEC-039);
+              then the check                           UNEXECUTED without the local-only docs/
   generate    pnpm install --frozen-lockfile in        the contracts repository's pinned generators (ts-proto and
               contracts/, then                         openapi-typescript come from that locked install) reproduce
               tools/generate-contracts.py --check      every checked-in binding (contracts/{go,ts,python});
@@ -32,7 +34,7 @@ Steps, in order:
               --self-test                              transfer; legacy-name patterns, route classifiers; handover.py's refusals
   export      tools/check-source-export.py             the committed trees a clean recursive clone checks out
               --self-test, then the check              (the parent's HEAD and each submodule at its gitlink)
-                                                       hold every declared input and no archive/secret/
+                                                       hold every declared input and no docs/, secret or
                                                        legacy-submodule content; an untracked input fails;
                                                        a disposable extraction passes docs/contract checks
                                                        and builds on its own
@@ -71,7 +73,8 @@ Steps, in order:
               in the built anvilkit-agent-inference    with the image's locked weights, real BGE-M3 and
               image, no network                        reranker computations; --static byte-compiles only
   go          go build/vet/test per module in go.work  unit tests; Docker-backed tests (Testcontainers) run
-                                                       unless ANVILKIT_SKIP_DOCKER_TESTS=1
+              and go vet -tags with each integration    unless ANVILKIT_SKIP_DOCKER_TESTS=1; the integration-tagged
+              tag set the module's files declare      files compile and vet (they run in the integration step)
   integration go test -tags integration ...           real PostgreSQL/Temporal/Kubernetes proofs; needs the
                                                        deploy/dev foundation (deploy/dev/README.md); for the
                                                        Workflow repository's cluster scenario the parent
@@ -226,6 +229,24 @@ def vitest(pkg: pathlib.Path, env: dict, units: Units) -> tuple[bool, str]:
     return True, ""
 
 
+def integration_tag_sets(mod: pathlib.Path) -> list[str]:
+    """The integration build-tag sets the module's Go files declare, each as a `-tags`
+    value: `//go:build integration` gives "integration", `//go:build integration &&
+    smoke` gives "integration,smoke" (negated tags are left out)."""
+    found: set[str] = set()
+    for f in mod.rglob("*.go"):
+        if {"vendor", "testdata", "node_modules", ".git"} & set(f.relative_to(mod).parts):
+            continue
+        with f.open(encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                if line.startswith("package "):
+                    break
+                m = re.match(r"//go:build\s+(.+)", line)
+                if m and re.search(r"(?<![!\w])integration\b", m.group(1)):
+                    found.add(",".join(sorted(set(re.findall(r"(?<![!\w])([A-Za-z_][\w.]*)", m.group(1))))))
+    return sorted(found)
+
+
 def step_go(static: bool, units: Units) -> tuple[str, str]:
     env = test_env()
     if static:
@@ -235,26 +256,28 @@ def step_go(static: bool, units: Units) -> tuple[str, str]:
     out = []
     for mod in workspace_modules():
         listed = run(["go", "list", "./..."], mod, env)
-        if "matched no packages" in listed.stderr:
-            # Entirely tag-gated (no untagged package): vet with the tag; the integration step runs it.
-            p = run(["go", "vet", "-tags", "integration", "./..."], mod, env)
-            out.append(f"{mod.relative_to(ROOT)}: go vet -tags integration -> {'ok' if p.returncode == 0 else 'FAIL'}")
+        if "matched no packages" not in listed.stderr:
+            # -o os.devnull: a module whose ./... is a single main package (tests/load, the
+            # integration fixture) would otherwise leave its executable in the source tree,
+            # which tools/check-source-export.py rightly refuses under an input directory.
+            for cmd in (["go", "build", "-o", os.devnull, "./..."], ["go", "vet", "./..."]):
+                p = run(cmd, mod, env)
+                out.append(f"{mod.relative_to(ROOT)}: {' '.join(cmd[:2])} -> {'ok' if p.returncode == 0 else 'FAIL'}")
+                if p.returncode != 0:
+                    return "FAIL", "\n".join(out + [p.stdout[-2000:], p.stderr[-2000:]])
+            before = len(units.items)
+            ok, detail = go_test(mod, env, units)
+            out.append(f"{mod.relative_to(ROOT)}: go test -> {'ok' if ok else 'FAIL'}" + (f" ({len(units.items) - before} skipped)" if len(units.items) > before else ""))
+            if not ok:
+                return "FAIL", "\n".join(out + [detail])
+        # The untagged build never compiles integration-tagged files (tests/integration,
+        # the Workflow's cluster scenario), so each tag set they declare is vetted here;
+        # the integration step runs them.
+        for tags in integration_tag_sets(mod):
+            p = run(["go", "vet", "-tags", tags, "./..."], mod, env)
+            out.append(f"{mod.relative_to(ROOT)}: go vet -tags {tags} -> {'ok' if p.returncode == 0 else 'FAIL'}")
             if p.returncode != 0:
                 return "FAIL", "\n".join(out + [p.stdout[-2000:], p.stderr[-2000:]])
-            continue
-        # -o os.devnull: a module whose ./... is a single main package (tests/load, the
-        # integration fixture) would otherwise leave its executable in the source tree,
-        # which tools/check-source-export.py rightly refuses under an input directory.
-        for cmd in (["go", "build", "-o", os.devnull, "./..."], ["go", "vet", "./..."]):
-            p = run(cmd, mod, env)
-            out.append(f"{mod.relative_to(ROOT)}: {' '.join(cmd[:2])} -> {'ok' if p.returncode == 0 else 'FAIL'}")
-            if p.returncode != 0:
-                return "FAIL", "\n".join(out + [p.stdout[-2000:], p.stderr[-2000:]])
-        before = len(units.items)
-        ok, detail = go_test(mod, env, units)
-        out.append(f"{mod.relative_to(ROOT)}: go test -> {'ok' if ok else 'FAIL'}" + (f" ({len(units.items) - before} skipped)" if len(units.items) > before else ""))
-        if not ok:
-            return "FAIL", "\n".join(out + [detail])
     if static:
         out.append("--static: ANVILKIT_SKIP_DOCKER_TESTS=1, the Docker-backed tests are omitted")
     return ("PARTIAL" if units.items or static else "PASS"), "\n".join(out)
@@ -378,8 +401,6 @@ def step_python(units: Units) -> tuple[str, str]:
     return ("PARTIAL" if re.search(r"\b[1-9][0-9]* skipped\b", p.stdout) else "PASS"), detail
 
 
-KNOWLEDGE_PKG = ROOT / "services" / "agent" / "knowledge"
-BACKGROUND_WORKER_PKG = ROOT / "services" / "agent" / "background-worker"
 PROFILE_SCHEMAS = ROOT / "packages" / "profile-schemas"
 
 
@@ -576,7 +597,8 @@ def main() -> int:
         return units.setdefault(name, Units())
 
     steps = [
-        ("docs", lambda: scripts([PY, "tools/docs-status.py", "--self-test"], [PY, "tools/check-docs.py"])),
+        ("docs", lambda: scripts([PY, "tools/docs-status.py", "--self-test"], [PY, "tools/check-docs.py"],
+                                 [PY, "tools/check-memory.py", "--self-test"], [PY, "tools/check-memory.py"])),
         ("generate", step_generate),
         ("contracts", lambda: script([PY, "tools/check-contracts.py"])),
         ("evals", lambda: scripts([PY, "tools/run-evaluation.py", "--check"], [PY, "tools/run-evaluation.py", "--self-test"],

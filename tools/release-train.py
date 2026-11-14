@@ -88,6 +88,13 @@ class Stop(Exception):
     """The train stops: a red check, a conflict or an unmet precondition. Fix it and run again."""
 
 
+def shown(p: pathlib.Path) -> str:
+    """A plan directory as the owner types it: relative to the checkout when it is inside
+    it, else absolute (plan --out may name any directory)."""
+    p = p.resolve()
+    return str(p.relative_to(ROOT)) if p.is_relative_to(ROOT) else str(p)
+
+
 def utc(fmt: str = "%Y-%m-%dT%H:%M:%SZ") -> str:
     return datetime.datetime.now(datetime.timezone.utc).strftime(fmt)
 
@@ -641,12 +648,12 @@ def plan_cmd(argv: list[str]) -> int:
         return 1
     out = ROOT / (a.out or f"outputs/release-train/{plan['release']}")
     if (out / "state.json").exists():
-        print(f"\nnot written: {out.relative_to(ROOT)} holds a train's state.json; continue that train with run, or plan with --out DIR")
+        print(f"\nnot written: {shown(out)} holds a train's state.json; continue that train with run, or plan with --out DIR")
         return 1
     out.mkdir(parents=True, exist_ok=True)
     (out / "plan.json").write_text(json.dumps(plan, indent=2) + "\n", encoding="utf-8")
-    print(f"\nplan written: {(out / 'plan.json').relative_to(ROOT)}\nthe owner starts it: .local/verification-venv/bin/python "
-          f"tools/release-train.py run {out.relative_to(ROOT)}")
+    print(f"\nplan written: {shown(out / 'plan.json')}\nthe owner starts it: .local/verification-venv/bin/python "
+          f"tools/release-train.py run {shown(out)}")
     return 0
 
 
@@ -661,7 +668,7 @@ class Train:
         self.state = json.loads(state_file.read_text(encoding="utf-8")) if state_file.exists() else {"done": {}}
         digest = hashlib.sha256(raw).hexdigest()
         if self.state.setdefault("plan", digest) != digest:
-            raise Stop(f"{out.relative_to(ROOT)}/state.json belongs to another plan.json; restore that plan or plan into a new directory")
+            raise Stop(f"{shown(out)}/state.json belongs to another plan.json; restore that plan or plan into a new directory")
         self.repo = repo_of(".")
         # One date for the whole train: a resume on a later day must write the same comments.
         self.today = self.state.setdefault("date", utc("%Y-%m-%d"))
@@ -872,7 +879,7 @@ def run_cmd(out: pathlib.Path) -> int:
     global LOG
     out = out if out.is_absolute() else ROOT / out
     train = Train(out)
-    print(f"release train {train.plan['release']} ({out.relative_to(ROOT)}):")
+    print(f"release train {train.plan['release']} ({shown(out)}):")
     for n, (sid, line) in enumerate(zip(step_ids(train.plan), describe(train.plan)), 1):
         print(f"  {n}. [{'done' if sid in train.state['done'] else 'todo'}] {line}")
     # The train commits only what it writes: other tracked changes in the parent are committed first. A
@@ -895,7 +902,7 @@ def run_cmd(out: pathlib.Path) -> int:
     train.state.setdefault("started", utc())
     train.save()
     say(f"train {train.plan['release']} running")
-    again = f"after fixing it, run again: .local/verification-venv/bin/python tools/release-train.py run {out.relative_to(ROOT)}"
+    again = f"after fixing it, run again: .local/verification-venv/bin/python tools/release-train.py run {shown(out)}"
     for sid in step_ids(train.plan):
         if sid in train.state["done"]:
             continue

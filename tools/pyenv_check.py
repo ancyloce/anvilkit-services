@@ -9,11 +9,9 @@ a traceback. The check is read-only and imports nothing it is not asked for.
 from __future__ import annotations
 
 import importlib
-import pathlib
 import sys
 
 INTERPRETER = (3, 12)
-ROOT = pathlib.Path(__file__).resolve().parent.parent
 HINT = "run `sh tools/verification-env.sh` (creates .local/verification-venv from tools/requirements.txt) and use its interpreter"
 
 
