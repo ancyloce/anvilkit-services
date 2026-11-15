@@ -118,8 +118,13 @@ config:
                   - custom
                   - slot
                 default:
-                  type: string
-                  maxLength: 2000
+                  type:
+                  - string
+                  - number
+                  - boolean
+                  - array
+                  - object
+                  description: 'The field''s default value, a JSON value of its type (DEC-060): a string for text, textarea and richtext (plain text); a number for number; one option value for select and radio; a list of option values for checkbox; a list of objects keyed by arrayFields for array; an object keyed by objectFields for object; any value for external and custom; omitted for slot.'
                 options:
                   type: array
                   minItems: 1
