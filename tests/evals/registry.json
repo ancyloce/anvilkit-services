@@ -2231,7 +2231,7 @@
       {
         "case": "U-TEAM",
         "name": "TeamRunner a budget or deadline bound ends the run before a send; missing limits refuse the configuration",
-        "file": "jobs/codegen/team/test/graph.test.ts:511",
+        "file": "jobs/codegen/team/test/graph.test.ts:543",
         "checks": "Budget/deadline bounds stop the team before the next send and missing limits refuse the configuration.",
         "title": "a budget or deadline bound ends the run before a send; missing limits refuse the configuration"
       }
@@ -2537,7 +2537,7 @@
       {
         "case": "U-TEAM",
         "name": "TeamRunner one remaining aggregate allowance funds one reviewer send, never two: reservations are taken before the fan-out",
-        "file": "jobs/codegen/team/test/graph.test.ts:620",
+        "file": "jobs/codegen/team/test/graph.test.ts:652",
         "checks": "Roles share one aggregate allowance reserved before the parallel fan-out.",
         "title": "one remaining aggregate allowance funds one reviewer send, never two: reservations are taken before the fan-out"
       },
