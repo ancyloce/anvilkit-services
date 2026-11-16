@@ -50,7 +50,7 @@ spec:
     - name: fixtureDigests
       expression: "['sha256:9db7b59979c38555a39def84a31fb98b5296952f9e3afd4f6f11f05b07adfab0']"
     - name: supervisorDigests
-      expression: "['sha256:d7b3821e89c9f02f8779cbe97ba823e8c810660462db26cf34eddf545ef7a56e', 'sha256:67c292c663a5551a4105c43127d35da9a61bc1c08b19234af4e20f8742c48c92', 'sha256:f8585c5664b9a8c888c6bc2806bb662b4a5c27374c1c002f9911c794a702f171']"
+      expression: "['sha256:d7b3821e89c9f02f8779cbe97ba823e8c810660462db26cf34eddf545ef7a56e', 'sha256:67c292c663a5551a4105c43127d35da9a61bc1c08b19234af4e20f8742c48c92', 'sha256:99e4615184ee22098f09b501da1009607fcee2bb68b83e8b15a745ee0125f856']"
     - name: sidecarDigests
       expression: "['sha256:e43ed27ab2fae4d865067d09b1c07043288d79ac1d73fc75400025a3be52c044']"
     - name: supervisorEnv
@@ -99,9 +99,9 @@ spec:
     # twin codegen-team-dev-v1 currently pin the same CI-published image; they
     # may diverge again, so each keeps its own variable.
     - name: teamDigest
-      expression: "'sha256:f8585c5664b9a8c888c6bc2806bb662b4a5c27374c1c002f9911c794a702f171'"
+      expression: "'sha256:99e4615184ee22098f09b501da1009607fcee2bb68b83e8b15a745ee0125f856'"
     - name: teamDevDigest
-      expression: "'sha256:f8585c5664b9a8c888c6bc2806bb662b4a5c27374c1c002f9911c794a702f171'"
+      expression: "'sha256:99e4615184ee22098f09b501da1009607fcee2bb68b83e8b15a745ee0125f856'"
     # P0.8: the development-state candidate profiles this environment admits
     # without the gVisor RuntimeClass (DEVELOPMENT_ONLY; empty elsewhere).
     - name: developmentProfiles
