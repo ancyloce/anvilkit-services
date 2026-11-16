@@ -2225,13 +2225,13 @@
       {
         "case": "U-WORKFLOW",
         "name": "TestGenerationCandidateReadyAfterIndependentCertification",
-        "file": "services/agent/workflow/internal/workflows/generation_test.go:244",
+        "file": "services/agent/workflow/internal/workflows/generation_test.go:254",
         "checks": "Temporal test env with scripted Activities: the Generation reaches succeeded/candidate_ready only after codegen then the validator-source-v1 step, funded once, lease acquired and released."
       },
       {
         "case": "U-TEAM",
         "name": "TeamRunner a budget or deadline bound ends the run before a send; missing limits refuse the configuration",
-        "file": "jobs/codegen/team/test/graph.test.ts:459",
+        "file": "jobs/codegen/team/test/graph.test.ts:511",
         "checks": "Budget/deadline bounds stop the team before the next send and missing limits refuse the configuration.",
         "title": "a budget or deadline bound ends the run before a send; missing limits refuse the configuration"
       }
@@ -2537,7 +2537,7 @@
       {
         "case": "U-TEAM",
         "name": "TeamRunner one remaining aggregate allowance funds one reviewer send, never two: reservations are taken before the fan-out",
-        "file": "jobs/codegen/team/test/graph.test.ts:568",
+        "file": "jobs/codegen/team/test/graph.test.ts:620",
         "checks": "Roles share one aggregate allowance reserved before the parallel fan-out.",
         "title": "one remaining aggregate allowance funds one reviewer send, never two: reservations are taken before the fan-out"
       },
@@ -2671,7 +2671,7 @@
       {
         "case": "U-WORKFLOW",
         "name": "TestGenerationDefinitionChange",
-        "file": "services/agent/workflow/internal/workflows/generation_test.go:461",
+        "file": "services/agent/workflow/internal/workflows/generation_test.go:505",
         "checks": "Change-definition Updates under expected revisions: unknown target rejected, known one applied, hold/resume ordered."
       },
       {
