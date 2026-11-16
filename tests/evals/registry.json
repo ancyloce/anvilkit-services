@@ -2225,7 +2225,7 @@
       {
         "case": "U-WORKFLOW",
         "name": "TestGenerationCandidateReadyAfterIndependentCertification",
-        "file": "services/agent/workflow/internal/workflows/generation_test.go:254",
+        "file": "services/agent/workflow/internal/workflows/generation_test.go:270",
         "checks": "Temporal test env with scripted Activities: the Generation reaches succeeded/candidate_ready only after codegen then the validator-source-v1 step, funded once, lease acquired and released."
       },
       {
@@ -2671,7 +2671,7 @@
       {
         "case": "U-WORKFLOW",
         "name": "TestGenerationDefinitionChange",
-        "file": "services/agent/workflow/internal/workflows/generation_test.go:505",
+        "file": "services/agent/workflow/internal/workflows/generation_test.go:562",
         "checks": "Change-definition Updates under expected revisions: unknown target rejected, known one applied, hold/resume ordered."
       },
       {
@@ -2698,13 +2698,13 @@
       {
         "case": "U-WORKFLOW",
         "name": "TestPreparationUnknownCallNeverCallsAgain",
-        "file": "services/agent/workflow/internal/workflows/preparation_test.go:290",
+        "file": "services/agent/workflow/internal/workflows/preparation_test.go:305",
         "checks": "An uncertain analysis call is never replaced by another call."
       },
       {
         "case": "U-WORKFLOW",
         "name": "TestPreparationContentRepairAllowance",
-        "file": "services/agent/workflow/internal/workflows/preparation_test.go:303",
+        "file": "services/agent/workflow/internal/workflows/preparation_test.go:318",
         "checks": "A content repair is a new call id within a frozen allowance."
       },
       {
@@ -2718,7 +2718,7 @@
       {
         "case": "U-WORKFLOW",
         "name": "TestPreparationConcludesAfterTwoRounds",
-        "file": "services/agent/workflow/internal/workflows/preparation_test.go:266",
+        "file": "services/agent/workflow/internal/workflows/preparation_test.go:281",
         "checks": "Two question rounds, then the analysis must conclude."
       },
       {
@@ -2730,13 +2730,13 @@
       {
         "case": "U-WORKFLOW",
         "name": "TestPreparationRoundAnsweredByUpdate",
-        "file": "services/agent/workflow/internal/workflows/preparation_test.go:173",
+        "file": "services/agent/workflow/internal/workflows/preparation_test.go:188",
         "checks": "A re-issued answer Update is applied once and a stale question set is rejected."
       },
       {
         "case": "U-WORKFLOW",
         "name": "TestPreparationExpiryEndsTheWait",
-        "file": "services/agent/workflow/internal/workflows/preparation_test.go:224",
+        "file": "services/agent/workflow/internal/workflows/preparation_test.go:239",
         "checks": "The wait ends at the absolute seven-day expiry recorded by Control."
       }
     ],
