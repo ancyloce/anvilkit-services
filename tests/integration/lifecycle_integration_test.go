@@ -99,8 +99,20 @@ func TestPreparationAndGenerationLifecycle(t *testing.T) {
 			"pool-"+run+"-"+row.level, row.level, row.tenant, row.actor, row.cap)
 		require.NoError(t, err)
 	}
+	// DEC-066: a Generation is also debited one credit from the tenant's and
+	// the actor's credit pool (a Preparation none).
+	for _, row := range []struct {
+		level string
+		actor *string
+		limit int64
+	}{{"tenant", nil, 100}, {"actor", strPtr("user_a"), 20}} {
+		_, err := conn.Exec(ctx, "INSERT INTO credit_pools (credit_pool_id, level, tenant_id, actor_id, period_start, period_end, limit_credits, created_by) VALUES ($1, $2, 'tenant_a', $3, now() - interval '1 hour', now() + interval '1 hour', $4, 'test')",
+			"crp-"+run+"-"+row.level, row.level, row.actor, row.limit)
+		require.NoError(t, err)
+	}
 	t.Cleanup(func() {
 		_, _ = conn.Exec(context.Background(), "UPDATE budget_pools SET period_end = period_start + interval '1 second' WHERE pool_id LIKE $1", "pool-"+run+"-%")
+		_, _ = conn.Exec(context.Background(), "UPDATE credit_pools SET period_end = period_start + interval '1 second' WHERE credit_pool_id LIKE $1", "crp-"+run+"-%")
 	})
 
 	// finalizedArtifact moves bytes through API-12: begin, the one PUT the capability authorizes, finalize.
@@ -221,6 +233,9 @@ func TestPreparationAndGenerationLifecycle(t *testing.T) {
 	require.Equal(t, 0, permits, "the execution permit is released by the settlement")
 	require.NoError(t, conn.QueryRow(ctx, "SELECT count(*) FROM allocations WHERE operation_id = $1", genID).Scan(&allocations))
 	require.Equal(t, 3, allocations, "funded once from the three pool levels")
+	var credits int64
+	require.NoError(t, conn.QueryRow(ctx, "SELECT coalesce(sum(credits), 0) FROM credit_entries WHERE operation_id = $1", genID).Scan(&credits))
+	require.Equal(t, int64(2), credits, "one credit from the tenant's and one from the actor's credit pool, never refunded")
 	var launches int
 	require.NoError(t, conn.QueryRow(ctx, "SELECT count(*) FROM launches WHERE operation_id = $1", genID).Scan(&launches))
 	require.Equal(t, 1, launches, "the launch obligation exists; the create was refused before any Kubernetes object")
