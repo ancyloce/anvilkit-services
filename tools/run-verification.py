@@ -610,7 +610,7 @@ def main() -> int:
                                        [PY, "deploy/qualification/workflow-rollout.py", "--self-test"],
                                        [PY, "tools/check-model-routes.py", "--self-test"], [PY, "tools/check-model-routes.py"],
                                        [PY, "tools/check-dependencies.py", "--self-test"], [PY, "tools/check-image-pin.py", "--self-test"],
-                                       [PY, "tools/release-train.py", "--self-test"])),
+                                       [PY, "tools/release-train.py", "--self-test"], [PY, "deploy/compose/budget-pools.py", "--self-test"])),
         ("handover", lambda: scripts([PY, "deploy/handover/rehearse.py", "self-test"], [PY, "deploy/handover/handover.py", "--self-test"])),
         ("export", lambda: scripts([PY, "tools/check-source-export.py", "--self-test"], [PY, "tools/check-source-export.py"])),
         ("ts", lambda: step_ts(u("ts"))),
