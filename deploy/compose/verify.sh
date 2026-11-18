@@ -69,6 +69,13 @@ case "$pools" in
   actor:*platform:*tenant:*) pass "current USD budget pools for platform, tenant_a, user_a (level:cap/allocated, scale 6: $pools)" ;;
   *) fail "current budget pools incomplete (have: ${pools:-none}); run up.sh budget" ;;
 esac
+# DEC-066: a Generation or Refinement is also debited one credit from the
+# current tenant and actor credit pools.
+credits=$($COMPOSE exec -T postgres psql -U postgres -d anvilkit_control -tAc "SELECT string_agg(level || ':' || used_credits || '/' || limit_credits, ',' ORDER BY level) FROM credit_pools WHERE now() >= period_start AND now() < period_end AND tenant_id = 'tenant_a' AND (level = 'tenant' OR (level = 'actor' AND actor_id = 'user_a'))" 2>/dev/null | tr -d ' ')
+case "$credits" in
+  actor:*tenant:*) pass "current credit pools for tenant_a, user_a (level:used/limit: $credits)" ;;
+  *) fail "current credit pools incomplete (have: ${credits:-none}); run up.sh budget" ;;
+esac
 
 echo "== foundation setup"
 # The server image carries no CLI; the admin-tools image of the temporal-namespace one-shot does.

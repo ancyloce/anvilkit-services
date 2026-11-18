@@ -79,6 +79,21 @@ ANVILKIT_KNOWLEDGE_REMOVALS_SECRET_ACCESS_KEY=$(random 32)
 }
 "
   fi
+  # DEC-066: the DEVELOPMENT_ONLY platform operator that `up.sh budget` uses
+  # for the pool routes; added once to a principals file that has none (the
+  # API reads the file at start).
+  ANVILKIT_OPERATOR_TOKEN=$(random 32) python3 -I - "$SECRETS/api-principals.json" <<'PY'
+import json, os, sys
+path = sys.argv[1]
+with open(path, encoding="utf-8") as f:
+    principals = json.load(f)
+if not any("platform_operator" in p.get("roles", []) for p in principals.values()):
+    principals[os.environ["ANVILKIT_OPERATOR_TOKEN"]] = {"tenantId": "tenant_ops", "projectId": "proj_ops", "actorId": "operator_a", "roles": ["platform_operator"]}
+    with open(path + ".new", "w", encoding="utf-8") as f:
+        json.dump(principals, f, indent=2)
+    os.chmod(path + ".new", 0o644)
+    os.replace(path + ".new", path)
+PY
   # The launchers' identities: placeholders naming an unreachable loopback API
   # server until deploy/compose/jobs/jobs-node.sh identities writes the real
   # kubeconfigs of the Jobs node (never overwritten here).
@@ -152,11 +167,14 @@ migrate() {
 }
 
 budget() {
-  # DEVELOPMENT_ONLY: the current and next month budget pools of the fixture
-  # principal (control-budget-pools.sql); without them Control refuses every
-  # Preparation and Generation with BUDGET_EXHAUSTED. Run once a month.
-  # Caps: ANVILKIT_BUDGET_{PLATFORM,TENANT,ACTOR}_CAP, scale-6 USD.
-  $COMPOSE run --rm --no-deps control-budget-setup
+  # DEVELOPMENT_ONLY (DEC-066): the current and next month USD budget pools
+  # and credit pools of the fixture principal, created through the API's
+  # platform_operator routes (budget-pools.py), so the API must be up.
+  # Without them Control refuses every Preparation and Generation with
+  # BUDGET_EXHAUSTED. Existing pools are kept. Run once a month.
+  # Caps: ANVILKIT_BUDGET_{PLATFORM,TENANT,ACTOR}_CAP, scale-6 USD; limits:
+  # ANVILKIT_CREDITS_{TENANT,ACTOR}_LIMIT, whole credits (100 and 20).
+  python3 -I "$HERE/budget-pools.py" "$SECRETS/api-principals.json"
 }
 
 services() {
@@ -168,7 +186,7 @@ services() {
 status() { $COMPOSE ps --format 'table {{.Name}}\t{{.Image}}\t{{.Status}}'; }
 
 case "$step" in
-  all) secrets; foundation; setup; migrate; budget; services; status ;;
+  all) secrets; foundation; setup; migrate; services; budget; status ;;
   secrets) secrets ;;
   foundation) secrets; foundation ;;
   setup) setup ;;

@@ -45,8 +45,8 @@ no longer serves `minio/minio` or `minio/mc` (`compose.yaml`).
 
 ```sh
 export ANVILKIT_HOME=/srv/anvilkit
-sh deploy/compose/up.sh                  # secrets, PKI, pull, foundation, setup one-shots, migrations, budget pools, services, status
-sh deploy/compose/up.sh budget           # current + next month budget pools of tenant_a/user_a (once a month)
+sh deploy/compose/up.sh                  # secrets, PKI, pull, foundation, setup one-shots, migrations, services, budget pools, status
+sh deploy/compose/up.sh budget           # current + next month USD and credit pools of tenant_a/user_a via the API (once a month)
 sh deploy/compose/up.sh status           # docker compose ps
 sh deploy/compose/pki.sh verify          # every leaf chains to the CA; SANs printed
 sh deploy/compose/verify.sh              # runtime checks, each PASS, FAIL or UNEXECUTED; exit 1 on any FAIL
@@ -128,25 +128,35 @@ relay has no user authentication of its own, so keep it on the local machine.
 
 Control funds every Preparation (2 USD reserved) and Generation (3 USD reserved,
 `profiles.*.funding` in `config/anvilkit-agent-control.yaml`) from a current platform
-pool, a tenant pool and an actor pool; with any of them missing it refuses the
-operation with `BUDGET_EXHAUSTED` before a model is called. Unspent reservations
-return at settlement. `up.sh budget` (the `control-budget-setup` one-shot,
-`control-budget-pools.sql`) creates those pools for the fixture principal
-(`tenant_a`, `user_a`) for the current and the next calendar month (UTC), keeps
-existing pools unchanged, and must run once a month. Caps are scale-6 USD
-amounts (`1000000` = 1 USD) from the shell that runs it:
+pool, a tenant pool and an actor pool. Unspent reservations return at settlement.
+Separately, it debits a Generation or Refinement one credit from a current tenant
+credit pool and a current actor credit pool. A Preparation costs no credit
+(`profiles.*.credits`, defaults 0 and 1), and a debited credit is never refunded
+([DEC-066](../../docs/DECISIONS.md#dec-066)). With any of these pools missing or
+exhausted, Control refuses the operation with `BUDGET_EXHAUSTED` before a model is
+called.
+
+`up.sh budget` (`budget-pools.py`) creates the pools through the API's
+`platform_operator` routes: `POST /api/v1/budget-pools` and `POST /api/v1/credit-pools`,
+plus `GET` to find a pool and `POST …/{id}/adjustments` to change one. It runs as
+the DEVELOPMENT_ONLY operator principal that `up.sh secrets` adds to
+`api-principals.json`. It creates them for the fixture principal (`tenant_a`,
+`user_a`) for the current and the next calendar month (UTC), so the API must be up;
+`up.sh all` runs it after `services`. It keeps existing pools unchanged, including
+one with other terms, which it reports. It must run once a month. Its settings come
+from the shell that runs it:
 
 | Variable | Default | Pool |
 |---|---|---|
 | `ANVILKIT_BUDGET_PLATFORM_CAP` | `20000000` (20 USD) | platform |
 | `ANVILKIT_BUDGET_TENANT_CAP` | `10000000` (10 USD) | tenant `tenant_a` |
 | `ANVILKIT_BUDGET_ACTOR_CAP` | `10000000` (10 USD) | actor `user_a` |
+| `ANVILKIT_CREDITS_TENANT_LIMIT` | `100` | tenant `tenant_a` credits |
+| `ANVILKIT_CREDITS_ACTOR_LIMIT` | `20` | actor `user_a` credits |
 
-**Open decision (owner):** the product has no pool administration path. Control's
-`BudgetPoolService.CreatePool` is allowed only for the API's identity, and the API
-exposes no route for it, so this placement writes the rows `CreatePool` would write,
-as Control's application role. An operator route (or a Control administration tool)
-replaces this step once it exists.
+Caps are scale-6 USD amounts (`1000000` = 1 USD); limits are whole credits.
+`python3 deploy/compose/budget-pools.py --dry-run x` prints the requests without
+sending them.
 
 ## Jobs node
 
