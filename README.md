@@ -169,7 +169,7 @@ Start with [`docs/README.md`](docs/README.md), then read in this order:
 | Document | Read it for |
 | --- | --- |
 | [Architecture](docs/architecture/architecture.md) | Scope, the eight services and dependency direction, lifecycles, naming and initial versions, ADR-001 to ADR-004, terminology |
-| [Requirements](docs/architecture/requirements.md) | Product profile, M1-01 to M1-17, CAP-01 to CAP-07, UI constraints, scenarios |
+| [Requirements](docs/architecture/requirements.md) | Product profile, M1-01 to M1-17, CAP-01 to CAP-08, UI constraints, scenarios |
 | [Technology](docs/architecture/technology.md) | The 60 primary/alternative choices, inherited version targets, licensing boundaries |
 | [Contracts](docs/architecture/contracts.md) | Contract sources, public endpoints, internal method groups, values and errors, events/SSE, data ownership, lock ranks |
 | [Execution](docs/architecture/execution.md) | DD-01 Workflow, DD-02 Control and single-use dispatch, DD-03 agent harness and isolation |
