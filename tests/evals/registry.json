@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "registryRevision": "21",
+  "registryRevision": "22",
   "description": "P22 requirement traceability (delivery.md P22): every M1, CAP and SEC requirement maps to executable cases and to explicit NOT_RUN entries naming what is missing. A case binds its suite, selector, the reviewed profiles it exercises, its time budget and the gates it contributes evidence to; contributing evidence never closes a gate. tools/run-evaluation.py checks, runs and reports it.",
   "requirements": {
     "M1": [
@@ -29,7 +29,8 @@
       "CAP-04",
       "CAP-05",
       "CAP-06",
-      "CAP-07"
+      "CAP-07",
+      "CAP-08"
     ],
     "SEC": [
       "SEC-01",
@@ -137,6 +138,12 @@
     "CAP-07": [
       "G-01",
       "G-13",
+      "G-14"
+    ],
+    "CAP-08": [
+      "G-01",
+      "G-02",
+      "G-03",
       "G-14"
     ]
   },
@@ -944,7 +951,8 @@
         "M1-17"
       ],
       "caps": [
-        "CAP-05"
+        "CAP-05",
+        "CAP-08"
       ],
       "sec": [
         "SEC-01",
@@ -1018,7 +1026,10 @@
         "G-01"
       ],
       "profiles": [],
-      "budget": "10m"
+      "budget": "10m",
+      "caps": [
+        "CAP-08"
+      ]
     },
     {
       "id": "U-MCP",
@@ -2144,6 +2155,26 @@
       ],
       "cause": "test",
       "todo": "an integration case for a symlink escape in the parser path"
+    },
+    {
+      "id": "NR-GAP-CAP-08",
+      "requirements": [],
+      "caps": [
+        "CAP-08"
+      ],
+      "sec": [],
+      "missing": [
+        "ENV-07"
+      ],
+      "reason": "Continuous conversation (design 0001, adopted by DEC-067) is implemented only to its first slice: Control stores personal conversations and user text messages with paginated history and owner-only reads, and the API serves them. No assistant reply is produced, so the capability's turns, streaming and recovery, drafts and confirmation, deletion and its PITR read barrier cannot be exercised; personal ownership through Studio also needs per-user identity at the Agent API (ENV-07).",
+      "gates": [
+        "G-01",
+        "G-02",
+        "G-03",
+        "G-14"
+      ],
+      "cause": "code",
+      "todo": "design 0001 D3 to D9: the chat_turn profile and ChatTurnWorkflow, durable streaming and SSE, drafts and the Preparation bridge, confirmation, deletion with independent records, the Studio experience, failure and capacity acceptance"
     }
   ],
   "gaps": {
@@ -2179,7 +2210,8 @@
     "SEC-10": "Symlink escape in the parser path at integration level is missing; isolation under gVisor needs ENV-01.",
     "SEC-11": "Real restore in the registered suite on CNPG/DR storage (ENV-02/ENV-09).",
     "SEC-12": "Preview CSP and served-header assertions are registered in U-PREVIEW-SECURITY; Studio lock, manifest, placeholder and channel unit assertions are registered in U-STUDIO. Browser integration with the actual qualified Studio host, preview origin and CSP still needs ENV-08. The local Studio revision is bound by each evaluation inventory.",
-    "M1-16": "Asserted at unit level (U-WORKFLOW, U-CONTROL: two grouped rounds, at most three questions, the expiry, a duplicate Update). IT-LIFECYCLE asks and answers one round through the public API (API-06) but is mapped to M1-15 and asserts neither the round bound nor the seven-day wait; real questions need a real model route (ENV-06, NR-REAL-MODELS)."
+    "M1-16": "Asserted at unit level (U-WORKFLOW, U-CONTROL: two grouped rounds, at most three questions, the expiry, a duplicate Update). IT-LIFECYCLE asks and answers one round through the public API (API-06) but is mapped to M1-15 and asserts neither the round bound nor the seven-day wait; real questions need a real model route (ENV-06, NR-REAL-MODELS).",
+    "CAP-08": "Only design 0001's first slice exists (DEC-067): personal conversations and user messages with paginated history, asserted at unit level (U-CONTROL, its PostgreSQL cases in CI only under DEC-028; U-API with distinct principals). Assistant replies, streaming, drafts and confirmation, deletion with its restore barrier, the Studio experience and failure and capacity acceptance (D3 to D9) are not written; through Studio every user is one development actor until ENV-07."
   },
   "assertions": {
     "M1-01": [
@@ -3607,6 +3639,32 @@
         "file": "jobs/validator/test/preview-origin.test.ts:90",
         "checks": "The fixed browser fixture renders the named preview revision and CSS, and the sandboxed frame cannot read its parent document; the real Studio host remains ENV-08.",
         "title": "bootstraps one session and renders the verified module with its stylesheet"
+      }
+    ],
+    "CAP-08": [
+      {
+        "case": "U-CONTROL",
+        "name": "TestConversations",
+        "file": "services/agent/control/internal/application/conversations_test.go:34",
+        "checks": "On PostgreSQL: a retried command answers its first result, another body or actor under its id conflicts, only the owner (tenant, project, actor) reads or writes, two sends on one revision accept one, the same command from two callers stores one message, an archived conversation takes no message, history pages end at 30 messages or 1 MiB of text."
+      },
+      {
+        "case": "U-CONTROL",
+        "name": "TestConversationAppendUserMessage",
+        "file": "services/agent/control/internal/domain/conversation_test.go:92",
+        "checks": "A user message is 1 to 32768 bytes of UTF-8 without NUL, a stale revision conflicts before the archive rule, a refused message changes nothing, a sequence at the BIGINT bound is refused."
+      },
+      {
+        "case": "U-CONTROL",
+        "name": "TestConversationServiceIsAPIOnly",
+        "file": "services/agent/control/internal/transport/grpc/server_test.go:459",
+        "checks": "Only the API workload reaches ConversationService; the Workflow and the Model Proxy are refused before validation."
+      },
+      {
+        "case": "U-API",
+        "name": "TestConversationRoutes",
+        "file": "services/agent/api/internal/transport/http/conversation_test.go:228",
+        "checks": "Strict public requests (no role, no scope, text only, canonical revisions) reach no owner; the scope and command come from the verified principal; another user or tenant gets NOT_FOUND with no body; a retried command answers its receipt."
       }
     ]
   },
