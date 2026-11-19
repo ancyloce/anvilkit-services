@@ -3199,13 +3199,13 @@
       {
         "case": "U-SIDECAR",
         "name": "TestForgedCredentialsTransferNoIdentity/on_the_trusted_socket_the_claim_never_becomes_the_binding",
-        "file": "jobs/shared/access-sidecar/internal/sockets/sockets_test.go:79",
+        "file": "jobs/shared/access-sidecar/internal/sockets/sockets_test.go:84",
         "checks": "On the trusted socket the connection keeps the SO_PEERCRED identity; the forged claim is not delivered and the request arrives as sent."
       },
       {
         "case": "U-SIDECAR",
         "name": "TestForgedCredentialsTransferNoIdentity/a_credentials_message_that_does_arrive_is_refused,_never_parsed",
-        "file": "jobs/shared/access-sidecar/internal/sockets/sockets_test.go:101",
+        "file": "jobs/shared/access-sidecar/internal/sockets/sockets_test.go:106",
         "checks": "With SO_PASSCRED on, the arriving credentials message closes the connection (ErrFDDelegation); the binding is unchanged."
       }
     ],
