@@ -36,13 +36,13 @@ spec:
         - name: ANVILKIT_ATTEMPT_ID
           value: att_policy
         - name: ANVILKIT_LAUNCH_ENVELOPE
-          value: '{"attemptId":"att_policy","deadline":"2026-09-16T12:10:00Z","executionEpoch":"1","inputs":[{"digest":"sha256:abeb263b000189efdd8206ff39eeb4f2f7f3217f1c480491868b46da4a21c6a8","name":"fixed-input"}],"jobKind":"codegen","launchEpoch":"1","launchId":"lch_policy","launchKey":"policy-harness-wiring-dev-v1","operationId":"op_policy","profileId":"harness-wiring-dev-v1","profileRevision":"11","schemaVersion":1}'
+          value: '{"attemptId":"att_policy","deadline":"2026-09-16T12:10:00Z","executionEpoch":"1","inputs":[{"digest":"sha256:abeb263b000189efdd8206ff39eeb4f2f7f3217f1c480491868b46da4a21c6a8","name":"fixed-input"}],"jobKind":"codegen","launchEpoch":"1","launchId":"lch_policy","launchKey":"policy-harness-wiring-dev-v1","operationId":"op_policy","profileId":"harness-wiring-dev-v1","profileRevision":"12","schemaVersion":1}'
         - name: ANVILKIT_LAUNCH_SECRET
           valueFrom:
             secretKeyRef:
               key: launch-secret
               name: policy-harness-wiring-dev-v1
-        image: localhost:5001/anvilkit-codegen@sha256:d7b3821e89c9f02f8779cbe97ba823e8c810660462db26cf34eddf545ef7a56e
+        image: localhost:5001/anvilkit-codegen@sha256:c989984dad66901f12bd5882fec6b9cf9b2a9c7bd2b92c87431685e8c35a2ec7
         name: supervisor
         resources:
           limits:
@@ -91,7 +91,7 @@ spec:
               apiVersion: v1
               fieldPath: metadata.uid
         - name: ANVILKIT_SIDECAR_LAUNCH_ENVELOPE
-          value: '{"attemptId":"att_policy","deadline":"2026-09-16T12:10:00Z","executionEpoch":"1","inputs":[{"digest":"sha256:abeb263b000189efdd8206ff39eeb4f2f7f3217f1c480491868b46da4a21c6a8","name":"fixed-input"}],"jobKind":"codegen","launchEpoch":"1","launchId":"lch_policy","launchKey":"policy-harness-wiring-dev-v1","operationId":"op_policy","profileId":"harness-wiring-dev-v1","profileRevision":"11","schemaVersion":1}'
+          value: '{"attemptId":"att_policy","deadline":"2026-09-16T12:10:00Z","executionEpoch":"1","inputs":[{"digest":"sha256:abeb263b000189efdd8206ff39eeb4f2f7f3217f1c480491868b46da4a21c6a8","name":"fixed-input"}],"jobKind":"codegen","launchEpoch":"1","launchId":"lch_policy","launchKey":"policy-harness-wiring-dev-v1","operationId":"op_policy","profileId":"harness-wiring-dev-v1","profileRevision":"12","schemaVersion":1}'
         - name: ANVILKIT_SIDECAR_LAUNCH_SECRET
           valueFrom:
             secretKeyRef:
@@ -103,7 +103,7 @@ spec:
           value: anvilkit-agent-mcp.anvilkit-apps.svc.cluster.local:9106
         - name: ANVILKIT_SIDECAR_KNOWLEDGE_ADDRESS
           value: anvilkit-agent-knowledge.anvilkit-apps.svc.cluster.local:9105
-        image: localhost:5001/anvilkit-job-access-sidecar@sha256:e43ed27ab2fae4d865067d09b1c07043288d79ac1d73fc75400025a3be52c044
+        image: localhost:5001/anvilkit-job-access-sidecar@sha256:5b4200b735d79d16d0c3e619868763f671e5585e19e2619fe07c116a89ddcf6d
         name: access-sidecar
         resources:
           limits:

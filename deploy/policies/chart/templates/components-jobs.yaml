@@ -50,9 +50,9 @@ spec:
     - name: fixtureDigests
       expression: "['sha256:9db7b59979c38555a39def84a31fb98b5296952f9e3afd4f6f11f05b07adfab0']"
     - name: supervisorDigests
-      expression: "['sha256:d7b3821e89c9f02f8779cbe97ba823e8c810660462db26cf34eddf545ef7a56e', 'sha256:67c292c663a5551a4105c43127d35da9a61bc1c08b19234af4e20f8742c48c92', 'sha256:99e4615184ee22098f09b501da1009607fcee2bb68b83e8b15a745ee0125f856']"
+      expression: "['sha256:c989984dad66901f12bd5882fec6b9cf9b2a9c7bd2b92c87431685e8c35a2ec7', 'sha256:67c292c663a5551a4105c43127d35da9a61bc1c08b19234af4e20f8742c48c92', 'sha256:4c8cbb0fba42f70799a7c997b790373f72eb4601d188402beb15681ce3bf3e38']"
     - name: sidecarDigests
-      expression: "['sha256:e43ed27ab2fae4d865067d09b1c07043288d79ac1d73fc75400025a3be52c044']"
+      expression: "['sha256:5b4200b735d79d16d0c3e619868763f671e5585e19e2619fe07c116a89ddcf6d']"
     - name: supervisorEnv
       expression: "['ANVILKIT_LAUNCH_ID', 'ANVILKIT_ATTEMPT_ID', 'ANVILKIT_LAUNCH_ENVELOPE', 'ANVILKIT_LAUNCH_SECRET']"
     - name: sidecarEnv
@@ -94,14 +94,14 @@ spec:
     - name: teamCommand
       expression: "['/usr/local/bin/anvilkit-codegen-supervisor', 'team']"
     # One digest per team profile (contracts/jobs/profiles.json): the
-    # production profile codegen-team-v1 (enabled since 2026-11-16, DEC-044,
+    # production profile codegen-team-v1 (enabled since 2026-11-19, DEC-044,
     # for the Compose Jobs node's gVisor RuntimeClass) and its development
     # twin codegen-team-dev-v1 currently pin the same CI-published image; they
     # may diverge again, so each keeps its own variable.
     - name: teamDigest
-      expression: "'sha256:99e4615184ee22098f09b501da1009607fcee2bb68b83e8b15a745ee0125f856'"
+      expression: "'sha256:4c8cbb0fba42f70799a7c997b790373f72eb4601d188402beb15681ce3bf3e38'"
     - name: teamDevDigest
-      expression: "'sha256:99e4615184ee22098f09b501da1009607fcee2bb68b83e8b15a745ee0125f856'"
+      expression: "'sha256:4c8cbb0fba42f70799a7c997b790373f72eb4601d188402beb15681ce3bf3e38'"
     # P0.8: the development-state candidate profiles this environment admits
     # without the gVisor RuntimeClass (DEVELOPMENT_ONLY; empty elsewhere).
     - name: developmentProfiles
