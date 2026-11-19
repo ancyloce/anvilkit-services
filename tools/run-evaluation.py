@@ -139,9 +139,9 @@ def check(reg: dict) -> list[str]:
     if reg.get("schemaVersion") != 1 or not re.fullmatch(r"[1-9][0-9]*", str(reg.get("registryRevision", ""))):
         errs.append("registry: schemaVersion 1 and a registryRevision are required")
     required = {r for group in reg.get("requirements", {}).values() for r in group}
-    expected = {f"M1-{i:02d}" for i in range(1, 18)} | {f"CAP-{i:02d}" for i in range(1, 8)} | {f"SEC-{i:02d}" for i in range(1, 13)}
+    expected = {f"M1-{i:02d}" for i in range(1, 18)} | {f"CAP-{i:02d}" for i in range(1, 9)} | {f"SEC-{i:02d}" for i in range(1, 13)}
     if required != expected:
-        errs.append(f"registry: the requirement list must be exactly M1-01..17, CAP-01..07, SEC-01..12 (missing {sorted(expected - required)}, extra {sorted(required - expected)})")
+        errs.append(f"registry: the requirement list must be exactly M1-01..17, CAP-01..08, SEC-01..12 (missing {sorted(expected - required)}, extra {sorted(required - expected)})")
     suites = reg.get("suites", {})
     for name, s in suites.items():
         if s.get("runner") not in RUNNERS:
