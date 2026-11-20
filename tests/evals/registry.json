@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "registryRevision": "22",
+  "registryRevision": "23",
   "description": "P22 requirement traceability (delivery.md P22): every M1, CAP and SEC requirement maps to executable cases and to explicit NOT_RUN entries naming what is missing. A case binds its suite, selector, the reviewed profiles it exercises, its time budget and the gates it contributes evidence to; contributing evidence never closes a gate. tools/run-evaluation.py checks, runs and reports it.",
   "requirements": {
     "M1": [
@@ -985,7 +985,8 @@
         "M1-17"
       ],
       "caps": [
-        "CAP-06"
+        "CAP-06",
+        "CAP-08"
       ],
       "sec": [
         "SEC-09"
@@ -1205,7 +1206,10 @@
         "controlled-openai-v1"
       ],
       "budget": "15m",
-      "description": "Model Proxy units. P1 (plan 0002) SEC-02 negatives: 'hidden transport retry' (transport tests: one dispatch per ticket, a 421 reaches the upstream once, a forced second dispatch is refused), 'lost grant response' (safety AC4/AC8: retryable capacity refusal, own-write recognition of a repeated conditional create), 'cancellation race' (safety drain and settlement scenarios)."
+      "description": "Model Proxy units. P1 (plan 0002) SEC-02 negatives: 'hidden transport retry' (transport tests: one dispatch per ticket, a 421 reaches the upstream once, a forced second dispatch is refused), 'lost grant response' (safety AC4/AC8: retryable capacity refusal, own-write recognition of a repeated conditional create), 'cancellation race' (safety drain and settlement scenarios).",
+      "caps": [
+        "CAP-08"
+      ]
     },
     {
       "id": "U-KNOWLEDGE",
@@ -2166,7 +2170,7 @@
       "missing": [
         "ENV-07"
       ],
-      "reason": "Continuous conversation (design 0001, adopted by DEC-067) is implemented only to its first slice: Control stores personal conversations and user text messages with paginated history and owner-only reads, and the API serves them. No assistant reply is produced, so the capability's turns, streaming and recovery, drafts and confirmation, deletion and its PITR read barrier cannot be exercised; personal ownership through Studio also needs per-user identity at the Agent API (ENV-07).",
+      "reason": "Continuous conversation (design 0001, adopted by DEC-067) is implemented to its second slice (DEC-068): Control stores personal conversations and user messages and runs one bounded, tool-less reply per message as a chat_turn (one turn at a time, the reply writer fenced, the outcome sealed), the Workflow's ChatTurnWorkflow makes the single reply call through the Model Proxy (a stop meters to the end, a lost sender is fenced at reclaim), and the API serves the turn and its stop. No turn has run end to end across the services, the server keeps replies off until an authorized session, and the capability's streaming and recovery, drafts and confirmation, deletion and its PITR read barrier cannot be exercised; personal ownership through Studio also needs per-user identity at the Agent API (ENV-07).",
       "gates": [
         "G-01",
         "G-02",
@@ -2174,7 +2178,7 @@
         "G-14"
       ],
       "cause": "code",
-      "todo": "design 0001 D3 to D9: the chat_turn profile and ChatTurnWorkflow, durable streaming and SSE, drafts and the Preparation bridge, confirmation, deletion with independent records, the Studio experience, failure and capacity acceptance"
+      "todo": "a turn end to end on the local stack or in a DEC-068 Q2 session; design 0001 D4 to D9: durable streaming and SSE, drafts and the Preparation bridge, confirmation, deletion with independent records, the Studio experience, failure and capacity acceptance"
     }
   ],
   "gaps": {
@@ -2211,7 +2215,7 @@
     "SEC-11": "Real restore in the registered suite on CNPG/DR storage (ENV-02/ENV-09).",
     "SEC-12": "Preview CSP and served-header assertions are registered in U-PREVIEW-SECURITY; Studio lock, manifest, placeholder and channel unit assertions are registered in U-STUDIO. Browser integration with the actual qualified Studio host, preview origin and CSP still needs ENV-08. The local Studio revision is bound by each evaluation inventory.",
     "M1-16": "Asserted at unit level (U-WORKFLOW, U-CONTROL: two grouped rounds, at most three questions, the expiry, a duplicate Update). IT-LIFECYCLE asks and answers one round through the public API (API-06) but is mapped to M1-15 and asserts neither the round bound nor the seven-day wait; real questions need a real model route (ENV-06, NR-REAL-MODELS).",
-    "CAP-08": "Only design 0001's first slice exists (DEC-067): personal conversations and user messages with paginated history, asserted at unit level (U-CONTROL, its PostgreSQL cases in CI only under DEC-028; U-API with distinct principals). Assistant replies, streaming, drafts and confirmation, deletion with its restore barrier, the Studio experience and failure and capacity acceptance (D3 to D9) are not written; through Studio every user is one development actor until ENV-07."
+    "CAP-08": "Design 0001's first two slices exist (DEC-067, DEC-068): personal conversations with paginated history, and one bounded, tool-less assistant reply per message, asserted at unit level (U-CONTROL, its PostgreSQL cases in CI only under DEC-028; U-WORKFLOW; U-MODEL-PROXY; U-API). No turn has run end to end across Control, Temporal and the Model Proxy, and replies stay disabled on the server until a session authorized under DEC-068 Q2. Streaming and recovery, drafts and confirmation, deletion with its restore barrier, the Studio experience and failure and capacity acceptance (D4 to D9) are not written; through Studio every user is one development actor until ENV-07."
   },
   "assertions": {
     "M1-01": [
@@ -3665,6 +3669,55 @@
         "name": "TestConversationRoutes",
         "file": "services/agent/api/internal/transport/http/conversation_test.go:277",
         "checks": "Strict public requests (no role, no scope, text only, canonical revisions) reach no owner; the scope and command come from the verified principal; another user or tenant gets NOT_FOUND with no body; a retried command answers its receipt."
+      },
+      {
+        "case": "U-CONTROL",
+        "name": "TestConversationTurns",
+        "file": "services/agent/control/internal/application/turns_test.go:25",
+        "checks": "On PostgreSQL (DEC-068): a message opens one turn and its confirmed chat_turn operation; another message while that turn is open is TURN_BUSY and stores nothing; CreateOperation refuses chat_turn; the reply writer, the context and the outcome are fenced by the attempt binding, the writer epoch and the turn's single reply call; a sealed outcome replays, refuses another, stores the reply without moving the conversation's revision and frees the slot; a stop of an unstarted turn cancels it at once."
+      },
+      {
+        "case": "U-CONTROL",
+        "name": "TestTurnClaimWriter",
+        "file": "services/agent/control/internal/domain/turn_test.go:49",
+        "checks": "Design 0001 §7.2: the first claim starts writer epoch 1; the same invocation re-enters; the same attempt from another invocation, another activity and an older attempt are stale; a higher attempt takes over and the old epoch can no longer write; a sealed turn answers itself without a takeover."
+      },
+      {
+        "case": "U-CONTROL",
+        "name": "TestChatTurnOperationsAreNotServed",
+        "file": "services/agent/control/internal/transport/grpc/server_test.go:528",
+        "checks": "On PostgreSQL: a turn's chat_turn operation is read and stopped only through its conversation; GetOperation, ListOperationEvents, StreamOperationEvents, SubmitCommand and GetCommand answer it NOT_FOUND while GetTurn serves the turn."
+      },
+      {
+        "case": "U-WORKFLOW",
+        "name": "TestReplyOutcomeRules",
+        "file": "services/agent/workflow/internal/activities/chat_test.go:21",
+        "checks": "Design 0001 §7.4 and DEC-068 Q4: a final frame proves the Proxy's sender stopped; an empty reply, a tool call on the tool-less route, a failed call and a canceled call each seal their own record; a fenced reclaim or an unknown settlement seals the shown prefix as CONTENT_UNRECOVERABLE while an unfenced reclaim leaves the sender unknown; text over 32768 bytes is cut at a rune boundary and text with NUL is not stored."
+      },
+      {
+        "case": "U-WORKFLOW",
+        "name": "TestChatReplyStop",
+        "file": "services/agent/workflow/internal/activities/chat_test.go:191",
+        "checks": "DEC-068 Q3: a stop during the call detaches without canceling the call and seals the shown prefix as canceled with the sender still metering, recorded under a context that outlives the cancel; a stop before the first attempt's call records a sender that never started, and a later attempt asks the call's record first."
+      },
+      {
+        "case": "U-WORKFLOW",
+        "name": "TestChatTurnWorkflow",
+        "file": "services/agent/workflow/internal/workflows/chatturn_test.go:61",
+        "checks": "Temporal test env: the turn is funded once, its Job-less reply attempt opened under chat-turn-v1, the chat Activity run on the chat route with a deadline inside the attempt, the attempt closed and the operation settled from the turn's state (completed, failed, canceled, or reconciling closed as infrastructure_failed)."
+      },
+      {
+        "case": "U-MODEL-PROXY",
+        "name": "two Proxy instances on one store/DEC-068 (CR-04): on a fencing route the reclaim fences the stream: a late settlement adds its usage and its outcome to the ledger, never frames or a result",
+        "title": "DEC-068 (CR-04): on a fencing route the reclaim fences the stream: a late settlement adds its usage and its outcome to the ledger, never frames or a result",
+        "file": "services/agent/model-proxy/test/calls.test.ts:1598",
+        "checks": "On a route with fence_on_reclaim the sweep's reclaim writes fencedAt; the original sender's late settlement adds its usage and its actual outcome reaches Control's ledger, but the record keeps the reclaim's frames and its unknown/SENDER_LOST outcome, and nothing is sent again."
+      },
+      {
+        "case": "U-API",
+        "name": "TestConversationTurnRoutes",
+        "file": "services/agent/api/internal/transport/http/conversation_test.go:392",
+        "checks": "Where replies are enabled the receipt names the turn and its operation; a message while that turn is unfinished is a retryable 429 CAPACITY_EXHAUSTED beginning TURN_BUSY: with Retry-After; the owner reads the turn (the contract's Turn schema, no text) and stops it with 202 under the derived command; strict stop bodies reach no owner; another user or tenant gets NOT_FOUND."
       }
     ]
   },
