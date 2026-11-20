@@ -17,7 +17,12 @@ plan 0005 §11.7 and §11.9):
             limits.max_exposure, which the Proxy reserves for every send;
   brief     the Preparation writes the frozen brief in one call, so its max_output_tokens
             (the Compose value, else the Workflow's built-in default) equals its route's
-            limits.max_output_tokens (DEC-024).
+            limits.max_output_tokens (DEC-024);
+  chat      the chat turn's route (lifecycle.chat.route_id, else the Workflow default) is an
+            enabled, tool-less Proxy route with fence_on_reclaim: true; its max_output_tokens
+            and max exposure equal the route's limits; its limits.max_output_bytes stays within
+            the stored message bound (32768); and the Compose Control authorizes and prices
+            that route at the same exposure (DEC-068).
 The planner's cap equals team.yaml route.maxTokens; the team's own test (test/prompts.test.ts)
 checks that, so with `tokens` the planner holds the Proxy's bound too.
 """
@@ -40,7 +45,9 @@ TEAM = "jobs/codegen/team/team.yaml"
 PROXY = "deploy/compose/config/anvilkit-agent-model-proxy.yaml"
 WORKFLOW = "deploy/compose/config/anvilkit-agent-workflow.yaml"
 WORKFLOW_DEFAULTS = "services/agent/workflow/internal/config/config.go"
-INPUTS = (TEAM, PROXY, WORKFLOW, WORKFLOW_DEFAULTS)
+CONTROL = "deploy/compose/config/anvilkit-agent-control.yaml"
+INPUTS = (TEAM, PROXY, WORKFLOW, WORKFLOW_DEFAULTS, CONTROL)
+MAX_REPLY_BYTES = 32768  # the stored message bound a reply shares (DEC-068, amended)
 
 
 def workflow_default(go_source: str, key: str) -> str | None:
@@ -57,6 +64,7 @@ def check(root: pathlib.Path) -> list[str]:
     proxy = yaml.safe_load((root / PROXY).read_text())
     workflow = yaml.safe_load((root / WORKFLOW).read_text()) or {}
     defaults = (root / WORKFLOW_DEFAULTS).read_text()
+    control = yaml.safe_load((root / CONTROL).read_text()) or {}
     routes = {r.get("id"): r for r in proxy.get("routes") or []}
     errs: list[str] = []
 
@@ -94,6 +102,46 @@ def check(root: pathlib.Path) -> list[str]:
         if r is not None and int(prep_tokens) != bound:
             errs.append(f"brief: the Preparation's max_output_tokens {prep_tokens} ({source}) differs from {PROXY} {prep_route} "
                         f"limits.max_output_tokens {bound}; it writes the frozen brief in one call")
+
+    chat = (workflow.get("lifecycle") or {}).get("chat") or {}
+
+    def chat_value(key: str) -> tuple[str | None, str]:
+        if chat.get(key) is not None:
+            return str(chat[key]), WORKFLOW
+        return workflow_default(defaults, f"lifecycle.chat.{key}"), f"the Workflow default ({WORKFLOW_DEFAULTS})"
+
+    chat_route, _ = chat_value("route_id")
+    if chat_route is None:
+        errs.append(f"chat: the chat turn's route_id is neither in {WORKFLOW} nor a default in {WORKFLOW_DEFAULTS}")
+    elif (r := route(chat_route, "the chat turn")) is not None:
+        limits = r.get("limits") or {}
+        exposure = limits.get("max_exposure") or {}
+        if r.get("tools"):
+            errs.append(f"chat: {PROXY} {chat_route} declares tools; the chat route is tool-less (DEC-068)")
+        if r.get("fence_on_reclaim") is not True:
+            errs.append(f"chat: {PROXY} {chat_route} does not set fence_on_reclaim: true (DEC-068 Q4)")
+        tokens, source = chat_value("max_output_tokens")
+        if tokens is None or int(tokens) != limits.get("max_output_tokens"):
+            errs.append(f"chat: the chat turn's max_output_tokens {tokens} ({source}) differs from {PROXY} {chat_route} "
+                        f"limits.max_output_tokens {limits.get('max_output_tokens')}")
+        (amount, source), (currency, _) = chat_value("max_exposure_amount"), chat_value("max_exposure_currency")
+        if (amount, currency) != (str(exposure.get("amount")), exposure.get("currency")):
+            errs.append(f"chat: the chat turn's max exposure {amount} {currency} ({source}) differs from {PROXY} {chat_route} "
+                        f"limits.max_exposure {exposure.get('amount')} {exposure.get('currency')}")
+        if int(limits.get("max_output_bytes") or 0) > MAX_REPLY_BYTES:
+            errs.append(f"chat: {PROXY} {chat_route} limits.max_output_bytes {limits.get('max_output_bytes')} exceeds the "
+                        f"stored message bound {MAX_REPLY_BYTES}")
+        dev = (control.get("dispatch") or {}).get("development") or {}
+        if dev.get("enabled"):
+            prices = [p for p in dev.get("prices") or [] if p.get("route") == chat_route and p.get("kind") == "model"]
+            if not prices:
+                errs.append(f"chat: {CONTROL} prices no model call on {chat_route}")
+            for p in prices:
+                if (str(p.get("max_exposure")), p.get("currency")) != (str(exposure.get("amount")), exposure.get("currency")):
+                    errs.append(f"chat: {CONTROL} price {p.get('revision')} reserves {p.get('max_exposure')} {p.get('currency')}, "
+                                f"not {PROXY} {chat_route}'s {exposure.get('amount')} {exposure.get('currency')}")
+            if not any(a.get("route_id") == chat_route for a in dev.get("authorized_routes") or []):
+                errs.append(f"chat: {CONTROL} does not authorize {chat_route}")
     return errs
 
 
@@ -122,9 +170,15 @@ def self_test() -> int:
         mutated(PROXY, "    max_output_tokens: 8192", "    max_output_tokens: 4096", "tokens", "a Proxy bound below team.yaml route.maxTokens")
         mutated(TEAM, 'exposurePerSend: "1000000"', 'exposurePerSend: "2000000"', "exposure", "team.yaml reserving another exposure")
         mutated(PROXY, "  enabled: true\n  health_probe:", "  enabled: false\n  health_probe:", "route", "the team's route disabled")
+        mutated(PROXY, "  fence_on_reclaim: true\n", "", "chat", "the chat route without its content fence")
+        mutated(PROXY, "  tools: []\n", "  tools:\n  - name: read_brief\n", "chat", "a tool on the chat route")
+        mutated(PROXY, "    max_output_tokens: 4096", "    max_output_tokens: 2048", "chat", "a chat route bound below the Workflow's")
+        mutated(PROXY, "    max_output_bytes: 32768", "    max_output_bytes: 65536", "chat", "a reply longer than a stored message")
+        mutated(CONTROL, "      max_exposure: '100000'", "      max_exposure: '200000'", "chat", "Control pricing the chat route at another exposure")
+        mutated(CONTROL, "    - route_id: controlled-chat-v1\n", "    - route_id: controlled-other-v1\n", "chat", "the chat route not authorized")
     for f in failures:
         print("FAIL", f)
-    print(f"check-model-routes self-test: {'PASS' if not failures else 'FAIL'} (baseline and 4 negatives)")
+    print(f"check-model-routes self-test: {'PASS' if not failures else 'FAIL'} (baseline and 10 negatives)")
     return 1 if failures else 0
 
 
