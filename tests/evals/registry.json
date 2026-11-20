@@ -3663,7 +3663,7 @@
       {
         "case": "U-API",
         "name": "TestConversationRoutes",
-        "file": "services/agent/api/internal/transport/http/conversation_test.go:228",
+        "file": "services/agent/api/internal/transport/http/conversation_test.go:277",
         "checks": "Strict public requests (no role, no scope, text only, canonical revisions) reach no owner; the scope and command come from the verified principal; another user or tenant gets NOT_FOUND with no body; a retried command answers its receipt."
       }
     ]
