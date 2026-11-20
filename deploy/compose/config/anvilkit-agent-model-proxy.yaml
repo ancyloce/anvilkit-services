@@ -732,6 +732,34 @@ routes:
       - pattern
       type: object
     name: find
+# DEC-068 (design 0001 D3): the chat turn's tool-less route. The provider, model and
+# credential of controlled-openai-v1; one reply per turn, bounded by the stored message
+# (32768 bytes) and 4096 tokens; 0.10 USD reserved per call; an upstream timeout inside
+# the chat profile's 120 s attempt window; and the content fence at reclaim (CR-04), so
+# a lost sender's late frames never become a reply. No turn calls it while Control's
+# profiles.chat_turn stays disabled (DEC-068 Q2): a test session authorized like a paid
+# run enables the profile for its turns only.
+- api: openai-completions
+  base_url: https://api.deepseek.com
+  credential_env: ANVILKIT_MODEL_PROXY_CREDENTIAL_DEEPSEEK
+  enabled: true
+  fence_on_reclaim: true
+  health_probe: models
+  id: controlled-chat-v1
+  limits:
+    max_deadline: 2m
+    max_evidence_bytes: 4194304
+    max_exposure:
+      amount: '100000'
+      currency: USD
+    max_frame_bytes: 65536
+    max_frames: 8192
+    max_output_bytes: 32768
+    max_output_tokens: 4096
+    upstream_timeout: 100s
+  model: deepseek-flash
+  provider: deepseek
+  tools: []
 store:
   backend: s3
   s3:

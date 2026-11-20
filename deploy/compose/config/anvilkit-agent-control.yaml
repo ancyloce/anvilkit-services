@@ -31,6 +31,10 @@ dispatch:
     # Authority.Check). DEVELOPMENT_ONLY, fixture prices; the owner's decision.
     - route_id: '*'
       tenant_id: tenant_a
+    # DEC-068: the chat turn's route (deploy/compose/config/anvilkit-agent-model-proxy.yaml).
+    # Authorized and priced here, but unused while profiles.chat_turn stays disabled.
+    - route_id: controlled-chat-v1
+      tenant_id: tenant_a
     enabled: true
     prices:
     - currency: USD
@@ -47,6 +51,23 @@ dispatch:
       provider: deepseek
       revision: smoke-api-deepseek-flash
       route: controlled-openai-v1
+    # DEC-068: the chat route at the same DEVELOPMENT_ONLY fixture rates, its exposure
+    # the route's 0.10 USD per call. The provider's reviewed list prices are a
+    # precondition of any production enablement.
+    - currency: USD
+      effective_from: '2026-01-01T00:00:00Z'
+      effective_until: '2027-01-01T00:00:00Z'
+      kind: model
+      max_exposure: '100000'
+      model: deepseek-flash
+      per_million:
+        cached_input_units: '100000'
+        input_units: '1000000'
+        output_units: '3000000'
+        reasoning_units: '3000000'
+      provider: deepseek
+      revision: dec-068-chat-deepseek-flash
+      route: controlled-chat-v1
 events:
   enabled: true
   nats:
@@ -86,6 +107,12 @@ model_proxy:
       key_file: /etc/anvilkit/identity/tls.key
       server_name: anvilkit-agent-model-proxy
 profiles:
+  # DEC-068 Q2: assistant replies stay off on the server. A test session is authorized
+  # like a paid run (DEC-019), naming its turn count and USD cap, and only that session
+  # sets enabled: true; the other bounds are the loader's DEC-068 defaults (deadline
+  # 150s, attempt window 120s, funding 0.10 USD, 0 credits, context 192000 bytes).
+  chat_turn:
+    enabled: false
   generation:
     funding:
       amount: '3000000'

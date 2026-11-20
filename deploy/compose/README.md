@@ -224,6 +224,13 @@ allowlists do not admit the sidecar here).
   proxy's log; a paid call (a Preparation) needs the owner's explicit authorization.
   Changing the credential: replace the file, then
   `docker compose … up -d --force-recreate anvilkit-agent-model-proxy`.
+  The chat route `controlled-chat-v1` (DEC-068: no tools, 4096 tokens, 32768 bytes, 0.10 USD
+  per call, the content fence at reclaim) shares that credential and is served under the
+  same condition. Control authorizes and prices it in `config/anvilkit-agent-control.yaml`,
+  where `profiles.chat_turn.enabled: false` keeps assistant replies off. Only a test session
+  authorized like a paid run (DEC-019, naming its turn count and USD cap) turns them on.
+  `tools/check-model-routes.py` checks that the route, the Workflow's `lifecycle.chat` and
+  Control's price agree.
 - **B-3 ContextForge.** The MCP service runs without a ContextForge placement (none is
   deployed here): catalog discovery is unavailable; grants and the revocation barrier work.
 - **B-4 Studio.** Deferred by owner decision (2026-10-25): the Studio is not deployed as
