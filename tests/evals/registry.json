@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "registryRevision": "23",
+  "registryRevision": "24",
   "description": "P22 requirement traceability (delivery.md P22): every M1, CAP and SEC requirement maps to executable cases and to explicit NOT_RUN entries naming what is missing. A case binds its suite, selector, the reviewed profiles it exercises, its time budget and the gates it contributes evidence to; contributing evidence never closes a gate. tools/run-evaluation.py checks, runs and reports it.",
   "requirements": {
     "M1": [
@@ -2170,7 +2170,7 @@
       "missing": [
         "ENV-07"
       ],
-      "reason": "Continuous conversation (design 0001, adopted by DEC-067) is implemented to its second slice (DEC-068): Control stores personal conversations and user messages and runs one bounded, tool-less reply per message as a chat_turn (one turn at a time, the reply writer fenced, the outcome sealed), the Workflow's ChatTurnWorkflow makes the single reply call through the Model Proxy (a stop meters to the end, a lost sender is fenced at reclaim), and the API serves the turn and its stop. No turn has run end to end across the services, the server keeps replies off until an authorized session, and the capability's streaming and recovery, drafts and confirmation, deletion and its PITR read barrier cannot be exercised; personal ownership through Studio also needs per-user identity at the Agent API (ENV-07).",
+      "reason": "Continuous conversation (design 0001, adopted by DEC-067) is implemented to its second slice (DEC-068) with the B-016 round's rules (DEC-069): Control stores personal conversations and user messages and runs one bounded, tool-less reply per message as a chat_turn (one turn at a time, the reply writer fenced, the outcome sealed, an accepted stop winning over an outcome recorded after it, a message stopped before its send left out of later contexts), the Workflow's ChatTurnWorkflow makes the single reply call through the Model Proxy (a stop meters to the end, a lost sender is fenced at reclaim), and the API serves the turn and its stop. Two sessions authorized under DEC-068 Q2 ran on v0.1.46 (2026-11-20, 33 turns end to end across the services, the context bound, TURN_BUSY, a stop before the send); a stop of a running reply did not take effect there (B-016: the chat Activity sees a cancel only at its throttled heartbeat), and DEC-069's Control part is not yet released or exercised on the server. Not exercised: the fence after a lost Model Proxy process and a retried chat Activity (the fault-injection drill, deferred by DEC-069 until the fix is deployed), a cut-off reply, AT-61. The capability's streaming and recovery, a stop sealed at once, drafts and confirmation, deletion and its PITR read barrier cannot be exercised; personal ownership through Studio also needs per-user identity at the Agent API (ENV-07).",
       "gates": [
         "G-01",
         "G-02",
@@ -2178,7 +2178,7 @@
         "G-14"
       ],
       "cause": "code",
-      "todo": "a turn end to end on the local stack or in a DEC-068 Q2 session; design 0001 D4 to D9: durable streaming and SSE, drafts and the Preparation bridge, confirmation, deletion with independent records, the Studio experience, failure and capacity acceptance"
+      "todo": "DEC-069's Control part released, deployed and shown in a DEC-068 Q2 session; then the fault-injection drill (DEC-069: the worker restart first, a lost sender's exposure held and recorded); design 0001 D4 to D9: durable streaming and SSE with the stop sealed at once (B-016's resolution criteria), drafts and the Preparation bridge, confirmation, deletion with independent records, the Studio experience, failure and capacity acceptance"
     }
   ],
   "gaps": {
@@ -2215,7 +2215,7 @@
     "SEC-11": "Real restore in the registered suite on CNPG/DR storage (ENV-02/ENV-09).",
     "SEC-12": "Preview CSP and served-header assertions are registered in U-PREVIEW-SECURITY; Studio lock, manifest, placeholder and channel unit assertions are registered in U-STUDIO. Browser integration with the actual qualified Studio host, preview origin and CSP still needs ENV-08. The local Studio revision is bound by each evaluation inventory.",
     "M1-16": "Asserted at unit level (U-WORKFLOW, U-CONTROL: two grouped rounds, at most three questions, the expiry, a duplicate Update). IT-LIFECYCLE asks and answers one round through the public API (API-06) but is mapped to M1-15 and asserts neither the round bound nor the seven-day wait; real questions need a real model route (ENV-06, NR-REAL-MODELS).",
-    "CAP-08": "Design 0001's first two slices exist (DEC-067, DEC-068): personal conversations with paginated history, and one bounded, tool-less assistant reply per message, asserted at unit level (U-CONTROL, its PostgreSQL cases in CI only under DEC-028; U-WORKFLOW; U-MODEL-PROXY; U-API). No turn has run end to end across Control, Temporal and the Model Proxy, and replies stay disabled on the server until a session authorized under DEC-068 Q2. Streaming and recovery, drafts and confirmation, deletion with its restore barrier, the Studio experience and failure and capacity acceptance (D4 to D9) are not written; through Studio every user is one development actor until ENV-07."
+    "CAP-08": "Design 0001's first two slices exist (DEC-067, DEC-068, with DEC-069's stop and context rules): personal conversations with paginated history, and one bounded, tool-less assistant reply per message, asserted at unit level (U-CONTROL, its PostgreSQL cases in CI only under DEC-028; U-WORKFLOW; U-MODEL-PROXY; U-API). Two authorized server sessions (2026-11-20, v0.1.46) ran turns end to end across Control, Temporal and the Model Proxy; a stop of a running reply did not take effect there (B-016), and DEC-069's fix is unreleased. Replies stay disabled on the server outside an authorized session (DEC-068 Q2). Streaming and recovery, drafts and confirmation, deletion with its restore barrier, the Studio experience and failure and capacity acceptance (D4 to D9) are not written; through Studio every user is one development actor until ENV-07."
   },
   "assertions": {
     "M1-01": [
@@ -3674,13 +3674,25 @@
         "case": "U-CONTROL",
         "name": "TestConversationTurns",
         "file": "services/agent/control/internal/application/turns_test.go:25",
-        "checks": "On PostgreSQL (DEC-068): a message opens one turn and its confirmed chat_turn operation; another message while that turn is open is TURN_BUSY and stores nothing; CreateOperation refuses chat_turn; the reply writer, the context and the outcome are fenced by the attempt binding, the writer epoch and the turn's single reply call; a sealed outcome replays, refuses another, stores the reply without moving the conversation's revision and frees the slot; a stop of an unstarted turn cancels it at once."
+        "checks": "On PostgreSQL (DEC-068): a message opens one turn and its confirmed chat_turn operation; another message while that turn is open is TURN_BUSY and stores nothing; CreateOperation refuses chat_turn; the reply writer, the context and the outcome are fenced by the attempt binding, the writer epoch and the turn's single reply call; a sealed outcome replays, refuses another, stores the reply without moving the conversation's revision and frees the slot; a stop of an unstarted turn cancels it at once; the input of a turn stopped before its send is left out of a later context and uses none of its bound while the history keeps it (DEC-069); a stop accepted while the reply runs wins over the completion the Activity records afterwards: the turn seals canceled, its text a canceled message, the seal replays and the operation carries the same cancel intent (B-016)."
       },
       {
         "case": "U-CONTROL",
         "name": "TestTurnClaimWriter",
         "file": "services/agent/control/internal/domain/turn_test.go:49",
         "checks": "Design 0001 §7.2: the first claim starts writer epoch 1; the same invocation re-enters; the same attempt from another invocation, another activity and an older attempt are stale; a higher attempt takes over and the old epoch can no longer write; a sealed turn answers itself without a takeover."
+      },
+      {
+        "case": "U-CONTROL",
+        "name": "TestReplyRecordUnderCancel",
+        "file": "services/agent/control/internal/domain/turn_test.go:250",
+        "checks": "B-016, design 0001 §7.4 and §11.3 (DEC-069): under the operation's cancel intent every sealing record (a completion, a partial failure, a refusal before the send) seals the turn canceled with its text kept as the canceled message and stays valid; the Activity's own stop, a record that does not seal and an operation without the intent are unchanged; whether a record seals never changes."
+      },
+      {
+        "case": "U-CONTROL",
+        "name": "TestStoppedMessageLeavesLaterContexts",
+        "file": "services/agent/control/internal/domain/turn_test.go:305",
+        "checks": "DEC-069: only a turn canceled with a sender that never started (stopped while queued, or after the claim and before the call) leaves its message out; a failed turn and a reply stopped mid-send keep it; the left-out message uses none of the context bound; the input message is always kept."
       },
       {
         "case": "U-CONTROL",
