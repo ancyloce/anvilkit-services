@@ -67,7 +67,9 @@ routes:
       amount: '1000000'
       currency: USD
     max_frame_bytes: 65536
-    max_frames: 4096
+    # A frame per upstream delta plus admitted and final: max_frames must exceed
+    # max_output_tokens, or a reply within its token bound is cut (B-017).
+    max_frames: 16384
     max_output_bytes: 1048576
     max_output_tokens: 8192
     upstream_timeout: 4m

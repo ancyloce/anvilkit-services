@@ -42,7 +42,7 @@ config:
       max_deadline: 24h
       max_frame_bytes: 65536
       max_output_bytes: 1048576
-      max_frames: 4096
+      max_frames: 16384
       upstream_timeout: 4m
       max_evidence_bytes: 4194304
     tools:
