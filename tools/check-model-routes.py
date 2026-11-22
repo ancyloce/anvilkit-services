@@ -22,7 +22,11 @@ plan 0005 §11.7 and §11.9):
             enabled, tool-less Proxy route with fence_on_reclaim: true; its max_output_tokens
             and max exposure equal the route's limits; its limits.max_output_bytes stays within
             the stored message bound (32768); and the Compose Control authorizes and prices
-            that route at the same exposure (DEC-068).
+            that route at the same exposure (DEC-068);
+  frames    every Proxy route's limits.max_frames is at least its max_output_tokens + 2: the
+            Proxy makes a frame of each upstream delta (a delta carries at least one token)
+            besides the admitted and final frames, so a smaller bound cuts a reply within its
+            token bound and leaves its cost unknown (B-017).
 The planner's cap equals team.yaml route.maxTokens; the team's own test (test/prompts.test.ts)
 checks that, so with `tokens` the planner holds the Proxy's bound too.
 """
@@ -142,6 +146,13 @@ def check(root: pathlib.Path) -> list[str]:
                                 f"not {PROXY} {chat_route}'s {exposure.get('amount')} {exposure.get('currency')}")
             if not any(a.get("route_id") == chat_route for a in dev.get("authorized_routes") or []):
                 errs.append(f"chat: {CONTROL} does not authorize {chat_route}")
+
+    for route_id, r in routes.items():
+        limits = r.get("limits") or {}
+        frames, tokens = int(limits.get("max_frames") or 0), int(limits.get("max_output_tokens") or 0)
+        if frames < tokens + 2:
+            errs.append(f"frames: {PROXY} {route_id} limits.max_frames {frames} is below max_output_tokens {tokens} + 2 "
+                        "(admitted and final frames); a reply within the token bound is cut at the frame bound (B-017)")
     return errs
 
 
@@ -176,9 +187,11 @@ def self_test() -> int:
         mutated(PROXY, "    max_output_bytes: 32768", "    max_output_bytes: 65536", "chat", "a reply longer than a stored message")
         mutated(CONTROL, "      max_exposure: '100000'", "      max_exposure: '200000'", "chat", "Control pricing the chat route at another exposure")
         mutated(CONTROL, "    - route_id: controlled-chat-v1\n", "    - route_id: controlled-other-v1\n", "chat", "the chat route not authorized")
+        mutated(PROXY, "    max_frames: 16384", "    max_frames: 4096", "frames", "the team route's frame bound of chat session 4 (B-017)")
+        mutated(PROXY, "    max_frames: 8192", "    max_frames: 4097", "frames", "a chat route frame bound one short of its token bound")
     for f in failures:
         print("FAIL", f)
-    print(f"check-model-routes self-test: {'PASS' if not failures else 'FAIL'} (baseline and 10 negatives)")
+    print(f"check-model-routes self-test: {'PASS' if not failures else 'FAIL'} (baseline and 12 negatives)")
     return 1 if failures else 0
 
 
