@@ -81,14 +81,22 @@ ANVILKIT_KNOWLEDGE_REMOVALS_SECRET_ACCESS_KEY=$(random 32)
   fi
   # DEC-066: the DEVELOPMENT_ONLY platform operator that `up.sh budget` uses
   # for the pool routes; added once to a principals file that has none (the
-  # API reads the file at start).
-  ANVILKIT_OPERATOR_TOKEN=$(random 32) python3 -I - "$SECRETS/api-principals.json" <<'PY'
+  # API reads the file at start). B-017 (DEC-071): tenant_a's own operator,
+  # added the same way: a recovery run and its dispositions are scoped to the
+  # operator's tenant (API-17), which the platform operator's tenant_ops is not.
+  ANVILKIT_OPERATOR_TOKEN=$(random 32) ANVILKIT_TENANT_OPERATOR_TOKEN=$(random 32) python3 -I - "$SECRETS/api-principals.json" <<'PY'
 import json, os, sys
 path = sys.argv[1]
 with open(path, encoding="utf-8") as f:
     principals = json.load(f)
+changed = False
 if not any("platform_operator" in p.get("roles", []) for p in principals.values()):
     principals[os.environ["ANVILKIT_OPERATOR_TOKEN"]] = {"tenantId": "tenant_ops", "projectId": "proj_ops", "actorId": "operator_a", "roles": ["platform_operator"]}
+    changed = True
+if not any(p.get("tenantId") == "tenant_a" and "operator" in p.get("roles", []) for p in principals.values()):
+    principals[os.environ["ANVILKIT_TENANT_OPERATOR_TOKEN"]] = {"tenantId": "tenant_a", "projectId": "proj_a", "actorId": "operator_tenant_a", "roles": ["operator"]}
+    changed = True
+if changed:
     with open(path + ".new", "w", encoding="utf-8") as f:
         json.dump(principals, f, indent=2)
     os.chmod(path + ".new", 0o644)
