@@ -36,6 +36,11 @@ dispatch:
     - route_id: controlled-chat-v1
       tenant_id: tenant_a
     enabled: true
+    # B-017, DEC-071: the one DEVELOPMENT_ONLY issuer whose unsigned attestations
+    # Control trusts as not-sent and disposition evidence. They are objects in
+    # Control's inventory, which only its MinIO credentials can write.
+    not_sent_issuers:
+    - anvilkit-dev-operator
     prices:
     - currency: USD
       effective_from: '2026-01-01T00:00:00Z'
