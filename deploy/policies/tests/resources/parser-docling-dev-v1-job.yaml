@@ -79,7 +79,7 @@
         "initContainers": [
           {
             "name": "stage-in",
-            "image": "localhost:5001/anvilkit-parser@sha256:8861751bfcabbfc91b496f516a365bad1b80afa29c4caff634d941ad81342631",
+            "image": "localhost:5001/anvilkit-parser@sha256:f44d65a868b2612f47f5db7dbf994b79685054c260c6e03dc59c76d06e7597c6",
             "command": [
               "/usr/local/bin/anvilkit-stage",
               "in"
@@ -87,7 +87,7 @@
             "env": [
               {
                 "name": "ANVILKIT_PARSE_ENVELOPE",
-                "value": "{\"schemaVersion\":1,\"launchId\":\"parse-0123456789abcdef0123456789abcdef\",\"launchKey\":\"parse-0123456789abcdef0123456789abcdef\",\"taskId\":\"task_0123456789abcdef\",\"generation\":\"1\",\"attempt\":\"1\",\"profileId\":\"parser-docling-dev-v1\",\"profileRevision\":\"8\",\"jobKind\":\"parser\",\"deadline\":\"2026-10-08T12:00:00Z\",\"input\":{\"digest\":\"sha256:0000000000000000000000000000000000000000000000000000000000000000\",\"sizeBytes\":\"6\",\"mediaType\":\"text/markdown\"}}"
+                "value": "{\"schemaVersion\":1,\"launchId\":\"parse-0123456789abcdef0123456789abcdef\",\"launchKey\":\"parse-0123456789abcdef0123456789abcdef\",\"taskId\":\"task_0123456789abcdef\",\"generation\":\"1\",\"attempt\":\"1\",\"profileId\":\"parser-docling-dev-v1\",\"profileRevision\":\"9\",\"jobKind\":\"parser\",\"deadline\":\"2026-10-08T12:00:00Z\",\"input\":{\"digest\":\"sha256:0000000000000000000000000000000000000000000000000000000000000000\",\"sizeBytes\":\"6\",\"mediaType\":\"text/markdown\"}}"
               },
               {
                 "name": "ANVILKIT_PARSER_LIMITS",
@@ -134,14 +134,14 @@
           },
           {
             "name": "parse",
-            "image": "localhost:5001/anvilkit-parser@sha256:8861751bfcabbfc91b496f516a365bad1b80afa29c4caff634d941ad81342631",
+            "image": "localhost:5001/anvilkit-parser@sha256:f44d65a868b2612f47f5db7dbf994b79685054c260c6e03dc59c76d06e7597c6",
             "command": [
               "/usr/local/bin/anvilkit-parse"
             ],
             "env": [
               {
                 "name": "ANVILKIT_PARSE_ENVELOPE",
-                "value": "{\"schemaVersion\":1,\"launchId\":\"parse-0123456789abcdef0123456789abcdef\",\"launchKey\":\"parse-0123456789abcdef0123456789abcdef\",\"taskId\":\"task_0123456789abcdef\",\"generation\":\"1\",\"attempt\":\"1\",\"profileId\":\"parser-docling-dev-v1\",\"profileRevision\":\"8\",\"jobKind\":\"parser\",\"deadline\":\"2026-10-08T12:00:00Z\",\"input\":{\"digest\":\"sha256:0000000000000000000000000000000000000000000000000000000000000000\",\"sizeBytes\":\"6\",\"mediaType\":\"text/markdown\"}}"
+                "value": "{\"schemaVersion\":1,\"launchId\":\"parse-0123456789abcdef0123456789abcdef\",\"launchKey\":\"parse-0123456789abcdef0123456789abcdef\",\"taskId\":\"task_0123456789abcdef\",\"generation\":\"1\",\"attempt\":\"1\",\"profileId\":\"parser-docling-dev-v1\",\"profileRevision\":\"9\",\"jobKind\":\"parser\",\"deadline\":\"2026-10-08T12:00:00Z\",\"input\":{\"digest\":\"sha256:0000000000000000000000000000000000000000000000000000000000000000\",\"sizeBytes\":\"6\",\"mediaType\":\"text/markdown\"}}"
               },
               {
                 "name": "ANVILKIT_PARSER_LIMITS",
@@ -194,7 +194,7 @@
         "containers": [
           {
             "name": "stage-out",
-            "image": "localhost:5001/anvilkit-parser@sha256:8861751bfcabbfc91b496f516a365bad1b80afa29c4caff634d941ad81342631",
+            "image": "localhost:5001/anvilkit-parser@sha256:f44d65a868b2612f47f5db7dbf994b79685054c260c6e03dc59c76d06e7597c6",
             "command": [
               "/usr/local/bin/anvilkit-stage",
               "out"
@@ -202,7 +202,7 @@
             "env": [
               {
                 "name": "ANVILKIT_PARSE_ENVELOPE",
-                "value": "{\"schemaVersion\":1,\"launchId\":\"parse-0123456789abcdef0123456789abcdef\",\"launchKey\":\"parse-0123456789abcdef0123456789abcdef\",\"taskId\":\"task_0123456789abcdef\",\"generation\":\"1\",\"attempt\":\"1\",\"profileId\":\"parser-docling-dev-v1\",\"profileRevision\":\"8\",\"jobKind\":\"parser\",\"deadline\":\"2026-10-08T12:00:00Z\",\"input\":{\"digest\":\"sha256:0000000000000000000000000000000000000000000000000000000000000000\",\"sizeBytes\":\"6\",\"mediaType\":\"text/markdown\"}}"
+                "value": "{\"schemaVersion\":1,\"launchId\":\"parse-0123456789abcdef0123456789abcdef\",\"launchKey\":\"parse-0123456789abcdef0123456789abcdef\",\"taskId\":\"task_0123456789abcdef\",\"generation\":\"1\",\"attempt\":\"1\",\"profileId\":\"parser-docling-dev-v1\",\"profileRevision\":\"9\",\"jobKind\":\"parser\",\"deadline\":\"2026-10-08T12:00:00Z\",\"input\":{\"digest\":\"sha256:0000000000000000000000000000000000000000000000000000000000000000\",\"sizeBytes\":\"6\",\"mediaType\":\"text/markdown\"}}"
               },
               {
                 "name": "ANVILKIT_PARSER_LIMITS",
