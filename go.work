@@ -12,7 +12,7 @@
 // its own repository at jobs/codegen/supervisor. The TypeScript packages
 // (services/agent/{knowledge,model-proxy,background-worker}, jobs/validator,
 // jobs/codegen/team) are outside this closure.
-go 1.27.0
+go 1.27.4
 
 use (
 	./contracts/go

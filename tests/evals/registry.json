@@ -3145,7 +3145,7 @@
       {
         "case": "U-TEAM",
         "name": "Pi over the ControlledModelPort compaction is a controlled call too: the summary goes through the relay under its own identity",
-        "file": "jobs/codegen/team/test/pi.test.ts:292",
+        "file": "jobs/codegen/team/test/pi.test.ts:298",
         "checks": "Pi compaction (summary) is a separately admitted controlled call.",
         "title": "compaction is a controlled call too: the summary goes through the relay under its own identity"
       },

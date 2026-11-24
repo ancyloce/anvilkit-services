@@ -696,7 +696,7 @@ routes:
           description: 'Number of lines to show before and after each match (default: 0)'
           type: number
         glob:
-          description: Filter files by glob pattern, e.g. '*.ts' or '**/*.spec.ts'
+          description: Filter files by glob pattern relative to path, e.g. 'src/**/*.ts'. Without '/', e.g. '*.ts', it matches file names at any depth
           type: string
         ignoreCase:
           description: 'Case-insensitive search (default: false)'
@@ -728,7 +728,7 @@ routes:
           description: 'Directory to search in (default: current directory)'
           type: string
         pattern:
-          description: Glob pattern to match files, e.g. '*.ts', '**/*.json', or 'src/**/*.spec.ts'
+          description: Glob pattern relative to the search directory, e.g. 'src/**/*.ts'. Without '/', e.g. '*.ts', it matches file names at any depth
           type: string
       required:
       - pattern

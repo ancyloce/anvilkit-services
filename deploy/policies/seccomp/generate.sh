@@ -53,7 +53,7 @@ func main() {
 	_ = enc.Encode(profile)
 }
 GO
-printf 'module anvilkit-candidate-seccomp\n\ngo 1.26.8\n' > "$WORK/go.mod"
+printf 'module anvilkit-candidate-seccomp\n\ngo 1.27.4\n' > "$WORK/go.mod"
 cd "$WORK"
 GOWORK=off GOFLAGS=-mod=mod GOPROXY=${GOPROXY:-https://proxy.golang.org,direct} go get github.com/containerd/containerd/v2@v2.3.4 github.com/opencontainers/runtime-spec@v1.3.0 >/dev/null 2>&1
 GOWORK=off GOFLAGS=-mod=mod GOPROXY=${GOPROXY:-https://proxy.golang.org,direct} go run .
